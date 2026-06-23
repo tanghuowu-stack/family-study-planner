@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #25302b;
+  background: #f7f8f3;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+html { background: #f7f8f3; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+button, input, select, textarea { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+.print-only { display: none; }
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 8% 5%, rgba(240, 188, 104, 0.10), transparent 24rem),
+    radial-gradient(circle at 90% 30%, rgba(103, 134, 108, 0.08), transparent 28rem);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
+}
+
+@media print {
+  @page { size: A4; margin: 12mm 14mm; }
+  body { background: white; color: black; font-size: 11pt; }
+  body::before, .screen-only { display: none !important; }
+  .print-only { display: block !important; }
+  .print-only h1 { margin: 0; font-size: 22pt; }
+  .print-only .print-date { margin: 3mm 0 6mm; color: #444; }
+  .print-only section { margin: 0 0 5mm; break-inside: avoid; }
+  .print-only h2 { margin: 0 0 2mm; border-bottom: 1px solid #777; padding-bottom: 1.5mm; font-size: 13pt; }
+  .print-only details summary { list-style: none; }
+  .print-only details > div { display: none; }
+  .print-only .border-b { border-color: #bbb; }
+  .print-only p { margin: 1.5mm 0; }
+}

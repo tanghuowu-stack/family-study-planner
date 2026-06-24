@@ -31,6 +31,8 @@
 3. 粘贴 `docs/supabase-schema.sql` 的全部内容
 4. 点击 **Run**
 
+> **注意：** 如果之前在 SQL Editor 执行失败过，项目里可能残留了部分表或对象。重新执行前，建议先删除已创建的旧对象（如 `drop table xxx cascade;`），或者干脆使用一个全新的 Supabase project 重新测试。
+
 建议执行顺序（SQL 文件内已按顺序排列）：
 
 ```

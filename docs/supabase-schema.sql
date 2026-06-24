@@ -21,27 +21,6 @@ end;
 $$;
 
 -- ============================================================
--- 辅助函数：获取当前登录用户的 family_id
--- security definer：以函数定义者权限查询 profiles，绕过调用者 RLS
--- set search_path = public：防止 schema 污染攻击
--- stable：同一事务内结果缓存，避免重复查询
--- limit 1：防止多行返回（理论上不会，但加上更安全）
--- ============================================================
-
-create or replace function public.get_my_family_id()
-returns uuid
-language sql
-security definer
-stable
-set search_path = public
-as $$
-  select family_id
-  from public.profiles
-  where id = auth.uid()
-  limit 1
-$$;
-
--- ============================================================
 -- 1. families
 -- 一个家庭空间；所有业务数据通过 family_id 关联到此表
 -- ============================================================
@@ -77,6 +56,27 @@ create index if not exists idx_profiles_family_id on public.profiles(family_id);
 create trigger trg_profiles_updated_at
   before update on public.profiles
   for each row execute function public.set_updated_at();
+
+-- ============================================================
+-- 辅助函数：获取当前登录用户的 family_id
+-- security definer：以函数定义者权限查询 profiles，绕过调用者 RLS
+-- set search_path = public：防止 schema 污染攻击
+-- stable：同一事务内结果缓存，避免重复查询
+-- limit 1：防止多行返回（理论上不会，但加上更安全）
+-- ============================================================
+
+create or replace function public.get_my_family_id()
+returns uuid
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select family_id
+  from public.profiles
+  where id = auth.uid()
+  limit 1
+$$;
 
 -- ============================================================
 -- 3. tasks

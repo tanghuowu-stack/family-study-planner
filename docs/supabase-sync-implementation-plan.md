@@ -14,6 +14,7 @@
 - [x] 云端读取预览（Step 4 第一阶段：从 Supabase 读取数据并提供本地/云端对比，仅供验证，未切换正式页面数据源）
 - [x] 从云端下载数据到本地 IndexedDB（Step 5：使用 bulkPut 安全合并，不删除本地旧数据，未切换正式页面数据源）
 - [x] 本地与云端数据差异排查工具（在面板中比对 ID 找出多出的本地和云端残留数据）
+- [x] Step 6：云端优先正式同步模式（cloudRepository + repositoryProvider + App.tsx 改造；登录后新增/编辑/删除/完成/occurrence/planPeriods 自动写入 Supabase；未登录继续使用本地 IndexedDB；暂不做 Realtime）
 - [ ] 双端测试（后续 Step 5）
 
 ---

@@ -1,0 +1,565 @@
+/**
+ * cloudRepository.ts
+ *
+ * 云端优先数据层：读写 Supabase，同步缓存到本地 IndexedDB。
+ * 提供和 taskRepository 尽量一致的方法签名。
+ * 不删除本地数据，不做 Realtime，不做复杂冲突合并。
+ */
+import { supabase } from "../lib/supabase";
+import { db } from "./db";
+import { rowToTask } from "../lib/cloudRead";
+import type {
+  Task,
+  TaskDraft,
+  TaskDisplay,
+  TaskStatus,
+  OccurrenceStatus,
+  TaskOccurrenceStatus,
+  PlanPeriod,
+  BackupData,
+} from "../types/task";
+import { taskRepository } from "./taskRepository";
+import { getWeekStartKey, getWeekEndKey, getMonthKey, getMonthBounds, todayKey, toDateKey } from "../utils/date";
+import { addDays, eachDayOfInterval, parseISO } from "date-fns";
+
+// ─── helpers (reuse from cloudUpload logic) ─────────────────────────────────
+
+function stripUndefined<T extends object>(obj: T): T {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined)
+  ) as T;
+}
+
+function toDateOrNull(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, 10);
+}
+
+function toTimestampOrNull(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed;
+}
+
+function buildMetadata(task: Task): Record<string, unknown> | null {
+  const meta: Record<string, unknown> = {};
+  if (task.totalAmount !== undefined) meta.totalAmount = task.totalAmount;
+  if (task.amountUnit !== undefined) meta.amountUnit = task.amountUnit;
+  if (task.splitCount !== undefined) meta.splitCount = task.splitCount;
+  if (task.amountPerSession !== undefined) meta.amountPerSession = task.amountPerSession;
+  if (task.readingTargetCount !== undefined) meta.readingTargetCount = task.readingTargetCount;
+  if (task.readingTargetUnit !== undefined) meta.readingTargetUnit = task.readingTargetUnit;
+  if (task.allowedWeekdays !== undefined) meta.allowedWeekdays = task.allowedWeekdays;
+  if (task.allowWeekend !== undefined) meta.allowWeekend = task.allowWeekend;
+  return Object.keys(meta).length > 0 ? meta : null;
+}
+
+function taskToRow(task: Task, familyId: string): Record<string, unknown> {
+  return stripUndefined({
+    id: task.id,
+    family_id: familyId,
+    title: task.title ?? "",
+    main_category: task.mainCategory ?? "temporary",
+    sub_category: task.subCategory ?? "other",
+    extra_content_type: task.extraContentType ?? null,
+    time_type: task.timeType ?? "singleDate",
+    schedule_pattern: task.schedulePattern ?? null,
+    date: toDateOrNull(task.date),
+    start_date: toDateOrNull(task.startDate),
+    end_date: toDateOrNull(task.endDate),
+    week_start: toDateOrNull(task.weekStart),
+    specific_dates: Array.isArray(task.specificDates) ? task.specificDates.filter(Boolean) : null,
+    range_weekdays: task.rangeWeekdays ?? null,
+    assignment_window: task.assignmentWindow ?? null,
+    recurrence: task.recurrence ?? null,
+    weekly_quota: task.weeklyQuota ?? null,
+    applicable_period_type: task.applicablePeriodType ?? null,
+    plan_period_id: task.planPeriodId ?? null,
+    status: task.status ?? "todo",
+    rollover_mode: task.rolloverMode ?? "keepOverdue",
+    allow_rollover: task.allowRollover ?? false,
+    calendar_visibility: task.calendarVisibility ?? "show",
+    child_visible: task.childVisible ?? true,
+    sort_order: task.sortOrder ?? 0,
+    start_time: task.startTime ?? task.time ?? null,
+    end_time: task.endTime ?? null,
+    estimated_minutes: task.estimatedMinutes ?? null,
+    location: task.location ?? null,
+    note: task.note ?? null,
+    important: task.important ?? false,
+    parent_task_id: task.parentTaskId ?? null,
+    session_index: task.sessionIndex ?? null,
+    allocation_week_start: toDateOrNull(task.allocationWeekStart),
+    completed_at: toTimestampOrNull(task.completedAt),
+    deleted_at: toTimestampOrNull(task.deletedAt),
+    deleted_by_device: task.deletedByDevice ?? null,
+    deleted_by_actor: task.deletedByActor ?? null,
+    metadata: buildMetadata(task),
+    created_at: toTimestampOrNull(task.createdAt) ?? new Date().toISOString(),
+    updated_at: toTimestampOrNull(task.updatedAt) ?? new Date().toISOString(),
+  });
+}
+
+function checklistItemRows(task: Task, familyId: string): Record<string, unknown>[] {
+  if (!Array.isArray(task.checklistItems) || task.checklistItems.length === 0) return [];
+  return task.checklistItems.map((item, idx) =>
+    stripUndefined({
+      id: item.id ?? `${task.id}:ci:${idx}`,
+      family_id: familyId,
+      task_id: task.id,
+      title: item.title ?? "",
+      done: item.done ?? false,
+      sort_order: item.sortOrder ?? idx,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+  );
+}
+
+/** upsert task to Supabase and sync checklist items */
+async function upsertTask(task: Task, familyId: string): Promise<void> {
+  if (!supabase) return;
+  const row = taskToRow(task, familyId);
+  const { error: taskErr } = await supabase.from("tasks").upsert(row, { onConflict: "id" });
+  if (taskErr) throw new Error(`云端保存任务失败: ${taskErr.message}`);
+
+  // 先删除该 task 下的旧小项，再插入新小项（第一版接受覆盖并发修改）
+  const { error: delErr } = await supabase
+    .from("task_checklist_items")
+    .delete()
+    .eq("task_id", task.id)
+    .eq("family_id", familyId);
+  if (delErr) throw new Error(`云端更新清单失败: ${delErr.message}`);
+
+  const items = checklistItemRows(task, familyId);
+  if (items.length > 0) {
+    const { error: insertErr } = await supabase.from("task_checklist_items").insert(items);
+    if (insertErr) throw new Error(`云端插入清单失败: ${insertErr.message}`);
+  }
+}
+
+/** upsert occurrence status to Supabase */
+async function upsertOccurrence(
+  occ: TaskOccurrenceStatus,
+  familyId: string
+): Promise<void> {
+  if (!supabase) return;
+  const row = stripUndefined({
+    id: occ.id,
+    family_id: familyId,
+    task_id: occ.taskId,
+    occurrence_date: occ.occurrenceDate,
+    status: occ.status,
+    override_date: toDateOrNull(occ.overrideDate),
+    override_title: occ.overrideTitle ?? null,
+    override_note: occ.overrideNote ?? null,
+    completed_at: null,
+    created_at: toTimestampOrNull(occ.createdAt) ?? new Date().toISOString(),
+    updated_at: toTimestampOrNull(occ.updatedAt) ?? new Date().toISOString(),
+  });
+  const { error } = await supabase
+    .from("task_occurrence_statuses")
+    .upsert(row, { onConflict: "id" });
+  if (error) throw new Error(`云端保存单次状态失败: ${error.message}`);
+}
+
+/** Load all tasks from Supabase and cache to IndexedDB */
+async function fetchAndCacheTasks(familyId: string): Promise<Task[]> {
+  if (!supabase) return db.tasks.toArray();
+
+  const [{ data: tasksData, error: tasksError }, { data: checklistData }] = await Promise.all([
+    supabase.from("tasks").select("*").eq("family_id", familyId),
+    supabase.from("task_checklist_items").select("*").eq("family_id", familyId).order("sort_order"),
+  ]);
+
+  if (tasksError) {
+    console.warn("[cloudRepository] 读取云端任务失败，降级到本地", tasksError.message);
+    return db.tasks.toArray();
+  }
+
+  const tasks = (tasksData || []).map(rowToTask);
+  const taskMap = new Map<string, Task>();
+  tasks.forEach((t) => {
+    t.checklistItems = [];
+    taskMap.set(t.id, t);
+  });
+
+  (checklistData || []).forEach((row) => {
+    const task = taskMap.get(row.task_id);
+    if (task) {
+      task.checklistItems!.push({
+        id: row.id,
+        title: row.title,
+        done: row.done,
+        sortOrder: row.sort_order,
+      });
+    }
+  });
+
+  // cache to local IndexedDB
+  if (tasks.length > 0) {
+    await db.tasks.bulkPut(tasks).catch((e) =>
+      console.warn("[cloudRepository] 缓存到本地失败", e)
+    );
+  }
+
+  return tasks;
+}
+
+/** Load all occurrence statuses from Supabase */
+async function fetchOccurrences(familyId: string): Promise<TaskOccurrenceStatus[]> {
+  if (!supabase) return db.taskOccurrenceStatuses.toArray();
+  const { data, error } = await supabase
+    .from("task_occurrence_statuses")
+    .select("*")
+    .eq("family_id", familyId);
+  if (error) {
+    console.warn("[cloudRepository] 读取云端单次状态失败，降级到本地", error.message);
+    return db.taskOccurrenceStatuses.toArray();
+  }
+  const statuses: TaskOccurrenceStatus[] = (data || []).map((row) => ({
+    id: row.id,
+    taskId: row.task_id,
+    occurrenceDate: row.occurrence_date,
+    status: row.status,
+    overrideDate: row.override_date ?? undefined,
+    overrideTitle: row.override_title ?? undefined,
+    overrideNote: row.override_note ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+  if (statuses.length > 0) {
+    await db.taskOccurrenceStatuses.bulkPut(statuses).catch(() => {});
+  }
+  return statuses;
+}
+
+// ─── cloudRepository object ──────────────────────────────────────────────────
+
+let _familyId: string | null = null;
+
+export const cloudRepository = {
+  /** Must be called once after login with the resolved familyId */
+  setFamilyId(id: string) {
+    _familyId = id;
+  },
+
+  getFamilyId(): string | null {
+    return _familyId;
+  },
+
+  // ── Read methods: delegate to taskRepository but using cloud-cached data
+  // Because taskRepository reads from IndexedDB, and we keep IndexedDB in sync,
+  // we can use taskRepository for all complex query logic after a fetch.
+
+  async listAll() {
+    if (_familyId) await fetchAndCacheTasks(_familyId);
+    return taskRepository.listAll();
+  },
+
+  async getTasksForDate(date: string, options?: { forCalendar?: boolean }) {
+    // Use cached IndexedDB data — caller is responsible for refreshing
+    return taskRepository.getTasksForDate(date, options);
+  },
+
+  async getOverdueTasks(date: string) {
+    return taskRepository.getOverdueTasks(date);
+  },
+
+  async getWeekPools(date: string) {
+    return taskRepository.getWeekPools(date);
+  },
+
+  async getChildren(parentId: string, weekStart?: string) {
+    return taskRepository.getChildren(parentId, weekStart);
+  },
+
+  async getPlanSummary(date: string, period: "week" | "month") {
+    return taskRepository.getPlanSummary(date, period);
+  },
+
+  async getWeekOverview(date: string) {
+    return taskRepository.getWeekOverview(date);
+  },
+
+  async getMonthOverview(date: string) {
+    return taskRepository.getMonthOverview(date);
+  },
+
+  async getCourseStatistics(startDate: string, endDate: string) {
+    return taskRepository.getCourseStatistics(startDate, endDate);
+  },
+
+  // ── Refresh from cloud (call before rendering a page) ────────────────────
+
+  async refreshFromCloud(): Promise<void> {
+    if (!_familyId) return;
+    const [tasks, statuses] = await Promise.all([
+      fetchAndCacheTasks(_familyId),
+      fetchOccurrences(_familyId),
+    ]);
+    // cache occurrences
+    if (statuses.length > 0) {
+      await db.taskOccurrenceStatuses.bulkPut(statuses).catch(() => {});
+    }
+    // also fetch planPeriods
+    if (supabase) {
+      const { data } = await supabase
+        .from("plan_periods")
+        .select("*")
+        .eq("family_id", _familyId);
+      if (data && data.length > 0) {
+        const periods: PlanPeriod[] = data.map((row) => ({
+          id: row.id,
+          name: row.name,
+          type: row.type,
+          startDate: row.start_date,
+          endDate: row.end_date,
+          isActive: row.is_active,
+          note: row.note ?? undefined,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        }));
+        await db.planPeriods.bulkPut(periods).catch(() => {});
+      }
+    }
+  },
+
+  // ── Write methods ─────────────────────────────────────────────────────────
+
+  async create(draft: TaskDraft) {
+    const task = await taskRepository.create(draft);
+    if (_familyId) {
+      await upsertTask(task, _familyId).catch((e) =>
+        console.error("[cloudRepository] 创建任务云端同步失败", e)
+      );
+    }
+    return task;
+  },
+
+  async update(id: string, changes: Partial<TaskDraft>) {
+    const task = await taskRepository.update(id, changes);
+    if (_familyId) {
+      await upsertTask(task, _familyId).catch((e) =>
+        console.error("[cloudRepository] 更新任务云端同步失败", e)
+      );
+    }
+    return task;
+  },
+
+  async remove(id: string) {
+    await taskRepository.remove(id);
+    if (_familyId) {
+      // Fetch the soft-deleted task and upsert it to cloud with deleted_at
+      const task = await db.tasks.get(id);
+      if (task) {
+        await upsertTask(task, _familyId).catch((e) =>
+          console.error("[cloudRepository] 删除任务云端同步失败", e)
+        );
+      }
+    }
+  },
+
+  async batchRemove(ids: string[]) {
+    const count = await taskRepository.batchRemove(ids);
+    if (_familyId) {
+      const tasks = await db.tasks.bulkGet(ids);
+      for (const task of tasks) {
+        if (task) {
+          await upsertTask(task, _familyId).catch((e) =>
+            console.error("[cloudRepository] 批量删除云端同步失败", e)
+          );
+        }
+      }
+    }
+    return count;
+  },
+
+  async restore(id: string) {
+    await taskRepository.restore(id);
+    if (_familyId) {
+      const task = await db.tasks.get(id);
+      if (task) {
+        await upsertTask(task, _familyId).catch((e) =>
+          console.error("[cloudRepository] 恢复任务云端同步失败", e)
+        );
+      }
+    }
+  },
+
+  async copyToDate(id: string, date: string) {
+    const copy = await taskRepository.copyToDate(id, date);
+    if (_familyId) {
+      await upsertTask(copy, _familyId).catch((e) =>
+        console.error("[cloudRepository] 复制任务云端同步失败", e)
+      );
+    }
+    return copy;
+  },
+
+  async allocateTask(parentId: string, weekDate?: string) {
+    const count = await taskRepository.allocateTask(parentId, weekDate);
+    if (_familyId) {
+      // Re-upload all children of this parent
+      const children = await db.tasks
+        .where("parentTaskId")
+        .equals(parentId)
+        .toArray();
+      for (const child of children) {
+        await upsertTask(child, _familyId).catch(() => {});
+      }
+    }
+    return count;
+  },
+
+  async setDisplayStatus(task: TaskDisplay, status: TaskStatus) {
+    await taskRepository.setDisplayStatus(task, status);
+    if (_familyId) {
+      const updated = await db.tasks.get(task.id);
+      if (updated) {
+        await upsertTask(updated, _familyId).catch((e) =>
+          console.error("[cloudRepository] 设置状态云端同步失败", e)
+        );
+      }
+      if (task.occurrenceDate) {
+        const id = `${task.id}:${task.occurrenceDate}`;
+        const occ = await db.taskOccurrenceStatuses.get(id);
+        if (occ) {
+          await upsertOccurrence(occ, _familyId).catch(() => {});
+        }
+      }
+    }
+  },
+
+  async toggleChecklistItem(taskId: string, itemId: string, occurrenceDate?: string) {
+    await taskRepository.toggleChecklistItem(taskId, itemId, occurrenceDate);
+    if (_familyId) {
+      const updated = await db.tasks.get(taskId);
+      if (updated) {
+        await upsertTask(updated, _familyId).catch((e) =>
+          console.error("[cloudRepository] checklist 更新云端同步失败", e)
+        );
+      }
+      if (occurrenceDate) {
+        const id = `${taskId}:${occurrenceDate}`;
+        const occ = await db.taskOccurrenceStatuses.get(id);
+        if (occ) {
+          await upsertOccurrence(occ, _familyId).catch(() => {});
+        }
+      }
+    }
+  },
+
+  async setOccurrence(
+    taskId: string,
+    occurrenceDate: string,
+    status: OccurrenceStatus,
+    overrideDate?: string,
+    overrideNote?: string
+  ) {
+    await taskRepository.setOccurrence(taskId, occurrenceDate, status, overrideDate, overrideNote);
+    if (_familyId) {
+      const id = `${taskId}:${occurrenceDate}`;
+      const occ = await db.taskOccurrenceStatuses.get(id);
+      if (occ) {
+        await upsertOccurrence(occ, _familyId).catch((e) =>
+          console.error("[cloudRepository] 单次状态云端同步失败", e)
+        );
+      }
+    }
+  },
+
+  // ── Plan periods ──────────────────────────────────────────────────────────
+
+  async listPlanPeriods() {
+    return taskRepository.listPlanPeriods();
+  },
+
+  async createPlanPeriod(input: Omit<PlanPeriod, "id" | "createdAt" | "updatedAt">) {
+    const period = await taskRepository.createPlanPeriod(input);
+    if (_familyId && supabase) {
+      const row = stripUndefined({
+        id: period.id,
+        family_id: _familyId,
+        name: period.name,
+        type: period.type ?? "holiday",
+        start_date: toDateOrNull(period.startDate),
+        end_date: toDateOrNull(period.endDate),
+        is_active: period.isActive ?? true,
+        note: period.note ?? null,
+        created_at: toTimestampOrNull(period.createdAt) ?? new Date().toISOString(),
+        updated_at: toTimestampOrNull(period.updatedAt) ?? new Date().toISOString(),
+      });
+      await supabase.from("plan_periods").upsert(row, { onConflict: "id" }).then(({ error }) => {
+        if (error) console.error("[cloudRepository] 创建假期阶段云端同步失败", error);
+      });
+    }
+    return period;
+  },
+
+  async updatePlanPeriod(id: string, changes: Partial<Omit<PlanPeriod, "id" | "createdAt" | "updatedAt">>) {
+    await taskRepository.updatePlanPeriod(id, changes);
+    if (_familyId && supabase) {
+      const period = await db.planPeriods.get(id);
+      if (period) {
+        const row = stripUndefined({
+          id: period.id,
+          family_id: _familyId,
+          name: period.name,
+          type: period.type ?? "holiday",
+          start_date: toDateOrNull(period.startDate),
+          end_date: toDateOrNull(period.endDate),
+          is_active: period.isActive ?? true,
+          note: period.note ?? null,
+          created_at: toTimestampOrNull(period.createdAt) ?? new Date().toISOString(),
+          updated_at: toTimestampOrNull(period.updatedAt) ?? new Date().toISOString(),
+        });
+        await supabase.from("plan_periods").upsert(row, { onConflict: "id" }).then(({ error }) => {
+          if (error) console.error("[cloudRepository] 更新假期阶段云端同步失败", error);
+        });
+      }
+    }
+  },
+
+  async removePlanPeriod(id: string) {
+    await taskRepository.removePlanPeriod(id);
+    if (_familyId && supabase) {
+      await supabase.from("plan_periods").delete().eq("id", id).then(({ error }) => {
+        if (error) console.error("[cloudRepository] 删除假期阶段云端同步失败", error);
+      });
+    }
+  },
+
+  // ── Reading logs (delegate to local only for now) ─────────────────────────
+
+  async listReadingLogs(taskId: string, weekDate: string) {
+    return taskRepository.listReadingLogs(taskId, weekDate);
+  },
+
+  async addReadingLog(input: { taskId: string; date: string; amount: number; title?: string; note?: string }) {
+    return taskRepository.addReadingLog(input);
+  },
+
+  async undoLatestReadingLog(taskId: string, weekDate: string) {
+    return taskRepository.undoLatestReadingLog(taskId, weekDate);
+  },
+
+  // ── Backup (delegate to local for now) ───────────────────────────────────
+
+  async exportBackup(): Promise<BackupData> {
+    return taskRepository.exportBackup();
+  },
+
+  async importBackup(input: unknown) {
+    return taskRepository.importBackup(input);
+  },
+
+  async findTimeConflicts(draft: TaskDraft, excludeId?: string) {
+    return taskRepository.findTimeConflicts(draft, excludeId);
+  },
+};

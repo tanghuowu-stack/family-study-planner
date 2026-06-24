@@ -18,7 +18,7 @@ import { fetchCloudDataPreview, type CloudPreviewResult, checkCloudDiff, type Cl
 import { downloadCloudDataToLocal, type DownloadResult } from "../lib/cloudDownload";
 import { supabaseConfigured } from "../lib/supabase";
 
-export function CloudLoginPanel() {
+export function CloudLoginPanel({ cloudMode }: { cloudMode?: boolean }) {
   const [auth, setAuth] = useState<CloudAuthState | null>(null);
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
@@ -168,6 +168,11 @@ export function CloudLoginPanel() {
           {isLoggedIn && (
             <span className="rounded-full bg-sage-50 px-2 py-0.5 text-xs font-medium text-sage-700">
               已连接
+            </span>
+          )}
+          {isLoggedIn && (
+            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${cloudMode ? "bg-blue-50 text-blue-700" : "bg-stone-100 text-stone-500"}`}>
+              {cloudMode ? "云端同步模式" : "本地模式"}
             </span>
           )}
         </div>
@@ -481,7 +486,9 @@ export function CloudLoginPanel() {
       </div>
 
       <p className="mt-4 text-xs text-stone-400">
-        第一阶段：云端仅用于验证连接。任务数据仍保存在本地 IndexedDB，不影响正常使用。
+        {cloudMode
+          ? "云端同步模式：新增、编辑、删除、完成状态会自动写入 Supabase。另一台设备刷新后可看到最新数据。"
+          : "未登录时使用本地模式，任务数据保存在本地 IndexedDB，不影响正常使用。登录后将启用云端同步。"}
       </p>
     </section>
   );

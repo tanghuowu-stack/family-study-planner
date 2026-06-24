@@ -4,6 +4,7 @@
 
 ## 2026-06-24
 
+- Supabase Step 4：新增云端读取预览。在 `src/lib/cloudRead.ts` 中实现按 `family_id` 读取 `tasks`、`task_checklist_items`、`task_occurrence_statuses`、`plan_periods`。在云同步面板提供读取结果预览，对比本地与云端数据量，并展示最近 5 条任务作为数据完整性抽查。本轮不切换正式页面数据源。
 - 修复 Supabase 上传 activity_logs 报错（permission denied）：Step 3 第一阶段上传暂时跳过 activity_logs，避免追加型日志表因 upsert 触发 update 权限需求；核心任务、清单小项、单次状态和假期阶段仍正常上传。
 - 修复 Supabase 上传 tasks 失败（not-null constraint）：为本地旧数据补齐必填字段的默认兜底值（如 `calendar_visibility` 默认 "show"，`title` 默认 ""，`status` 默认 "todo" 等），避免因旧数据字段缺失导致插入失败。
 - 修复 Supabase 上传失败：新增 date 和 timestamp 字段清洗，过滤掉空字符串 `""`，避免 PostgreSQL 报错。对于无效的必填日期自动跳过并统计。

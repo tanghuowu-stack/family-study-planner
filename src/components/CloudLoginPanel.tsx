@@ -14,6 +14,7 @@ import {
   type CloudAuthState,
 } from "../lib/cloudAuth";
 import { uploadLocalDataToCloud, type UploadResult } from "../lib/cloudUpload";
+import { fetchCloudDataPreview, type CloudPreviewResult } from "../lib/cloudRead";
 import { supabaseConfigured } from "../lib/supabase";
 
 export function CloudLoginPanel() {
@@ -26,6 +27,9 @@ export function CloudLoginPanel() {
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [uploadError, setUploadError] = useState("");
+  const [reading, setReading] = useState(false);
+  const [previewResult, setPreviewResult] = useState<CloudPreviewResult | null>(null);
+  const [previewError, setPreviewError] = useState("");
 
   const refresh = async () => {
     setLoading(true);
@@ -79,6 +83,21 @@ export function CloudLoginPanel() {
       setUploadError(err instanceof Error ? `上传失败：${err.message}` : "上传失败");
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleReadCloud = async () => {
+    if (!auth?.familyId) return;
+    setReading(true);
+    setPreviewResult(null);
+    setPreviewError("");
+    try {
+      const result = await fetchCloudDataPreview(auth.familyId);
+      setPreviewResult(result);
+    } catch (err) {
+      setPreviewError(err instanceof Error ? `读取云端数据失败：${err.message}` : "读取云端数据失败");
+    } finally {
+      setReading(false);
     }
   };
 
@@ -249,6 +268,68 @@ export function CloudLoginPanel() {
           </div>
         )}
       </div>
+
+      {/* 读取云端数据预览区域 */}
+      {isLoggedIn && auth?.familyId && (
+        <div className="mt-6 border-t border-stone-100 pt-4 space-y-2">
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={handleReadCloud}
+              disabled={reading || loading}
+              className="flex w-fit items-center gap-1.5 rounded-lg border border-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:bg-stone-50 disabled:text-stone-400 transition-colors"
+            >
+              <Cloud className="h-4 w-4" />
+              {reading ? "读取中…" : "读取云端数据预览"}
+            </button>
+          </div>
+          
+          {previewResult && (
+            <div className="mt-3 space-y-4 rounded-lg bg-stone-50 p-4 text-sm text-stone-700 border border-stone-200">
+              <div>
+                <p className="font-semibold mb-2">云端读取预览</p>
+                <ul className="space-y-1 list-disc list-inside text-stone-600">
+                  <li>任务总数：{previewResult.cloudCounts.tasks}</li>
+                  <li>有效任务：{previewResult.cloudCounts.activeTasks}</li>
+                  <li>已删除任务：{previewResult.cloudCounts.deletedTasks}</li>
+                  <li>清单小项：{previewResult.cloudCounts.checklistItems}</li>
+                  <li>单次状态：{previewResult.cloudCounts.occurrenceStatuses}</li>
+                  <li>假期阶段：{previewResult.cloudCounts.planPeriods}</li>
+                </ul>
+              </div>
+
+              <div>
+                <p className="font-semibold mb-2">本地 / 云端对比</p>
+                <ul className="space-y-1 list-disc list-inside text-stone-600">
+                  <li>任务：本地 {previewResult.localCounts.tasks} / 云端 {previewResult.cloudCounts.tasks}</li>
+                  <li>清单小项：本地 {previewResult.localCounts.checklistItems} / 云端 {previewResult.cloudCounts.checklistItems}</li>
+                  <li>单次状态：本地 {previewResult.localCounts.occurrenceStatuses} / 云端 {previewResult.cloudCounts.occurrenceStatuses}</li>
+                  <li>假期阶段：本地 {previewResult.localCounts.planPeriods} / 云端 {previewResult.cloudCounts.planPeriods}</li>
+                </ul>
+              </div>
+
+              {previewResult.recentTasks.length > 0 && (
+                <div>
+                  <p className="font-semibold mb-2">最近 {previewResult.recentTasks.length} 条云端任务</p>
+                  <ol className="space-y-1.5 list-decimal list-inside text-xs text-stone-600">
+                    {previewResult.recentTasks.map(t => (
+                      <li key={t.id} className="truncate">
+                        {t.title || "无标题"} / {t.mainCategory} / {t.date || t.startDate || t.timeType}
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </div>
+          )}
+
+          {previewError && (
+            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600 flex items-start gap-2">
+              <span className="text-red-500 font-bold">!</span>
+              <span>{previewError}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 操作按钮 */}
       <div className="mt-4 flex gap-2">

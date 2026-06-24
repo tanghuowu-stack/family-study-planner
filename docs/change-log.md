@@ -4,6 +4,7 @@
 
 ## 2026-06-24
 
+- 新增 Supabase 同步第一阶段 SQL 草案与实施说明：包含 families、profiles、tasks、task_checklist_items、task_occurrence_statuses、plan_periods、activity_logs、app_settings 表及基础 RLS 策略（`docs/supabase-schema.sql`、`docs/supabase-sync-implementation-plan.md`）。
 - 修复 recurring 任务假期自动归属逻辑：每周/每日重复任务若有明确结束日期且完整落入同一假期，自动绑定该假期；长期重复任务仍不自动归属。
 - 新增任务表单根据日期自动推断假期归属：单日、指定日期列表、完整日期范围落入同一假期时自动绑定假期，跨阶段或长期任务保留手动选择。
 - 修复课程类任务误进入 weeklyQuota 月统计分支，FCE 精讲本月计划按自然月实际课程次数统计。

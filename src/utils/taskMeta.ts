@@ -50,7 +50,8 @@ export const ROLLOVER_META: Record<RolloverMode, string> = {
 export const WEEKDAY_LABELS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 export const EXTRA_CONTENT_OPTIONS: { value: ExtraContentType; label: string }[] = [
   { value: "class", label: "上课" }, { value: "homework", label: "作业" }, { value: "practice", label: "练习" },
-  { value: "dictation", label: "听写" }, { value: "recitation", label: "背诵" }, { value: "other", label: "其他" },
+  { value: "dictation", label: "听写" }, { value: "recitation", label: "背诵" }, { value: "reading", label: "阅读" },
+  { value: "other", label: "其他" },
 ];
 export const extraContentLabel = (value?: ExtraContentType) => EXTRA_CONTENT_OPTIONS.find((item) => item.value === value)?.label ?? "其他";
 
@@ -61,7 +62,9 @@ export const taskDisplayName = (task: { mainCategory: MainCategory; subCategory:
   const base = `${MAIN_CATEGORY_META[task.mainCategory].label}·${subCategoryLabel(task.mainCategory, task.subCategory)}${task.mainCategory === "extraHomework" ? `｜${extraContentLabel(task.extraContentType)}` : ""}`;
   const title = task.title.trim();
   const repeatedInterestTitle = task.mainCategory === "interestClass" && title === subCategoryLabel(task.mainCategory, task.subCategory);
-  return title && !repeatedInterestTitle ? `${base} - ${title}` : base;
+  // 课外·其他｜阅读 且标题为空时，不显示多余的" - 阅读"
+  const isReadingNoTitle = task.mainCategory === "extraHomework" && task.extraContentType === "reading" && !title;
+  return title && !repeatedInterestTitle && !isReadingNoTitle ? `${base} - ${title}` : base;
 };
 
 export const isCourseTask = (task: { mainCategory: MainCategory; subCategory: string; extraContentType?: ExtraContentType }) =>

@@ -1,4 +1,5 @@
 import { CalendarCheck2, CalendarDays, ClipboardList, Database, Home, Plus, Rows3 } from "lucide-react";
+import { addDays } from "date-fns";
 import { useState } from "react";
 import { TaskForm } from "./components/TaskForm";
 import { taskRepository } from "./data/taskRepository";
@@ -8,7 +9,7 @@ import { MonthPage } from "./pages/MonthPage";
 import { TaskManagementPage } from "./pages/TaskManagementPage";
 import { WeekPage } from "./pages/WeekPage";
 import type { Task, TaskDisplay, TaskDraft, TaskStatus } from "./types/task";
-import { todayKey } from "./utils/date";
+import { fromDateKey, todayKey, toDateKey } from "./utils/date";
 
 type Page = "today" | "week" | "month" | "tasks" | "backup";
 const navItems = [
@@ -33,7 +34,7 @@ export default function App() {
   };
   const changeStatus = async (task: TaskDisplay, status: TaskStatus) => { await taskRepository.setDisplayStatus(task, status); refresh(); notify(status === "done" ? "已完成" : "状态已更新"); };
   const toggleChecklist = async (task: TaskDisplay, itemId: string) => { await taskRepository.toggleChecklistItem(task.id, itemId, task.occurrenceDate); refresh(); };
-  const copyTask = async (task: Task) => { const date = prompt("复制到哪一天？请输入 YYYY-MM-DD", selectedDate); if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return; await taskRepository.copyToDate(task.id, date); refresh(); notify(`已复制到 ${date}`); };
+  const copyTask = async (task: Task) => { const taskDate = task.date ?? task.startDate ?? selectedDate; const defaultDate = toDateKey(addDays(fromDateKey(taskDate), 1)); const date = prompt("复制到哪一天？请输入 YYYY-MM-DD", defaultDate); if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return; await taskRepository.copyToDate(task.id, date); refresh(); notify(`已复制到 ${date}`); };
   const deleteTask = async (task: Task) => { if (!confirm(`确定删除“${task.title}”吗？${task.timeType === "recurring" ? "这会删除整个重复任务。" : ""}`)) return; await taskRepository.remove(task.id); refresh(); notify("任务已删除"); };
   const cancelOccurrence = async (task: TaskDisplay) => { if (!task.occurrenceDate || !confirm("只取消这一次课程吗？")) return; await taskRepository.setOccurrence(task.id, task.occurrenceDate, "cancelled"); refresh(); notify("本次课程已取消"); };
   const postponeOccurrence = async (task: TaskDisplay) => { if (!task.occurrenceDate) return; const date = prompt("延期到哪一天？请输入 YYYY-MM-DD", task.overrideDate ?? task.occurrenceDate); if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return; const note = prompt("调整备注（可选）", task.overrideNote ?? "") ?? ""; await taskRepository.setOccurrence(task.id, task.occurrenceDate, "postponed", date, note); refresh(); notify(`已延期到 ${date}`); };

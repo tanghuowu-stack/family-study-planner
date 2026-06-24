@@ -252,13 +252,32 @@ export const taskRepository = {
     const grouped = new Map<string, PlanOverviewItem>();
     const travelDays = new Set<string>();
     const completedTravelDays = new Set<string>();
+    // 判断任务是否应出现在本周汇总：阅读类 OR 上课类 OR 多日/日期范围大作业（排除钢琴练习、事项、单日任务）
+    const shouldIncludeInWeekSummary = (task: TaskDisplay) => {
+      if (task.extraContentType === "reading") return true;   // 课外·其他｜阅读显示
+      if (isCourseTask(task)) return true;
+      if (task.mainCategory === "temporary") return false;
+      if (task.mainCategory === "interestClass") return false; // 钢琴练习等非上课兴趣班不显示
+      // 只保留日期范围或重复类型的作业（多日大作业）
+      return isRangeSchedule(task) || task.timeType === "recurring" || task.schedulePattern === "weeklyRecurring" || task.schedulePattern === "dailyRecurring" || task.schedulePattern === "dateRangeDaily" || task.schedulePattern === "dateRangeWeekdays";
+    };
     daily.forEach((tasks, index) => tasks.filter((task) => !task.parentTaskId).forEach((task) => {
       if (task.mainCategory === "temporary" && task.subCategory === "travel") {
         travelDays.add(days[index]);
         if (task.status === "done") completedTravelDays.add(days[index]);
         return;
       }
-      const current = grouped.get(task.id) ?? { id: task.id, label: task.title || subCategoryLabel(task.mainCategory, task.subCategory), done: 0, total: 0, unit: "次", group: taskSubjectGroup(task), isCourse: isCourseTask(task) };
+      if (!shouldIncludeInWeekSummary(task)) return;
+      const isReading = task.mainCategory === "extraHomework" && task.extraContentType === "reading";
+      const current = grouped.get(task.id) ?? {
+        id: task.id,
+        label: task.title || (isReading ? "阅读" : subCategoryLabel(task.mainCategory, task.subCategory)),
+        done: 0,
+        total: 0,
+        unit: "次",
+        group: isReading ? "other" : taskSubjectGroup(task),
+        isCourse: isCourseTask(task)
+      };
       if (isRangeSchedule(task) && !isCourseTask(task)) {
         current.total = 1;
         if (task.status === "done") current.done = 1;
@@ -283,7 +302,9 @@ export const taskRepository = {
     const tasks = allTasks.filter((task) => isActiveTask(task) && task.childVisible);
     const monthDays = eachDayOfInterval({ start: parseISO(start), end: parseISO(end) }).map(toDateKey);
     const overview: PlanOverviewItem[] = [];
-    const otherQuotas = tasks.filter((task) => task.mainCategory !== "readingPlan" && task.calendarVisibility !== "hide" && task.weeklyQuota?.enabled);
+    // 课程类任务（extraHomework class / interestClass）在下面的 interestGroups 里按自然月逐日统计，不再走 weeklyQuota 路径
+    const otherQuotas = tasks.filter((task) => task.mainCategory !== "readingPlan" && task.calendarVisibility !== "hide" && task.weeklyQuota?.enabled && !isCourseTask(task));
+    // 本月有多少个不同的周起始日（用于 isWeeklyRecurring 计划目标计算）
     const monthWeekCount = new Set(monthDays.map(getWeekStartKey)).size;
     otherQuotas.forEach((plan) => {
       const target = plan.weeklyQuota!.targetCount * (plan.weeklyQuota!.isWeeklyRecurring ? monthWeekCount : 1);
@@ -298,13 +319,30 @@ export const taskRepository = {
       if (!overview.some((item) => item.id === task.id)) overview.push({ id: task.id, label: task.title || subCategoryLabel(task.mainCategory, task.subCategory), done: task.status === "done" ? 1 : 0, total: 1, unit: "次", group: taskSubjectGroup(task), isCourse: false });
     });
     const interestGroups = new Map<string, { done: number; total: number; group: PlanOverviewItem["group"]; isCourse: boolean }>();
-    for (const task of tasks.filter((item) => item.calendarVisibility !== "hide" && (item.mainCategory === "interestClass" || (item.mainCategory === "extraHomework" && item.extraContentType === "class")))) {
+    const countTasks = tasks.filter((item) => {
+      if (item.mainCategory === "interestClass") return item.calendarVisibility !== "hide";
+      if (item.mainCategory === "extraHomework") {
+        if (item.extraContentType === "class") return item.calendarVisibility !== "hide";
+        if (item.extraContentType === "reading") return true;
+        if (item.extraContentType === "dictation") return true;
+      }
+      return false;
+    });
+    for (const task of countTasks) {
       for (const day of monthDays) {
         if (!scheduleOccursOn(task, day)) continue;
         const status = isOccurrenceSchedule(task) ? occurrences.find((item) => item.taskId === task.id && item.occurrenceDate === day)?.status ?? "todo" : task.status;
         if (status === "cancelled" || status === "postponed") continue;
-        const key = task.title || subCategoryLabel(task.mainCategory, task.subCategory);
-        const group = interestGroups.get(key) ?? { done: 0, total: 0, group: taskSubjectGroup(task), isCourse: isCourseTask(task) };
+        const isReading = task.mainCategory === "extraHomework" && task.extraContentType === "reading";
+        const key = task.title
+          ? (isReading ? `阅读 - ${task.title}` : task.title)
+          : (isReading ? "阅读" : subCategoryLabel(task.mainCategory, task.subCategory));
+        const group = interestGroups.get(key) ?? {
+          done: 0,
+          total: 0,
+          group: isReading ? "other" : taskSubjectGroup(task),
+          isCourse: isCourseTask(task)
+        };
         group.total += 1; if (status === "done") group.done += 1;
         interestGroups.set(key, group);
       }

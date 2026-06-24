@@ -5,7 +5,7 @@ export type MainCategory = "school" | "extraHomework" | "interestClass" | "readi
 
 export type SchoolHomeworkType = "chinese" | "math" | "english" | "other";
 export type ExtraHomeworkType = "chinese" | "math" | "english" | "other";
-export type ExtraContentType = "class" | "homework" | "practice" | "dictation" | "recitation" | "other";
+export type ExtraContentType = "class" | "homework" | "practice" | "dictation" | "recitation" | "other" | "reading";
 export type InterestClassType =
   | "piano" | "swimming" | "rollerSkating" | "pianoPractice";
 export type ReadingPlanType = "chineseReading" | "englishReading";

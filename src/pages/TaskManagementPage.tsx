@@ -11,7 +11,7 @@ const order: MainCategory[] = ["school", "extraHomework", "interestClass", "temp
 export function TaskManagementPage(props: Props) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [periods, setPeriods] = useState<PlanPeriod[]>([]);
-  const [filter, setFilter] = useState<"all" | "current" | "regular" | "holiday">("all");
+  const [filter, setFilter] = useState<"all" | "current" | "regular" | "holiday">("current");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showDone, setShowDone] = useState(false);
   const [showAllDone, setShowAllDone] = useState(false);

@@ -420,5 +420,24 @@ create policy "app_settings_delete" on public.app_settings
   for delete using (family_id = public.get_my_family_id());
 
 -- ============================================================
+-- 权限配置：授权 authenticated 角色读写业务表
+-- （第一阶段在应用层通过 anon key 访问，需要基础 CRUD 权限）
+-- ============================================================
+
+grant usage on schema public to anon, authenticated;
+
+grant select, insert, update, delete on table public.families to authenticated;
+grant select, insert, update, delete on table public.profiles to authenticated;
+grant select, insert, update, delete on table public.tasks to authenticated;
+grant select, insert, update, delete on table public.task_checklist_items to authenticated;
+grant select, insert, update, delete on table public.task_occurrence_statuses to authenticated;
+grant select, insert, update, delete on table public.plan_periods to authenticated;
+grant select, insert, update, delete on table public.app_settings to authenticated;
+
+grant select, insert on table public.activity_logs to authenticated;
+
+grant execute on function public.get_my_family_id() to authenticated;
+
+-- ============================================================
 -- END OF SCHEMA
 -- ============================================================

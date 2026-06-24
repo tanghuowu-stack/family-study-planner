@@ -6,12 +6,13 @@
 
 ## 1. 本阶段范围
 
-- [x] 生成 `docs/supabase-schema.sql`（所有表 + RLS + 触发器）
+- [x] 生成 `docs/supabase-schema.sql`（所有表 + RLS + 触发器 + GRANT 授权）
 - [x] 修复 RLS 初始化死锁（`get_my_family_id` search_path、families/profiles 策略）
-- [ ] 在 Supabase 执行 SQL（下一步手动操作）
-- [ ] 前端接入 `cloudRepository`（后续 Step 2）
+- [x] 修复 SQL 执行顺序（`get_my_family_id()` 移至 profiles 表之后）
+- [x] 前端接入 Supabase client + 邮箱登录 + family/profile 自动初始化（Step 2，面板隐藏内部 ID 优化完成）
 - [ ] JSON 备份迁移（后续 Step 3）
-- [ ] 双端测试（后续 Step 4）
+- [ ] 任务数据切换到云端读写（后续 Step 4）
+- [ ] 双端测试（后续 Step 5）
 
 ---
 
@@ -92,29 +93,31 @@ async function ensureProfileInitialized() {
 
   if (profile) return; // 已初始化，跳过
 
-  // 2. 创建 family（此时 RLS 只要求 auth.uid() is not null）
-  const { data: family, error: familyError } = await supabase
+  // 2. 在前端生成唯一的 familyId，避免 insert 后依赖 select 触发 RLS 拦截
+  const familyId = crypto.randomUUID();
+
+  // 3. 创建 family（此时 RLS 只要求 auth.uid() is not null）
+  //    注意：直接传入 id，且不要使用 .select().single()，防止因 profile 未建而触发 get_my_family_id 返回 null
+  const { error: familyError } = await supabase
     .from('families')
-    .insert({ name: '家庭学习计划' })
-    .select('id')
-    .single();
+    .insert({ id: familyId, name: '家庭学习计划' });
 
   if (familyError) throw familyError;
 
-  // 3. 创建 profile，绑定 family_id
+  // 4. 创建 profile，绑定 family_id
   const { error: profileError } = await supabase
     .from('profiles')
     .insert({
       id: (await supabase.auth.getUser()).data.user!.id,
-      family_id: family.id,
+      family_id: familyId,
       display_name: '家庭账号',
       role: 'member',
     });
 
   if (profileError) throw profileError;
 
-  // 4. 此后 get_my_family_id() 即可正常工作
-  //    所有业务数据写入时携带 family_id = family.id
+  // 5. 此后 get_my_family_id() 即可正常工作
+  //    所有业务数据写入时携带 family_id = familyId
 }
 ```
 

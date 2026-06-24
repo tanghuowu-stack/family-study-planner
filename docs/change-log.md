@@ -4,6 +4,10 @@
 
 ## 2026-06-24
 
+- 云同步面板默认隐藏完整 family_id，仅作为高级调试信息展示。
+- Supabase schema 补充 authenticated 角色的表权限 GRANT，避免前端插入 families/profiles 时 permission denied。
+- 修复 Supabase family/profile 初始化卡死问题：避免 insert family 后使用 `.select().single()` 触发 RLS 拦截，改为在前端生成 `familyId` (使用 `crypto.randomUUID()`) 并直接写入。增加错误捕获与页面提示。
+- 接入 Supabase 前端最小闭环（Step 2）：新增 Supabase client（`src/lib/supabase.ts`）、邮箱+密码登录/退出（`src/lib/cloudAuth.ts`）、family/profile 自动初始化和云同步状态面板（`src/components/CloudLoginPanel.tsx`）；任务数据仍保持 IndexedDB 本地模式。
 - 修复 Supabase SQL 执行顺序：将 get_my_family_id() 移动到 profiles 表创建之后，避免首次执行时 public.profiles does not exist。
 - 修复 Supabase SQL 草案的首个家庭账号初始化问题：调整 families/profiles RLS，避免 get_my_family_id 初始化死锁，补充 search_path 和必要索引。
 - 新增 Supabase 同步第一阶段 SQL 草案与实施说明：包含 families、profiles、tasks、task_checklist_items、task_occurrence_statuses、plan_periods、activity_logs、app_settings 表及基础 RLS 策略（`docs/supabase-schema.sql`、`docs/supabase-sync-implementation-plan.md`）。

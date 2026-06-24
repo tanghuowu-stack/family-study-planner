@@ -7,6 +7,7 @@
 ## 1. 本阶段范围
 
 - [x] 生成 `docs/supabase-schema.sql`（所有表 + RLS + 触发器）
+- [x] 修复 RLS 初始化死锁（`get_my_family_id` search_path、families/profiles 策略）
 - [ ] 在 Supabase 执行 SQL（下一步手动操作）
 - [ ] 前端接入 `cloudRepository`（后续 Step 2）
 - [ ] JSON 备份迁移（后续 Step 3）
@@ -33,7 +34,8 @@
 建议执行顺序（SQL 文件内已按顺序排列）：
 
 ```
-set_updated_at() 函数
+public.set_updated_at() 函数
+public.get_my_family_id() 函数
 → families
 → profiles
 → tasks
@@ -42,7 +44,7 @@ set_updated_at() 函数
 → plan_periods
 → activity_logs
 → app_settings
-→ RLS 策略
+→ RLS 策略（families、profiles、tasks…）
 ```
 
 ### 2.3 确认结果
@@ -59,6 +61,66 @@ set_updated_at() 函数
 | plan_periods              | 0          |
 | activity_logs             | 0          |
 | app_settings              | 0          |
+
+---
+
+## 2a. 首个家庭账号初始化流程
+
+> 修订版说明：SQL 已修复 RLS 死锁。`families_insert` 策略改为 `auth.uid() is not null`，允许已登录用户创建 family；`profiles` 策略不再调用 `get_my_family_id()`，避免递归。全程只用 **anon key + RLS**，不需要 service role key 进入前端。
+
+### 安全注意事项
+
+- **`SUPABASE_SERVICE_ROLE_KEY` 绝不能出现在前端代码、`.env.local` 的 `VITE_` 变量、Git 仓库或截图中。**
+- 第一阶段只用 `VITE_SUPABASE_ANON_KEY`（公开 anon key）配合 RLS。
+- 如果将来需要更安全的邀请制家庭空间，再通过 Supabase Edge Function（服务端）使用 service role key 完成受控操作。
+
+### 初始化步骤（前端代码逻辑）
+
+用户登录后，前端在进入任何页面前执行一次检查：
+
+```ts
+// 伪代码，后续在 cloudRepository 中实现
+async function ensureProfileInitialized() {
+  // 1. 检查当前用户是否已有 profile
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id, family_id')
+    .eq('id', (await supabase.auth.getUser()).data.user!.id)
+    .maybeSingle();
+
+  if (profile) return; // 已初始化，跳过
+
+  // 2. 创建 family（此时 RLS 只要求 auth.uid() is not null）
+  const { data: family, error: familyError } = await supabase
+    .from('families')
+    .insert({ name: '家庭学习计划' })
+    .select('id')
+    .single();
+
+  if (familyError) throw familyError;
+
+  // 3. 创建 profile，绑定 family_id
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .insert({
+      id: (await supabase.auth.getUser()).data.user!.id,
+      family_id: family.id,
+      display_name: '家庭账号',
+      role: 'member',
+    });
+
+  if (profileError) throw profileError;
+
+  // 4. 此后 get_my_family_id() 即可正常工作
+  //    所有业务数据写入时携带 family_id = family.id
+}
+```
+
+### 初始化完成后
+
+- `get_my_family_id()` 将正确返回该用户绑定的 `family_id`。
+- `tasks / plan_periods / task_occurrence_statuses` 等表的 RLS 全部依赖此函数，初始化完成后自动生效。
+- 应用层保证同一个账号不会重复创建 family（通过上方的 `maybeSingle()` 检查）。
 
 ---
 

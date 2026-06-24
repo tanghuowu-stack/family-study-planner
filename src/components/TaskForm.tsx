@@ -43,6 +43,8 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
   const [draft, setDraft] = useState<TaskDraft>(task ? strip(task) : newDraft(initialDate));
   const [periods, setPeriods] = useState<PlanPeriod[]>([]);
   const [titleTouched, setTitleTouched] = useState(!!task?.title);
+  const [periodTouched, setPeriodTouched] = useState(!!task?.id);
+  const [autoBoundHint, setAutoBoundHint] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [pendingConflict, setPendingConflict] = useState<TaskDraft>();
@@ -52,6 +54,81 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
   const label = "text-sm font-medium text-stone-600";
 
   useEffect(() => { taskRepository.listPlanPeriods().then(setPeriods); const handler = (event: KeyboardEvent) => event.key === "Escape" && onClose(); window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler); }, [onClose]);
+
+  useEffect(() => {
+    if (periodTouched || !periods.length) return;
+    const holidays = periods.filter((p) => p.type === "holiday");
+    if (!holidays.length) return;
+
+    let targetHolidayId: string | undefined = undefined;
+    let valid = false;
+    let hint = "";
+
+    if (draft.timeType === "singleDate" && draft.date) {
+      const holiday = holidays.find((p) => draft.date! >= p.startDate && draft.date! <= p.endDate);
+      if (holiday) { targetHolidayId = holiday.id; valid = true; hint = `已根据日期自动归属：${holiday.name}`; }
+      else { valid = true; hint = ""; }
+    } else if (draft.timeType === "recurring" && draft.schedulePattern === "specificDates" && draft.specificDates?.length) {
+      const matchedHolidays = draft.specificDates.map((date) => holidays.find((p) => date >= p.startDate && date <= p.endDate));
+      const first = matchedHolidays[0];
+      const allSame = matchedHolidays.every((h) => h?.id === first?.id);
+      if (allSame && first) { targetHolidayId = first.id; valid = true; hint = `已根据日期自动归属：${first.name}`; }
+      else if (!allSame) { hint = "日期跨越平时和假期，请手动选择阶段"; }
+      else { valid = true; hint = ""; }
+    } else if ((draft.timeType === "dateRange" || (draft.timeType === "recurring" && ["dateRangeDaily", "dateRangeWeekdays"].includes(draft.schedulePattern ?? ""))) && draft.startDate && draft.endDate) {
+      const startHoliday = holidays.find((p) => draft.startDate! >= p.startDate && draft.startDate! <= p.endDate);
+      const endHoliday = holidays.find((p) => draft.endDate! >= p.startDate && draft.endDate! <= p.endDate);
+      if (startHoliday && startHoliday.id === endHoliday?.id) { targetHolidayId = startHoliday.id; valid = true; hint = `已根据日期自动归属：${startHoliday.name}`; }
+      else {
+        const spansHoliday = holidays.some(h => draft.startDate! <= h.endDate && draft.endDate! >= h.startDate);
+        if (startHoliday || endHoliday || spansHoliday) {
+          hint = "日期跨越平时和假期，请手动选择阶段";
+        } else {
+          valid = true; hint = "";
+        }
+      }
+    } else if (draft.timeType === "recurring" && ["dailyRecurring", "weeklyRecurring"].includes(draft.schedulePattern ?? "") && draft.recurrence?.startDate && draft.recurrence?.endDate) {
+      const startHoliday = holidays.find((p) => draft.recurrence!.startDate! >= p.startDate && draft.recurrence!.startDate! <= p.endDate);
+      const endHoliday = holidays.find((p) => draft.recurrence!.endDate! >= p.startDate && draft.recurrence!.endDate! <= p.endDate);
+      if (startHoliday && startHoliday.id === endHoliday?.id) { targetHolidayId = startHoliday.id; valid = true; hint = `已根据日期自动归属：${startHoliday.name}`; }
+      else {
+        const spansHoliday = holidays.some(h => draft.recurrence!.startDate! <= h.endDate && draft.recurrence!.endDate! >= h.startDate);
+        if (startHoliday || endHoliday || spansHoliday) {
+          hint = "日期跨越平时和假期，请手动选择阶段";
+        } else {
+          valid = true; hint = "";
+        }
+      }
+    } else if (draft.timeType === "weekGoal" && draft.weekStart) {
+      const wStart = draft.weekStart;
+      const wEnd = toDateKey(endOfWeek(fromDateKey(wStart), { weekStartsOn: 1 }));
+      const startHoliday = holidays.find((p) => wStart >= p.startDate && wStart <= p.endDate);
+      const endHoliday = holidays.find((p) => wEnd >= p.startDate && wEnd <= p.endDate);
+      if (startHoliday && startHoliday.id === endHoliday?.id) { targetHolidayId = startHoliday.id; valid = true; hint = `已根据日期自动归属：${startHoliday.name}`; }
+      else if (startHoliday || endHoliday) { hint = "日期跨越平时和假期，请手动选择阶段"; }
+      else { valid = true; hint = ""; }
+    } else if (draft.timeType === "assignmentWindow" && draft.assignmentWindow?.startDate && draft.assignmentWindow?.endDate) {
+      const wStart = draft.assignmentWindow.startDate;
+      const wEnd = draft.assignmentWindow.endDate;
+      const startHoliday = holidays.find((p) => wStart >= p.startDate && wStart <= p.endDate);
+      const endHoliday = holidays.find((p) => wEnd >= p.startDate && wEnd <= p.endDate);
+      if (startHoliday && startHoliday.id === endHoliday?.id) { targetHolidayId = startHoliday.id; valid = true; hint = `已根据日期自动归属：${startHoliday.name}`; }
+      else if (startHoliday || endHoliday) { hint = "日期跨越平时和假期，请手动选择阶段"; }
+      else { valid = true; hint = ""; }
+    }
+
+    setAutoBoundHint(hint);
+    if (valid) {
+      setDraft((current) => {
+        const nextPeriodId = targetHolidayId ?? undefined;
+        let nextType = current.applicablePeriodType;
+        if (targetHolidayId) nextType = "holiday";
+        else if (current.applicablePeriodType === "holiday") nextType = "regular";
+        if (current.planPeriodId === nextPeriodId && current.applicablePeriodType === nextType) return current;
+        return { ...current, planPeriodId: nextPeriodId, applicablePeriodType: nextType };
+      });
+    }
+  }, [draft.timeType, draft.schedulePattern, draft.date, draft.startDate, draft.endDate, draft.specificDates, draft.weekStart, draft.assignmentWindow, draft.recurrence, periods, periodTouched]);
 
   const changeMain = (mainCategory: MainCategory) => {
     const subCategory = SUB_CATEGORY_OPTIONS[mainCategory][0].value;
@@ -146,7 +223,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
       {recurring && <div className="rounded-2xl border border-violet-100 bg-violet-50/40 p-4"><label className={label}>安排方式<select value={draft.schedulePattern ?? "weeklyRecurring"} onChange={(e) => changePattern(e.target.value as SchedulePattern)} className={input}><option value="dailyRecurring">每日重复</option><option value="weeklyRecurring">每周固定</option><option value="specificDates">指定日期列表</option><option value="dateRangeDaily">日期范围内每天</option><option value="dateRangeWeekdays">日期范围内按星期</option></select></label>{["dailyRecurring", "weeklyRecurring"].includes(draft.schedulePattern ?? "") && <><div className="grid grid-cols-2 gap-3"><DateField title="开始日期" value={draft.recurrence?.startDate} onChange={(value) => set("recurrence", { ...draft.recurrence!, startDate: value })} input={input} label={label} /><DateField title="结束日期（可空）" value={draft.recurrence?.endDate} onChange={(value) => set("recurrence", { ...draft.recurrence!, endDate: value || undefined })} input={input} label={label} /></div>{draft.schedulePattern === "weeklyRecurring" && <WeekdayPicker values={draft.recurrence?.weekdays ?? []} onToggle={(day) => toggleDays(day, "recurrence")} />}</>}{draft.schedulePattern === "specificDates" && <MultiDatePicker values={draft.specificDates ?? []} onChange={(values) => set("specificDates", values)} initialDate={initialDate} />}{["dateRangeDaily", "dateRangeWeekdays"].includes(draft.schedulePattern ?? "") && <DateRange draft={draft} set={set} input={input} label={label} />}{draft.schedulePattern === "dateRangeWeekdays" && <WeekdayPicker values={draft.rangeWeekdays ?? []} onToggle={(day) => toggleDays(day, "rangeWeekdays")} title="范围内星期" />}</div>}
       {reading && <div className="rounded-2xl border border-cyan-100 bg-cyan-50/40 p-4"><div className="grid grid-cols-2 gap-3"><label className={label}>每周目标<input type="number" min="1" value={draft.weeklyQuota?.targetCount ?? 1} onChange={(e) => updateQuota({ targetCount: Number(e.target.value) || 1 })} className={input} /></label><label className={label}>单位<select value={draft.weeklyQuota?.unit ?? "本"} onChange={(e) => updateQuota({ unit: e.target.value as WeeklyQuota["unit"] })} className={input}>{["本", "页", "分钟", "次", "篇"].map((unit) => <option key={unit}>{unit}</option>)}</select></label></div><div className="mt-3 grid gap-2 text-sm"><Check label="是否每周执行" checked={draft.weeklyQuota?.isWeeklyRecurring ?? true} onChange={(value) => updateQuota({ isWeeklyRecurring: value })} /><Check label="允许一键下发到每天" checked={draft.weeklyQuota?.allowAutoDistribute ?? true} onChange={(value) => updateQuota({ allowAutoDistribute: value })} /><Check label="未完成允许顺延（仅限当周）" checked={draft.weeklyQuota?.allowRollover ?? true} onChange={(value) => { updateQuota({ allowRollover: value }); set("allowRollover", value); }} /></div></div>}
       {!reading && ["weekGoal", "assignmentWindow"].includes(draft.timeType) && <div className="rounded-2xl border bg-white p-4"><p className="mb-3 text-sm font-semibold">自动分配设置</p><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><NumberField label="总量" value={draft.totalAmount} onChange={(value) => set("totalAmount", value)} input={input} /><label className={label}>单位<input value={draft.amountUnit ?? ""} onChange={(e) => set("amountUnit", e.target.value)} className={input} /></label><NumberField label="分几次" value={draft.splitCount} onChange={(value) => set("splitCount", value)} input={input} /><NumberField label="每次数量" value={draft.amountPerSession} onChange={(value) => set("amountPerSession", value)} input={input} /></div><WeekdayPicker values={draft.allowedWeekdays ?? []} onToggle={(day) => toggleDays(day, "allowedWeekdays")} title="可安排星期（不选表示每天）" /></div>}
-      <div className="grid gap-4 sm:grid-cols-2"><label className={label}>适用阶段<select value={draft.applicablePeriodType === "regular" ? "regular" : draft.planPeriodId ?? "all"} onChange={(e) => { const value = e.target.value; setDraft((current) => ({ ...current, applicablePeriodType: value === "all" ? "all" : value === "regular" ? "regular" : "holiday", planPeriodId: value === "all" || value === "regular" ? undefined : value })); }} className={input}><option value="all">全部阶段</option><option value="regular">平时（假期外自动适用）</option>{periods.filter((period) => period.type === "holiday").map((period) => <option key={period.id} value={period.id}>{period.name}</option>)}</select></label><label className={label}>未完成处理<select value={draft.rolloverMode} onChange={(e) => { const mode = e.target.value as RolloverMode; set("rolloverMode", mode); set("allowRollover", mode === "autoNextDay"); }} className={input}>{Object.entries(ROLLOVER_META).map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label></div>
+      <div className="grid gap-4 sm:grid-cols-2"><label className={label}>适用阶段<select value={draft.applicablePeriodType === "regular" ? "regular" : draft.planPeriodId ?? "all"} onChange={(e) => { const value = e.target.value; setPeriodTouched(true); setAutoBoundHint(""); setDraft((current) => ({ ...current, applicablePeriodType: value === "all" ? "all" : value === "regular" ? "regular" : "holiday", planPeriodId: value === "all" || value === "regular" ? undefined : value })); }} className={input}><option value="all">全部阶段</option><option value="regular">平时（假期外自动适用）</option>{periods.filter((period) => period.type === "holiday").map((period) => <option key={period.id} value={period.id}>{period.name}</option>)}</select>{autoBoundHint && <div className="mt-1.5 text-xs text-sage-600">{autoBoundHint}</div>}</label><label className={label}>未完成处理<select value={draft.rolloverMode} onChange={(e) => { const mode = e.target.value as RolloverMode; set("rolloverMode", mode); set("allowRollover", mode === "autoNextDay"); }} className={input}>{Object.entries(ROLLOVER_META).map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label></div>
       <div className="grid gap-4 sm:grid-cols-3"><label className={label}>开始时间（可选）<input type="time" value={draft.startTime ?? ""} onChange={(e) => { const startTime = e.target.value || undefined; setDraft((current) => ({ ...current, startTime, endTime: startTime && current.estimatedMinutes ? addMinutesToTime(startTime, current.estimatedMinutes) : current.endTime })); }} className={input} /></label><label className={label}>预计时长（分钟）<input type="number" min="1" step="1" inputMode="numeric" value={draft.estimatedMinutes ?? ""} onChange={(e) => { const raw = Number(e.target.value); const estimatedMinutes = Number.isInteger(raw) && raw > 0 ? raw : undefined; setDraft((current) => ({ ...current, estimatedMinutes, endTime: current.startTime && estimatedMinutes ? addMinutesToTime(current.startTime, estimatedMinutes) : current.endTime })); }} className={input} placeholder="任意正整数" /></label><label className={label}>结束时间（可选）<input type="time" value={draft.endTime ?? ""} onChange={(e) => set("endTime", e.target.value || undefined)} className={input} /></label></div>
       {homework && <div className="rounded-2xl border border-blue-100 bg-blue-50/30 p-4"><div className="mb-3 flex justify-between"><p className="text-sm font-semibold">任务小项</p><button type="button" onClick={addChecklist} className="inline-flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-xs"><Plus className="h-3.5 w-3.5" />添加</button></div><div className="space-y-2">{draft.checklistItems?.map((item, index) => <div key={item.id} className="flex gap-2"><input value={item.title} onChange={(e) => set("checklistItems", draft.checklistItems?.map((value) => value.id === item.id ? { ...value, title: e.target.value } : value))} className="min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm" /><button type="button" onClick={() => moveChecklist(index, -1)}><ArrowUp className="h-4 w-4" /></button><button type="button" onClick={() => moveChecklist(index, 1)}><ArrowDown className="h-4 w-4" /></button><button type="button" onClick={() => set("checklistItems", draft.checklistItems?.filter((value) => value.id !== item.id))}><Trash2 className="h-4 w-4 text-rose-400" /></button></div>)}</div></div>}
       <label className={label}>备注<textarea rows={2} value={draft.note ?? ""} onChange={(e) => set("note", e.target.value)} className={input} /></label>

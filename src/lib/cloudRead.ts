@@ -149,3 +149,47 @@ export async function fetchCloudDataPreview(familyId: string): Promise<CloudPrev
     recentTasks: tasks.filter(t => !t.deletedAt).slice(0, 5),
   };
 }
+
+export interface CloudDiffResult {
+  localOnlyTasks: Task[];
+  cloudOnlyTasks: Task[];
+}
+
+export async function checkCloudDiff(familyId: string): Promise<CloudDiffResult> {
+  if (!supabase) throw new Error("Supabase 未配置");
+
+  // 1. 读取本地任务
+  const localTasks = await db.tasks.toArray();
+  const localMap = new Map(localTasks.map(t => [t.id, t]));
+
+  // 2. 读取云端任务
+  const { data: tasksData, error: tasksError } = await supabase
+    .from("tasks")
+    .select("*")
+    .eq("family_id", familyId);
+
+  if (tasksError) throw new Error(`读取云端任务失败: ${tasksError.message}`);
+
+  const cloudTasks = (tasksData || []).map(rowToTask);
+  const cloudMap = new Map(cloudTasks.map(t => [t.id, t]));
+
+  const localOnlyTasks: Task[] = [];
+  const cloudOnlyTasks: Task[] = [];
+
+  localTasks.forEach(t => {
+    if (!cloudMap.has(t.id)) {
+      localOnlyTasks.push(t);
+    }
+  });
+
+  cloudTasks.forEach(t => {
+    if (!localMap.has(t.id)) {
+      cloudOnlyTasks.push(t);
+    }
+  });
+
+  return {
+    localOnlyTasks,
+    cloudOnlyTasks,
+  };
+}

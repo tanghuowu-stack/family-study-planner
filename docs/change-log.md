@@ -4,6 +4,7 @@
 
 ## 2026-06-24
 
+- 云端工具诊断：新增“检查本地/云端差异”功能，读取本地 IndexedDB 和 Supabase 的任务列表对比并显示多出项目的详细信息（包含删除状态、标题等），不对任何数据进行增删改，辅助安全排查云同步中多出的本地残留任务。
 - Supabase Step 5：新增从云端下载数据到本地。在 `src/lib/cloudDownload.ts` 中实现按 `family_id` 读取 Supabase 数据并安全合并（bulkPut）到本地 IndexedDB 中，包括 `tasks`、`task_checklist_items`、`task_occurrence_statuses`、`plan_periods`。在云同步面板新增了下载按钮和进度/结果展示。
 - Supabase Step 4：新增云端读取预览。在 `src/lib/cloudRead.ts` 中实现按 `family_id` 读取 `tasks`、`task_checklist_items`、`task_occurrence_statuses`、`plan_periods`。在云同步面板提供读取结果预览，对比本地与云端数据量，并展示最近 5 条任务作为数据完整性抽查。本轮不切换正式页面数据源。
 - 修复 Supabase 上传 activity_logs 报错（permission denied）：Step 3 第一阶段上传暂时跳过 activity_logs，避免追加型日志表因 upsert 触发 update 权限需求；核心任务、清单小项、单次状态和假期阶段仍正常上传。

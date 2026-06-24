@@ -14,7 +14,7 @@ import {
   type CloudAuthState,
 } from "../lib/cloudAuth";
 import { uploadLocalDataToCloud, type UploadResult } from "../lib/cloudUpload";
-import { fetchCloudDataPreview, type CloudPreviewResult } from "../lib/cloudRead";
+import { fetchCloudDataPreview, type CloudPreviewResult, checkCloudDiff, type CloudDiffResult } from "../lib/cloudRead";
 import { downloadCloudDataToLocal, type DownloadResult } from "../lib/cloudDownload";
 import { supabaseConfigured } from "../lib/supabase";
 
@@ -34,6 +34,9 @@ export function CloudLoginPanel() {
   const [downloading, setDownloading] = useState(false);
   const [downloadResult, setDownloadResult] = useState<DownloadResult | null>(null);
   const [downloadError, setDownloadError] = useState("");
+  const [checkingDiff, setCheckingDiff] = useState(false);
+  const [diffResult, setDiffResult] = useState<CloudDiffResult | null>(null);
+  const [diffError, setDiffError] = useState("");
 
   const refresh = async () => {
     setLoading(true);
@@ -118,6 +121,21 @@ export function CloudLoginPanel() {
       setDownloadError(err instanceof Error ? `下载失败：${err.message}` : "下载失败");
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleCheckDiff = async () => {
+    if (!auth?.familyId) return;
+    setCheckingDiff(true);
+    setDiffResult(null);
+    setDiffError("");
+    try {
+      const result = await checkCloudDiff(auth.familyId);
+      setDiffResult(result);
+    } catch (err) {
+      setDiffError(err instanceof Error ? `检查差异失败：${err.message}` : "检查差异失败");
+    } finally {
+      setCheckingDiff(false);
     }
   };
 
@@ -311,6 +329,67 @@ export function CloudLoginPanel() {
             </button>
           </div>
           
+          <div className="flex">
+            <button
+              onClick={handleCheckDiff}
+              disabled={reading || downloading || checkingDiff || loading}
+              className="flex w-fit items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-medium text-purple-700 hover:bg-purple-100 disabled:bg-stone-50 disabled:text-stone-400 disabled:border-stone-200 transition-colors"
+            >
+              {checkingDiff ? "检查中…" : "检查本地/云端差异"}
+            </button>
+          </div>
+
+          {diffResult && (
+            <div className="mt-3 rounded-lg bg-purple-50 p-4 text-sm text-purple-800 space-y-3">
+              <p className="font-semibold text-sm flex items-center gap-1">
+                差异检查完成
+              </p>
+              
+              <div>
+                <p className="font-medium mb-1">本地多出的任务：{diffResult.localOnlyTasks.length} 条</p>
+                {diffResult.localOnlyTasks.length > 0 && (
+                  <ul className="space-y-1 text-xs list-disc list-inside bg-white/50 p-2 rounded max-h-40 overflow-y-auto">
+                    {diffResult.localOnlyTasks.slice(0, 10).map(t => (
+                      <li key={t.id} className="truncate">
+                        {t.title || "无标题"} ({t.mainCategory}) [{t.date || t.startDate || t.timeType}] 
+                        {t.deletedAt ? ` [已删除: ${t.deletedAt}]` : ""}
+                        <span className="text-purple-400 ml-1">id: {t.id}</span>
+                      </li>
+                    ))}
+                    {diffResult.localOnlyTasks.length > 10 && (
+                      <li className="text-purple-600 font-medium">还有 {diffResult.localOnlyTasks.length - 10} 条...</li>
+                    )}
+                  </ul>
+                )}
+              </div>
+
+              <div>
+                <p className="font-medium mb-1">云端多出的任务：{diffResult.cloudOnlyTasks.length} 条</p>
+                {diffResult.cloudOnlyTasks.length > 0 && (
+                  <ul className="space-y-1 text-xs list-disc list-inside bg-white/50 p-2 rounded max-h-40 overflow-y-auto">
+                    {diffResult.cloudOnlyTasks.slice(0, 10).map(t => (
+                      <li key={t.id} className="truncate">
+                        {t.title || "无标题"} ({t.mainCategory}) [{t.date || t.startDate || t.timeType}]
+                        {t.deletedAt ? ` [已删除: ${t.deletedAt}]` : ""}
+                        <span className="text-purple-400 ml-1">id: {t.id}</span>
+                      </li>
+                    ))}
+                    {diffResult.cloudOnlyTasks.length > 10 && (
+                      <li className="text-purple-600 font-medium">还有 {diffResult.cloudOnlyTasks.length - 10} 条...</li>
+                    )}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
+
+          {diffError && (
+            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600 flex items-start gap-2">
+              <span className="text-red-500 font-bold">!</span>
+              <span>{diffError}</span>
+            </div>
+          )}
+
           {downloadResult && (
             <div className="mt-3 rounded-lg bg-green-50 p-3 text-xs text-green-800 space-y-1">
               <p className="font-semibold text-sm mb-1 flex items-center gap-1">

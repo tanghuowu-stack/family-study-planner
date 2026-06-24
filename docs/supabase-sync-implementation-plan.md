@@ -12,7 +12,7 @@
 - [x] 前端接入 Supabase client + 邮箱登录 + family/profile 自动初始化（Step 2，面板隐藏内部 ID 优化完成）
 - [x] 本地数据单向上传到云端（Step 3：使用 upsert，清理空 date / timestamp 字段，补齐旧数据必填字段默认值防止报错。第一阶段暂跳过 activity_logs）
 - [x] 云端读取预览（Step 4 第一阶段：从 Supabase 读取数据并提供本地/云端对比，仅供验证，未切换正式页面数据源）
-- [ ] 任务数据切换到云端读写（后续 Step 4 第二阶段）
+- [x] 从云端下载数据到本地 IndexedDB（Step 5：使用 bulkPut 安全合并，不删除本地旧数据，未切换正式页面数据源）
 - [ ] 双端测试（后续 Step 5）
 
 ---

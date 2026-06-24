@@ -15,6 +15,7 @@ import {
 } from "../lib/cloudAuth";
 import { uploadLocalDataToCloud, type UploadResult } from "../lib/cloudUpload";
 import { fetchCloudDataPreview, type CloudPreviewResult } from "../lib/cloudRead";
+import { downloadCloudDataToLocal, type DownloadResult } from "../lib/cloudDownload";
 import { supabaseConfigured } from "../lib/supabase";
 
 export function CloudLoginPanel() {
@@ -30,6 +31,9 @@ export function CloudLoginPanel() {
   const [reading, setReading] = useState(false);
   const [previewResult, setPreviewResult] = useState<CloudPreviewResult | null>(null);
   const [previewError, setPreviewError] = useState("");
+  const [downloading, setDownloading] = useState(false);
+  const [downloadResult, setDownloadResult] = useState<DownloadResult | null>(null);
+  const [downloadError, setDownloadError] = useState("");
 
   const refresh = async () => {
     setLoading(true);
@@ -98,6 +102,22 @@ export function CloudLoginPanel() {
       setPreviewError(err instanceof Error ? `读取云端数据失败：${err.message}` : "读取云端数据失败");
     } finally {
       setReading(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    if (!auth?.familyId) return;
+    setDownloading(true);
+    setDownloadResult(null);
+    setDownloadError("");
+    try {
+      const result = await downloadCloudDataToLocal(auth.familyId);
+      setDownloadResult(result);
+      await refresh(); // 刷新本地/云端对比可能需要，但这里只刷新本地状态也可以，暂时可选
+    } catch (err) {
+      setDownloadError(err instanceof Error ? `下载失败：${err.message}` : "下载失败");
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -269,20 +289,47 @@ export function CloudLoginPanel() {
         )}
       </div>
 
-      {/* 读取云端数据预览区域 */}
+      {/* 读取与下载数据区域 */}
       {isLoggedIn && auth?.familyId && (
         <div className="mt-6 border-t border-stone-100 pt-4 space-y-2">
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <button
               onClick={handleReadCloud}
-              disabled={reading || loading}
+              disabled={reading || downloading || loading}
               className="flex w-fit items-center gap-1.5 rounded-lg border border-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:bg-stone-50 disabled:text-stone-400 transition-colors"
             >
               <Cloud className="h-4 w-4" />
               {reading ? "读取中…" : "读取云端数据预览"}
             </button>
+            <button
+              onClick={handleDownload}
+              disabled={reading || downloading || loading}
+              className="flex w-fit items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:bg-stone-50 disabled:text-stone-400 disabled:border-stone-200 transition-colors"
+            >
+              <RefreshCw className={`h-4 w-4 ${downloading ? "animate-spin" : ""}`} />
+              {downloading ? "下载中…" : "从云端下载数据到本地"}
+            </button>
           </div>
           
+          {downloadResult && (
+            <div className="mt-3 rounded-lg bg-green-50 p-3 text-xs text-green-800 space-y-1">
+              <p className="font-semibold text-sm mb-1 flex items-center gap-1">
+                <span className="text-green-600">✓</span> 下载完成
+              </p>
+              <p>任务：{downloadResult.tasks} 条</p>
+              <p>清单小项：{downloadResult.checklistItems} 条</p>
+              <p>单次状态：{downloadResult.occurrenceStatuses} 条</p>
+              <p>假期阶段：{downloadResult.planPeriods} 条</p>
+            </div>
+          )}
+
+          {downloadError && (
+            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600 flex items-start gap-2">
+              <span className="text-red-500 font-bold">!</span>
+              <span>{downloadError}</span>
+            </div>
+          )}
+
           {previewResult && (
             <div className="mt-3 space-y-4 rounded-lg bg-stone-50 p-4 text-sm text-stone-700 border border-stone-200">
               <div>

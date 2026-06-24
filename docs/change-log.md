@@ -4,6 +4,11 @@
 
 ## 2026-06-24
 
+- 修复 Supabase 上传 activity_logs 报错（permission denied）：Step 3 第一阶段上传暂时跳过 activity_logs，避免追加型日志表因 upsert 触发 update 权限需求；核心任务、清单小项、单次状态和假期阶段仍正常上传。
+- 修复 Supabase 上传 tasks 失败（not-null constraint）：为本地旧数据补齐必填字段的默认兜底值（如 `calendar_visibility` 默认 "show"，`title` 默认 ""，`status` 默认 "todo" 等），避免因旧数据字段缺失导致插入失败。
+- 修复 Supabase 上传失败：新增 date 和 timestamp 字段清洗，过滤掉空字符串 `""`，避免 PostgreSQL 报错。对于无效的必填日期自动跳过并统计。
+- 优化云同步面板：上传按钮始终可见，在未登录时明确显示"请先登录"，避免依赖 hover，按钮使用高对比度颜色并增加禁用状态。
+- Supabase Step 3：新增 `src/lib/cloudUpload.ts`，实现本地 IndexedDB → Supabase 单向上传（tasks、task_checklist_items、task_occurrence_statuses、plan_periods、activity_logs），使用分批 upsert，支持重复上传不重复生成记录；云同步面板新增"上传本地数据到云端"按钮及上传统计/错误反馈。
 - 云同步面板默认隐藏完整 family_id，仅作为高级调试信息展示。
 - Supabase schema 补充 authenticated 角色的表权限 GRANT，避免前端插入 families/profiles 时 permission denied。
 - 修复 Supabase family/profile 初始化卡死问题：避免 insert family 后使用 `.select().single()` 触发 RLS 拦截，改为在前端生成 `familyId` (使用 `crypto.randomUUID()`) 并直接写入。增加错误捕获与页面提示。

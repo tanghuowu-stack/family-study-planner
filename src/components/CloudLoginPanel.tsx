@@ -5,7 +5,7 @@
  * 邮箱+密码登录 / 退出 / 刷新功能。
  * 不影响任何任务数据，不修改 IndexedDB 逻辑。
  */
-import { Cloud, CloudOff, LogIn, LogOut, RefreshCw } from "lucide-react";
+import { Cloud, CloudOff, LogIn, LogOut, RefreshCw, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   loadAuthState,
@@ -13,6 +13,7 @@ import {
   signOut,
   type CloudAuthState,
 } from "../lib/cloudAuth";
+import { uploadLocalDataToCloud, type UploadResult } from "../lib/cloudUpload";
 import { supabaseConfigured } from "../lib/supabase";
 
 export function CloudLoginPanel() {
@@ -22,6 +23,9 @@ export function CloudLoginPanel() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
+  const [uploadError, setUploadError] = useState("");
 
   const refresh = async () => {
     setLoading(true);
@@ -58,7 +62,24 @@ export function CloudLoginPanel() {
   const handleSignOut = async () => {
     setLoading(true);
     await signOut();
+    setUploadResult(null);
+    setUploadError("");
     await refresh();
+  };
+
+  const handleUpload = async () => {
+    if (!auth?.familyId) return;
+    setUploading(true);
+    setUploadResult(null);
+    setUploadError("");
+    try {
+      const result = await uploadLocalDataToCloud(auth.familyId);
+      setUploadResult(result);
+    } catch (err) {
+      setUploadError(err instanceof Error ? `上传失败：${err.message}` : "上传失败");
+    } finally {
+      setUploading(false);
+    }
   };
 
   if (!supabaseConfigured) {
@@ -184,6 +205,50 @@ export function CloudLoginPanel() {
           </div>
         </form>
       )}
+
+      {/* 上传按钮区域 */}
+      <div className="mt-6 border-t border-stone-100 pt-4 space-y-2">
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={handleUpload}
+            disabled={!isLoggedIn || !auth?.familyId || uploading || loading}
+            className="flex w-fit items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:bg-stone-100 disabled:text-stone-400 disabled:opacity-100 transition-colors"
+          >
+            <Upload className="h-4 w-4" />
+            {uploading ? "上传中…" : "上传本地数据到云端"}
+          </button>
+          {(!isLoggedIn || !auth?.familyId) && (
+            <p className="text-xs text-stone-400">
+              请先登录云同步账号
+            </p>
+          )}
+        </div>
+        {uploadResult && (
+          <div className="rounded-lg bg-green-50 p-3 text-xs text-green-800 space-y-1">
+            <p className="font-semibold text-sm mb-1 flex items-center gap-1">
+              <span className="text-green-600">✓</span> 上传完成
+            </p>
+            <p>任务：{uploadResult.tasks} 条</p>
+            <p>清单小项：{uploadResult.checklistItems} 条</p>
+            <p>单次状态：{uploadResult.occurrenceStatuses} 条</p>
+            <p>假期阶段：{uploadResult.planPeriods} 条</p>
+            <p>操作日志：本阶段暂不上传</p>
+            {(uploadResult.skippedTasks > 0 || uploadResult.skippedOccurrenceStatuses > 0 || uploadResult.skippedPlanPeriods > 0) && (
+              <div className="mt-2 pt-2 border-t border-green-200/50 text-amber-600">
+                {uploadResult.skippedTasks > 0 && <p>跳过无效日期任务：{uploadResult.skippedTasks} 条</p>}
+                {uploadResult.skippedOccurrenceStatuses > 0 && <p>跳过无效单次状态：{uploadResult.skippedOccurrenceStatuses} 条</p>}
+                {uploadResult.skippedPlanPeriods > 0 && <p>跳过无效假期阶段：{uploadResult.skippedPlanPeriods} 条</p>}
+              </div>
+            )}
+          </div>
+        )}
+        {uploadError && (
+          <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600 flex items-start gap-2">
+            <span className="text-red-500 font-bold">!</span>
+            <span>{uploadError}</span>
+          </div>
+        )}
+      </div>
 
       {/* 操作按钮 */}
       <div className="mt-4 flex gap-2">

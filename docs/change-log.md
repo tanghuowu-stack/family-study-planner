@@ -4,6 +4,8 @@
 
 ## 2026-06-24
 
+- 新增 iPad 主屏幕图标与 PWA manifest 配置，方便通过 Safari 添加到主屏幕作为“小步计划”入口。
+
 - Supabase Step 6：实现云端优先正式同步模式。新增 `src/data/cloudRepository.ts`（云端读写 + 本地缓存）和 `src/data/repositoryProvider.ts`（按登录状态选择数据源）。修改 `App.tsx` 在启动时初始化云同步并自动拉取最新数据；新增任务/编辑/删除/完成/checklist/occurrence/planPeriods 均写入 Supabase。未登录时降级到 IndexedDB 本地模式。在顶栏展示"云端同步/本地模式"状态标签，在云同步面板展示当前数据模式说明。
 - 云端工具诊断：新增“检查本地/云端差异”功能，读取本地 IndexedDB 和 Supabase 的任务列表对比并显示多出项目的详细信息（包含删除状态、标题等），不对任何数据进行增删改，辅助安全排查云同步中多出的本地残留任务。
 - Supabase Step 5：新增从云端下载数据到本地。在 `src/lib/cloudDownload.ts` 中实现按 `family_id` 读取 Supabase 数据并安全合并（bulkPut）到本地 IndexedDB 中，包括 `tasks`、`task_checklist_items`、`task_occurrence_statuses`、`plan_periods`。在云同步面板新增了下载按钮和进度/结果展示。

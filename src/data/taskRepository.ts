@@ -252,11 +252,11 @@ export const taskRepository = {
     const grouped = new Map<string, PlanOverviewItem>();
     const travelDays = new Set<string>();
     const completedTravelDays = new Set<string>();
-    // 判断任务是否应出现在本周汇总：阅读类 OR 上课类 OR 多日/日期范围大作业（排除钢琴练习、事项、单日任务）
+    // 判断任务是否应出现在本周汇总：阅读类 OR 上课类 OR 事项 OR 多日/日期范围大作业（排除钢琴练习、单日普通作业）
     const shouldIncludeInWeekSummary = (task: TaskDisplay) => {
       if (task.extraContentType === "reading") return true;   // 课外·其他｜阅读显示
       if (isCourseTask(task)) return true;
-      if (task.mainCategory === "temporary") return false;
+      if (task.mainCategory === "temporary") return true;     // 事项类（旅游已在调用处单独处理）
       if (task.mainCategory === "interestClass") return false; // 钢琴练习等非上课兴趣班不显示
       // 只保留日期范围或重复类型的作业（多日大作业）
       return isRangeSchedule(task) || task.timeType === "recurring" || task.schedulePattern === "weeklyRecurring" || task.schedulePattern === "dailyRecurring" || task.schedulePattern === "dateRangeDaily" || task.schedulePattern === "dateRangeWeekdays";

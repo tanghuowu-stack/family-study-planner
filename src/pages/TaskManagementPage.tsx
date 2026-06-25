@@ -1,9 +1,10 @@
 import { ChevronDown, Copy, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { taskRepository } from "../data/taskRepository";
-import type { MainCategory, PlanPeriod, Task } from "../types/task";
+import { getRepository } from "../data/repositoryProvider";
+import type { Course, CourseStatus, ExtraContentType, MainCategory, PlanPeriod, Task } from "../types/task";
 import { getWeekEndKey, todayKey } from "../utils/date";
-import { MAIN_CATEGORY_META, SUB_CATEGORY_OPTIONS, WEEKDAY_LABELS, extraContentLabel, isCourseTask, subCategoryLabel, taskDisplayName } from "../utils/taskMeta";
+import { COURSE_MAIN_OPTIONS, COURSE_STATUS_META, MAIN_CATEGORY_META, SUB_CATEGORY_OPTIONS, WEEKDAY_LABELS, extraContentLabel, isCourseTask, subCategoryLabel, taskDisplayName } from "../utils/taskMeta";
 
 interface Props { refreshKey: number; onRefresh: () => void; notify: (text: string) => void; onEdit: (task: Task) => void; onDelete: (task: Task) => void; onCopy: (task: Task) => void; }
 const order: MainCategory[] = ["school", "extraHomework", "interestClass", "temporary"];
@@ -11,11 +12,12 @@ const order: MainCategory[] = ["school", "extraHomework", "interestClass", "temp
 export function TaskManagementPage(props: Props) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [periods, setPeriods] = useState<PlanPeriod[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [filter, setFilter] = useState<"all" | "current" | "regular" | "holiday">("current");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showDone, setShowDone] = useState(false);
   const [showAllDone, setShowAllDone] = useState(false);
-  const reload = () => Promise.all([taskRepository.listAll(), taskRepository.listPlanPeriods()]).then(([items, stages]) => { setTasks(items); setPeriods(stages); setSelected(new Set()); });
+  const reload = () => Promise.all([taskRepository.listAll(), taskRepository.listPlanPeriods(), getRepository().listCourses()]).then(([items, stages, courseList]) => { setTasks(items); setPeriods(stages); setCourses(courseList); setSelected(new Set()); });
   useEffect(() => { reload(); }, [props.refreshKey]);
   const holidays = periods.filter((period) => period.type === "holiday");
   const currentHoliday = holidays.find((period) => period.isActive && todayKey() >= period.startDate && todayKey() <= period.endDate);
@@ -42,6 +44,7 @@ export function TaskManagementPage(props: Props) {
   return <main className="mx-auto w-full max-w-6xl px-4 pb-28 pt-6 sm:px-6">
     <div className="mb-5 grid grid-cols-[1fr_auto_1fr] items-end gap-3"><span /><div className="text-center"><p className="text-xs font-semibold tracking-widest text-sage-700">TASKS</p><h1 className="mt-1 text-2xl font-semibold">任务管理</h1></div>{selected.size > 0 ? <button onClick={batchDelete} className="inline-flex items-center gap-2 justify-self-end rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white"><Trash2 className="h-4 w-4" />删除已选（{selected.size}）</button> : <span />}</div>
     <PlanPeriodManager periods={holidays} currentHoliday={currentHoliday} onChanged={() => { reload(); props.onRefresh(); }} notify={props.notify} />
+    <div className="mt-4"><CourseManager courses={courses} onChanged={() => { reload(); props.onRefresh(); }} notify={props.notify} /></div>
     <div className="mb-4 mt-6 flex flex-wrap items-center gap-2">{(["all", "current", "regular", "holiday"] as const).map((value) => <button key={value} onClick={() => setFilter(value)} className={`rounded-full px-3 py-1.5 text-xs ${filter === value ? "bg-ink text-white" : "bg-white text-stone-500"}`}>{value === "current" ? `当前阶段（${currentHoliday ? "假期" : "平时"}）` : { all: "全部", regular: "平时", holiday: "假期" }[value]}</button>)}<span className="text-xs text-stone-400">今天：{currentHoliday?.name ?? "平时"}</span><button onClick={() => selectIds(filtered.map((task) => task.id))} className="ml-auto rounded-full border bg-white px-3 py-1.5 text-xs text-stone-500">{filtered.length && filtered.every((task) => selected.has(task.id)) ? "取消全选当前筛选" : "全选当前筛选"}</button></div>
     <div className="space-y-5">{order.map((category) => <TaskGroup key={category} category={category} tasks={pending.filter((task) => task.mainCategory === category)} periods={periods} selected={selected} onToggle={toggle} onSelectGroup={selectIds} {...props} />)}</div>
     {completed.length > 0 && <section className="mt-6 rounded-2xl border border-stone-100 bg-white p-3 opacity-75 shadow-card"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-1 py-2 text-sm font-semibold text-stone-500">已完成任务 · {visibleCompleted.length}{!showAllDone && earlierCompletedCount > 0 ? `（另有 ${earlierCompletedCount} 项更早记录）` : ""}<ChevronDown className={`h-4 w-4 transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <div className="mt-2 space-y-4">{order.map((category) => <TaskGroup key={category} category={category} tasks={visibleCompleted.filter((task) => task.mainCategory === category)} periods={periods} selected={selected} onToggle={toggle} onSelectGroup={selectIds} {...props} />)}{earlierCompletedCount > 0 && <button onClick={() => setShowAllDone(!showAllDone)} className="mx-auto block rounded-xl border px-4 py-2 text-xs font-semibold text-stone-500">{showAllDone ? "只显示最近 30 天" : "显示更早已完成任务"}</button>}</div>}</section>}
@@ -66,9 +69,79 @@ function TaskRow({ task, periods, selected, onToggle, onCopy, onEdit, onDelete }
 function PlanPeriodManager({ periods, currentHoliday, onChanged, notify }: { periods: PlanPeriod[]; currentHoliday?: PlanPeriod; onChanged: () => void; notify: (text: string) => void }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState({ name: "", startDate: todayKey(), endDate: todayKey() });
-  const add = async () => { if (!draft.name.trim() || draft.startDate > draft.endDate) return notify("请填写正确的假期名称和日期"); await taskRepository.createPlanPeriod({ ...draft, type: "holiday", name: draft.name.trim(), isActive: true }); setDraft({ ...draft, name: "" }); onChanged(); notify("假期已添加"); };
-  return <section className="rounded-2xl border border-stone-100 bg-white p-4 shadow-sm"><div className="flex items-center justify-between"><div><h2 className="font-semibold">假期设置</h2><p className="mt-1 text-xs text-stone-400">当前：{currentHoliday?.name ?? "平时"}；只需维护假期，其他日期自动视为平时</p></div><button onClick={() => setOpen(!open)} className="rounded-lg bg-sage-50 px-3 py-1.5 text-xs font-medium text-sage-700">{open ? "收起" : "管理假期"}</button></div>{open && <div className="mt-4"><div className="grid gap-2 sm:grid-cols-4"><input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="例如：2026暑假" className="rounded-lg border px-3 py-2 text-sm" /><input type="date" value={draft.startDate} onChange={(e) => setDraft({ ...draft, startDate: e.target.value })} className="rounded-lg border px-2 py-2 text-sm" /><input type="date" value={draft.endDate} onChange={(e) => setDraft({ ...draft, endDate: e.target.value })} className="rounded-lg border px-2 py-2 text-sm" /><button onClick={add} className="rounded-lg bg-ink px-3 py-2 text-sm font-semibold text-white">添加假期</button></div><div className="mt-3 space-y-2">{periods.map((period) => <div key={period.id} className="flex items-center gap-3 rounded-lg bg-stone-50 px-3 py-2 text-xs"><span className="font-medium">{period.name}</span><span className="text-stone-400">{period.startDate} 至 {period.endDate}</span><button onClick={async () => { await taskRepository.updatePlanPeriod(period.id, { isActive: !period.isActive }); onChanged(); }} className={`ml-auto rounded-full px-2 py-0.5 ${period.isActive ? "bg-emerald-50 text-emerald-700" : "bg-stone-200 text-stone-500"}`}>{period.isActive ? "启用" : "停用"}</button><button onClick={async () => { const name = prompt("假期名称", period.name)?.trim(); if (!name) return; const startDate = prompt("开始日期 YYYY-MM-DD", period.startDate); const endDate = prompt("结束日期 YYYY-MM-DD", period.endDate); if (!startDate || !endDate || startDate > endDate) return notify("日期范围不正确"); await taskRepository.updatePlanPeriod(period.id, { name, startDate, endDate }); onChanged(); }} className="text-sage-700">修改</button><button onClick={async () => { if (!confirm(`删除假期“${period.name}”？关联任务会改为全部阶段。`)) return; await taskRepository.removePlanPeriod(period.id); onChanged(); }} className="text-rose-500">删除</button></div>)}</div></div>}</section>;
+  const add = async () => { if (!draft.name.trim() || draft.startDate > draft.endDate) return notify("请填写正确的假期名称和日期"); await getRepository().createPlanPeriod({ ...draft, type: "holiday", name: draft.name.trim(), isActive: true }); setDraft({ ...draft, name: "" }); onChanged(); notify("假期已添加"); };
+  return <section className="rounded-2xl border border-stone-100 bg-white p-4 shadow-sm"><div className="flex items-center justify-between"><div><h2 className="font-semibold">假期设置</h2><p className="mt-1 text-xs text-stone-400">当前：{currentHoliday?.name ?? "平时"}；只需维护假期，其他日期自动视为平时</p></div><button onClick={() => setOpen(!open)} className="rounded-lg bg-sage-50 px-3 py-1.5 text-xs font-medium text-sage-700">{open ? "收起" : "管理假期"}</button></div>{open && <div className="mt-4"><div className="grid gap-2 sm:grid-cols-4"><input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="例如：2026暑假" className="rounded-lg border px-3 py-2 text-sm" /><input type="date" value={draft.startDate} onChange={(e) => setDraft({ ...draft, startDate: e.target.value })} className="rounded-lg border px-2 py-2 text-sm" /><input type="date" value={draft.endDate} onChange={(e) => setDraft({ ...draft, endDate: e.target.value })} className="rounded-lg border px-2 py-2 text-sm" /><button onClick={add} className="rounded-lg bg-ink px-3 py-2 text-sm font-semibold text-white">添加假期</button></div><div className="mt-3 space-y-2">{periods.map((period) => <div key={period.id} className="flex items-center gap-3 rounded-lg bg-stone-50 px-3 py-2 text-xs"><span className="font-medium">{period.name}</span><span className="text-stone-400">{period.startDate} 至 {period.endDate}</span><button onClick={async () => { await getRepository().updatePlanPeriod(period.id, { isActive: !period.isActive }); onChanged(); }} className={`ml-auto rounded-full px-2 py-0.5 ${period.isActive ? "bg-emerald-50 text-emerald-700" : "bg-stone-200 text-stone-500"}`}>{period.isActive ? "启用" : "停用"}</button><button onClick={async () => { const name = prompt("假期名称", period.name)?.trim(); if (!name) return; const startDate = prompt("开始日期 YYYY-MM-DD", period.startDate); const endDate = prompt("结束日期 YYYY-MM-DD", period.endDate); if (!startDate || !endDate || startDate > endDate) return notify("日期范围不正确"); await getRepository().updatePlanPeriod(period.id, { name, startDate, endDate }); onChanged(); }} className="text-sage-700">修改</button><button onClick={async () => { if (!confirm(`删除假期“${period.name}”？关联任务会改为全部阶段。`)) return; await getRepository().removePlanPeriod(period.id); onChanged(); }} className="text-rose-500">删除</button></div>)}</div></div>}</section>;
 }
+
+type CourseDraft = {
+  name: string; mainCategory: MainCategory; subCategory: string; isClass: boolean;
+  status: CourseStatus; startDate: string; endDate: string; weekdays: number[]; startTime: string; endTime: string;
+};
+const emptyCourseDraft = (): CourseDraft => ({ name: "", mainCategory: "extraHomework", subCategory: "chinese", isClass: true, status: "active", startDate: "", endDate: "", weekdays: [], startTime: "", endTime: "" });
+
+function CourseManager({ courses, onChanged, notify }: { courses: Course[]; onChanged: () => void; notify: (text: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<CourseDraft>(emptyCourseDraft());
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const subOptions = SUB_CATEGORY_OPTIONS[draft.mainCategory];
+  const set = <K extends keyof CourseDraft>(key: K, value: CourseDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
+  const reset = () => { setDraft(emptyCourseDraft()); setEditingId(null); };
+  const changeMain = (mainCategory: MainCategory) => setDraft((current) => ({ ...current, mainCategory, subCategory: SUB_CATEGORY_OPTIONS[mainCategory][0].value }));
+  const toggleDay = (day: number) => setDraft((current) => ({ ...current, weekdays: current.weekdays.includes(day) ? current.weekdays.filter((d) => d !== day) : [...current.weekdays, day] }));
+
+  const buildInput = (d: CourseDraft) => ({
+    name: d.name.trim(), mainCategory: d.mainCategory, subCategory: d.subCategory,
+    extraContentType: (d.mainCategory === "extraHomework" ? (d.isClass ? "class" : "homework") : undefined) as ExtraContentType | undefined,
+    isClass: d.isClass, status: d.status,
+    startDate: d.startDate || undefined, endDate: d.endDate || undefined,
+    schedule: (d.weekdays.length || d.startTime || d.endTime) ? { weekdays: d.weekdays.length ? d.weekdays : undefined, startTime: d.startTime || undefined, endTime: d.endTime || undefined } : undefined,
+    sortOrder: courses.length,
+  });
+
+  const save = async () => {
+    if (!draft.name.trim()) return notify("请填写课程名称");
+    if (draft.startDate && draft.endDate && draft.startDate > draft.endDate) return notify("起止日期不正确");
+    if (editingId) { const { sortOrder: _s, ...changes } = buildInput(draft); await getRepository().updateCourse(editingId, changes); notify("课程已更新"); }
+    else { await getRepository().createCourse(buildInput(draft)); notify("课程已添加"); }
+    reset(); onChanged();
+  };
+  const startEdit = (course: Course) => {
+    setEditingId(course.id);
+    setDraft({ name: course.name, mainCategory: course.mainCategory, subCategory: course.subCategory, isClass: course.isClass, status: course.status, startDate: course.startDate ?? "", endDate: course.endDate ?? "", weekdays: course.schedule?.weekdays ?? [], startTime: course.schedule?.startTime ?? "", endTime: course.schedule?.endTime ?? "" });
+    setOpen(true);
+  };
+  const cycleStatus = async (course: Course) => {
+    const next: Record<CourseStatus, CourseStatus> = { active: "ended", ended: "planned", planned: "active" };
+    await getRepository().updateCourse(course.id, { status: next[course.status] }); onChanged();
+  };
+  const remove = async (course: Course) => { if (!confirm(`删除课程“${course.name}”？历史任务保留，仅解除课程绑定。`)) return; await getRepository().removeCourse(course.id); if (editingId === course.id) reset(); onChanged(); };
+
+  const grouped = COURSE_MAIN_OPTIONS.map((opt) => ({ ...opt, items: courses.filter((c) => c.mainCategory === opt.value) })).filter((g) => g.items.length);
+  const field = "rounded-lg border px-3 py-2 text-sm";
+
+  return <section className="rounded-2xl border border-stone-100 bg-white p-4 shadow-sm">
+    <div className="flex items-center justify-between"><div><h2 className="font-semibold">课程管理</h2><p className="mt-1 text-xs text-stone-400">维护会变动的课程（游泳课、FCE 等）；结课的课程新建任务时不再出现，历史任务保留</p></div><button onClick={() => { setOpen(!open); if (open) reset(); }} className="rounded-lg bg-sage-50 px-3 py-1.5 text-xs font-medium text-sage-700">{open ? "收起" : "管理课程"}</button></div>
+    {open && <div className="mt-4">
+      <div className="rounded-xl border border-stone-100 bg-stone-50/50 p-3">
+        <p className="mb-2 text-xs font-semibold text-stone-500">{editingId ? "编辑课程" : "新增课程"}</p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <input value={draft.name} onChange={(e) => set("name", e.target.value)} placeholder="课程名称，如 游泳课 / FCE精讲" className={field} />
+          <select value={draft.mainCategory} onChange={(e) => changeMain(e.target.value as MainCategory)} className={field}>{COURSE_MAIN_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
+          <select value={draft.subCategory} onChange={(e) => set("subCategory", e.target.value)} className={field}>{subOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
+          <select value={draft.status} onChange={(e) => set("status", e.target.value as CourseStatus)} className={field}>{(Object.keys(COURSE_STATUS_META) as CourseStatus[]).map((s) => <option key={s} value={s}>{COURSE_STATUS_META[s].label}</option>)}</select>
+          <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={draft.isClass} onChange={(e) => set("isClass", e.target.checked)} className="h-4 w-4 rounded" />算作“上课”（钢琴练习等不勾）</label>
+        </div>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2"><label className="text-xs text-stone-500">起始日期（可空）<input type="date" value={draft.startDate} onChange={(e) => set("startDate", e.target.value)} className={`mt-1 w-full ${field}`} /></label><label className="text-xs text-stone-500">结束日期（可空＝长期）<input type="date" value={draft.endDate} onChange={(e) => set("endDate", e.target.value)} className={`mt-1 w-full ${field}`} /></label></div>
+        <div className="mt-2"><p className="mb-1.5 text-xs text-stone-500">固定上课星期（可选，仅作默认带出）</p><div className="flex flex-wrap gap-2">{[1, 2, 3, 4, 5, 6, 0].map((day) => <button key={day} type="button" onClick={() => toggleDay(day)} className={`rounded-lg px-2.5 py-1.5 text-xs ${draft.weekdays.includes(day) ? "bg-ink text-white" : "bg-stone-100 text-stone-500"}`}>{WEEKDAY_LABELS[day].replace("周", "")}</button>)}</div></div>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2"><label className="text-xs text-stone-500">开始时间（可空）<input type="time" value={draft.startTime} onChange={(e) => set("startTime", e.target.value)} className={`mt-1 w-full ${field}`} /></label><label className="text-xs text-stone-500">结束时间（可空）<input type="time" value={draft.endTime} onChange={(e) => set("endTime", e.target.value)} className={`mt-1 w-full ${field}`} /></label></div>
+        <div className="mt-3 flex gap-2"><button onClick={save} className="rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white">{editingId ? "保存修改" : "添加课程"}</button>{editingId && <button onClick={reset} className="rounded-lg border px-4 py-2 text-sm text-stone-500">取消编辑</button>}</div>
+      </div>
+      <div className="mt-4 space-y-4">{grouped.map((group) => <div key={group.value}><p className="mb-2 text-xs font-semibold text-stone-500">{group.label}</p><div className="space-y-2">{group.items.map((course) => <div key={course.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-stone-50 px-3 py-2 text-xs"><span className="font-medium">{course.name}</span><span className="text-stone-400">{subCategoryLabel(course.mainCategory, course.subCategory)}{course.isClass ? "·上课" : ""}</span>{(course.schedule?.weekdays?.length || course.schedule?.startTime) ? <span className="text-stone-400">{courseScheduleText(course)}</span> : null}{(course.startDate || course.endDate) ? <span className="text-stone-400">{course.startDate ?? "…"}~{course.endDate ?? "长期"}</span> : null}<button onClick={() => cycleStatus(course)} className={`ml-auto rounded-full px-2 py-0.5 ${COURSE_STATUS_META[course.status].className}`}>{COURSE_STATUS_META[course.status].label}</button><button onClick={() => startEdit(course)} className="text-sage-700">修改</button><button onClick={() => remove(course)} className="text-rose-500">删除</button></div>)}</div></div>)}{!courses.length && <p className="text-xs text-stone-400">还没有课程，添加第一门吧。</p>}</div>
+    </div>}
+  </section>;
+}
+
+const courseScheduleText = (course: Course) => { const days = course.schedule?.weekdays?.length ? `每周${weekdayText(course.schedule.weekdays)}` : ""; const time = course.schedule?.startTime ? `${course.schedule.startTime}${course.schedule.endTime ? `-${course.schedule.endTime}` : ""}` : ""; return [days, time].filter(Boolean).join("｜"); };
 
 function timeLabel(task: Task) { if (task.timeType === "weekGoal") return `${task.weeklyQuota?.isWeeklyRecurring ? "每周执行｜" : ""}本周目标${task.weekStart ? `｜${task.weekStart} 至 ${getWeekEndKey(task.weekStart)}` : ""}`; if (task.timeType === "assignmentWindow") return `作业周期：${task.assignmentWindow?.startDate ?? "?"}-${task.assignmentWindow?.endDate ?? "?"}`; if (task.schedulePattern === "specificDates") return `指定日期 ${task.specificDates?.join("、") ?? ""}`; if (task.schedulePattern === "dailyRecurring") return `每日重复｜${task.recurrence?.startDate ?? "?"} 至 ${task.recurrence?.endDate ?? "长期"}`; if (task.schedulePattern === "dateRangeDaily") return `${task.startDate}-${task.endDate} 每天`; if (task.schedulePattern === "dateRangeWeekdays") return `${task.startDate}-${task.endDate}｜每周${weekdayText(task.rangeWeekdays)}`; if (task.schedulePattern === "weeklyRecurring" || task.timeType === "recurring") return `每周${weekdayText(task.recurrence?.weekdays)}｜${task.recurrence?.startDate ?? "?"} 至 ${task.recurrence?.endDate ?? "长期"}`; if (task.timeType === "dateRange") return `${task.startDate ?? "?"}-${task.endDate ?? "?"}`; return task.date ?? "未设置日期"; }
 const weekdayText = (days?: number[]) => [1, 2, 3, 4, 5, 6, 0].filter((day) => days?.includes(day)).map((day) => WEEKDAY_LABELS[day].replace("周", "")).join("");

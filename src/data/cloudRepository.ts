@@ -16,6 +16,7 @@ import type {
   OccurrenceStatus,
   TaskOccurrenceStatus,
   PlanPeriod,
+  Course,
   BackupData,
 } from "../types/task";
 import { taskRepository } from "./taskRepository";
@@ -67,6 +68,7 @@ function taskToRow(task: Task, familyId: string): Record<string, unknown> {
     main_category: task.mainCategory ?? "temporary",
     sub_category: task.subCategory ?? "other",
     extra_content_type: task.extraContentType ?? null,
+    course_id: task.courseId ?? null,
     time_type: task.timeType ?? "singleDate",
     schedule_pattern: task.schedulePattern ?? null,
     date: toDateOrNull(task.date),
@@ -166,6 +168,45 @@ async function upsertOccurrence(
     .from("task_occurrence_statuses")
     .upsert(row, { onConflict: "id" });
   if (error) throw new Error(`云端保存单次状态失败: ${error.message}`);
+}
+
+/** Supabase courses 行 → Course */
+function rowToCourse(row: any): Course {
+  return {
+    id: row.id,
+    name: row.name ?? "",
+    mainCategory: row.main_category,
+    subCategory: row.sub_category,
+    extraContentType: row.extra_content_type ?? undefined,
+    isClass: row.is_class ?? true,
+    status: row.status ?? "active",
+    startDate: row.start_date ?? undefined,
+    endDate: row.end_date ?? undefined,
+    schedule: row.schedule ?? undefined,
+    sortOrder: row.sort_order ?? 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** Course → Supabase courses 行 */
+function courseToRow(course: Course, familyId: string): Record<string, unknown> {
+  return stripUndefined({
+    id: course.id,
+    family_id: familyId,
+    name: course.name ?? "",
+    main_category: course.mainCategory,
+    sub_category: course.subCategory,
+    extra_content_type: course.extraContentType ?? null,
+    is_class: course.isClass ?? true,
+    status: course.status ?? "active",
+    start_date: toDateOrNull(course.startDate),
+    end_date: toDateOrNull(course.endDate),
+    schedule: course.schedule ?? null,
+    sort_order: course.sortOrder ?? 0,
+    created_at: toTimestampOrNull(course.createdAt) ?? new Date().toISOString(),
+    updated_at: toTimestampOrNull(course.updatedAt) ?? new Date().toISOString(),
+  });
 }
 
 /** Load all tasks from Supabase and cache to IndexedDB */
@@ -313,7 +354,7 @@ export const cloudRepository = {
         .from("plan_periods")
         .select("*")
         .eq("family_id", _familyId);
-      if (data && data.length > 0) {
+      if (data) {
         const periods: PlanPeriod[] = data.map((row) => ({
           id: row.id,
           name: row.name,
@@ -325,7 +366,22 @@ export const cloudRepository = {
           createdAt: row.created_at,
           updatedAt: row.updated_at,
         }));
-        await db.planPeriods.bulkPut(periods).catch(() => {});
+        // 假期是硬删除：全量覆盖本地缓存，否则另一端删掉的假期会残留。
+        // 仅在 fetch 成功（data 非 null）时清空，避免请求失败时误删本地缓存。
+        await db.planPeriods.clear().catch(() => {});
+        if (periods.length > 0) await db.planPeriods.bulkPut(periods).catch(() => {});
+      }
+
+      // 课程库（TASK_02）
+      const { data: courseData } = await supabase
+        .from("courses")
+        .select("*")
+        .eq("family_id", _familyId);
+      if (courseData) {
+        const courses: Course[] = courseData.map(rowToCourse);
+        // 全量覆盖本地缓存：先清空避免云端已删的课程残留在本地下拉里
+        await db.courses.clear().catch(() => {});
+        if (courses.length > 0) await db.courses.bulkPut(courses).catch(() => {});
       }
     }
   },
@@ -531,6 +587,43 @@ export const cloudRepository = {
     if (_familyId && supabase) {
       await supabase.from("plan_periods").delete().eq("id", id).then(({ error }) => {
         if (error) console.error("[cloudRepository] 删除假期阶段云端同步失败", error);
+      });
+    }
+  },
+
+  // ── 课程库（TASK_02） ───────────────────────────────────────────────────────
+
+  async listCourses() {
+    return taskRepository.listCourses();
+  },
+
+  async createCourse(input: Omit<Course, "id" | "createdAt" | "updatedAt">) {
+    const course = await taskRepository.createCourse(input);
+    if (_familyId && supabase) {
+      await supabase.from("courses").upsert(courseToRow(course, _familyId), { onConflict: "id" }).then(({ error }) => {
+        if (error) console.error("[cloudRepository] 创建课程云端同步失败", error);
+      });
+    }
+    return course;
+  },
+
+  async updateCourse(id: string, changes: Partial<Omit<Course, "id" | "createdAt" | "updatedAt">>) {
+    await taskRepository.updateCourse(id, changes);
+    if (_familyId && supabase) {
+      const course = await db.courses.get(id);
+      if (course) {
+        await supabase.from("courses").upsert(courseToRow(course, _familyId), { onConflict: "id" }).then(({ error }) => {
+          if (error) console.error("[cloudRepository] 更新课程云端同步失败", error);
+        });
+      }
+    }
+  },
+
+  async removeCourse(id: string) {
+    await taskRepository.removeCourse(id);
+    if (_familyId && supabase) {
+      await supabase.from("courses").delete().eq("id", id).then(({ error }) => {
+        if (error) console.error("[cloudRepository] 删除课程云端同步失败", error);
       });
     }
   },

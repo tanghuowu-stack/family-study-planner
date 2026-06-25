@@ -1,7 +1,7 @@
 import { addDays, eachDayOfInterval, getDay, parseISO } from "date-fns";
 import { db } from "./db";
 import type {
-  ActivityActionType, ActivityLog, BackupData, MainCategory, OccurrenceStatus, PlanOverviewItem, PlanPeriod, PlanPeriodType, ReadingLog, RolloverMode, Task, TaskDisplay,
+  ActivityActionType, ActivityLog, BackupData, Course, MainCategory, OccurrenceStatus, PlanOverviewItem, PlanPeriod, PlanPeriodType, ReadingLog, RolloverMode, Task, TaskDisplay,
   TaskDraft, TaskOccurrenceStatus, TaskStatus,
 } from "../types/task";
 import { getMonthBounds, getMonthKey, getWeekEndKey, getWeekStartKey, isDateInRange, todayKey, toDateKey } from "../utils/date";
@@ -513,6 +513,39 @@ export const taskRepository = {
       await db.planPeriods.delete(id);
       await db.tasks.where("planPeriodId").equals(id).modify({ planPeriodId: undefined, applicablePeriodType: "all" });
       await writeLog("deleteHoliday", "planPeriod", { entityId: id, entityTitle: before?.name, beforeSnapshot: before });
+    });
+  },
+
+  // ── 课程库（TASK_02）。仿假期阶段，本地 CRUD + 操作日志。 ────────────────────
+  async listCourses() { return db.courses.orderBy("sortOrder").toArray(); },
+
+  async createCourse(input: Omit<Course, "id" | "createdAt" | "updatedAt">) {
+    const now = new Date().toISOString();
+    const course: Course = { ...input, id: makeId(), createdAt: now, updatedAt: now };
+    await db.transaction("rw", db.courses, db.activityLogs, async () => {
+      await db.courses.add(course);
+      await writeLog("createCourse", "course", { entityId: course.id, entityTitle: course.name, afterSnapshot: course });
+    });
+    return course;
+  },
+
+  async updateCourse(id: string, changes: Partial<Omit<Course, "id" | "createdAt" | "updatedAt">>) {
+    const before = await db.courses.get(id);
+    const after = before ? { ...before, ...changes, updatedAt: new Date().toISOString() } : undefined;
+    if (!after) return;
+    await db.transaction("rw", db.courses, db.activityLogs, async () => {
+      await db.courses.put(after);
+      await writeLog("editCourse", "course", { entityId: id, entityTitle: after.name, beforeSnapshot: before, afterSnapshot: after });
+    });
+  },
+
+  async removeCourse(id: string) {
+    const before = await db.courses.get(id);
+    // 课程删除不影响历史任务：只清掉任务上的 courseId 绑定，保留任务本身。
+    await db.transaction("rw", db.courses, db.tasks, db.activityLogs, async () => {
+      await db.courses.delete(id);
+      await db.tasks.where("courseId").equals(id).modify({ courseId: undefined });
+      await writeLog("deleteCourse", "course", { entityId: id, entityTitle: before?.name, beforeSnapshot: before });
     });
   },
 

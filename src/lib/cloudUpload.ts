@@ -5,7 +5,7 @@
  * 不修改本地数据，不切换页面数据源，不做双向同步。
  */
 import { db } from "../data/db";
-import type { Task, TaskOccurrenceStatus, PlanPeriod, ActivityLog } from "../types/task";
+import type { Task, TaskOccurrenceStatus, PlanPeriod, Course, ActivityLog } from "../types/task";
 import { supabase } from "./supabase";
 
 export interface UploadResult {
@@ -13,6 +13,7 @@ export interface UploadResult {
   checklistItems: number;
   occurrenceStatuses: number;
   planPeriods: number;
+  courses: number;
   activityLogs: number;
   skippedTasks: number;
   skippedOccurrenceStatuses: number;
@@ -51,6 +52,7 @@ function taskToRow(task: Task, familyId: string): Record<string, unknown> {
     main_category: task.mainCategory ?? "temporary", // 旧数据兼容
     sub_category: task.subCategory ?? "other", // 旧数据兼容
     extra_content_type: task.extraContentType ?? null,
+    course_id: task.courseId ?? null,
     time_type: task.timeType ?? "singleDate", // 旧数据兼容
     schedule_pattern: task.schedulePattern ?? null,
     date: toDateOrNull(task.date),
@@ -111,10 +113,11 @@ export async function uploadLocalDataToCloud(familyId: string): Promise<UploadRe
   if (!supabase) throw new Error("Supabase 未配置");
 
   // ── 1. 读取本地数据 ─────────────────────────────────────────────
-  const [tasks, occurrenceStatuses, planPeriods] = await Promise.all([
+  const [tasks, occurrenceStatuses, planPeriods, courses] = await Promise.all([
     db.tasks.toArray(),
     db.taskOccurrenceStatuses.toArray(),
     db.planPeriods.toArray(),
+    db.courses.toArray(),
   ]);
 
   const result: UploadResult = {
@@ -122,6 +125,7 @@ export async function uploadLocalDataToCloud(familyId: string): Promise<UploadRe
     checklistItems: 0,
     occurrenceStatuses: 0,
     planPeriods: 0,
+    courses: 0,
     activityLogs: 0,
     skippedTasks: 0,
     skippedOccurrenceStatuses: 0,
@@ -222,6 +226,25 @@ export async function uploadLocalDataToCloud(familyId: string): Promise<UploadRe
     }));
   });
   result.planPeriods = await upsertChunked("plan_periods", periodRows, "id");
+
+  // ── 5.5 上传 courses（课程库，TASK_02）─────────────────────────
+  const courseRows: Record<string, unknown>[] = courses.map((c: Course) => stripUndefined({
+    id: c.id,
+    family_id: familyId,
+    name: c.name ?? "",
+    main_category: c.mainCategory,
+    sub_category: c.subCategory,
+    extra_content_type: c.extraContentType ?? null,
+    is_class: c.isClass ?? true,
+    status: c.status ?? "active",
+    start_date: toDateOrNull(c.startDate),
+    end_date: toDateOrNull(c.endDate),
+    schedule: c.schedule ?? null,
+    sort_order: c.sortOrder ?? 0,
+    created_at: toTimestampOrNull(c.createdAt) ?? new Date().toISOString(),
+    updated_at: toTimestampOrNull(c.updatedAt) ?? new Date().toISOString(),
+  }));
+  result.courses = await upsertChunked("courses", courseRows, "id");
 
   // ── 6. 上传 activity_logs ──────────────────────────────────────
   // 第一阶段跳过操作日志上传，因为 activity_logs 表仅 grant 了 insert，

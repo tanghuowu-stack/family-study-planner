@@ -129,6 +129,8 @@ create table if not exists public.tasks (
   -- 低频配置：totalAmount / amountUnit / splitCount / amountPerSession /
   -- readingTargetCount / readingTargetUnit / allowedWeekdays / allowWeekend 等
   metadata               jsonb,
+  -- course_id（可选，关联课程库 TASK_02）在下方“课程库”小节用 ALTER 添加，
+  -- 因为 courses 表定义在 tasks 之后，避免前向引用。
   created_at             timestamptz not null default now(),
   updated_at             timestamptz not null default now()
 );
@@ -220,6 +222,42 @@ create index if not exists idx_plan_periods_family_type on public.plan_periods(f
 create trigger trg_plan_periods_updated_at
   before update on public.plan_periods
   for each row execute function public.set_updated_at();
+
+-- ============================================================
+-- 6.5 courses（课程库，TASK_02）
+-- 把会变动的“课程”从硬编码字符串变成可配置数据。
+-- 字段对齐 tasks 的分类字段，仅用于 extraHomework / interestClass 两类。
+-- ============================================================
+
+create table if not exists public.courses (
+  id                 text primary key,
+  family_id          uuid not null references public.families(id) on delete cascade,
+  name               text not null,
+  main_category      text not null,
+  sub_category       text not null,
+  extra_content_type text,
+  is_class           boolean not null default true,
+  status             text not null default 'active',  -- active / ended / planned
+  start_date         date,
+  end_date           date,
+  schedule           jsonb,
+  sort_order         integer not null default 0,
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now()
+);
+
+create index if not exists idx_courses_family_id     on public.courses(family_id);
+create index if not exists idx_courses_family_status on public.courses(family_id, status);
+
+create trigger trg_courses_updated_at
+  before update on public.courses
+  for each row execute function public.set_updated_at();
+
+-- tasks 增加可选 course_id（课程删除时置空，保留历史任务）
+alter table public.tasks
+  add column if not exists course_id text references public.courses(id) on delete set null;
+
+create index if not exists idx_tasks_course_id on public.tasks(family_id, course_id);
 
 -- ============================================================
 -- 7. activity_logs
@@ -392,6 +430,23 @@ create policy "plan_periods_delete" on public.plan_periods
   for delete using (family_id = public.get_my_family_id());
 
 -- ----------------------------------------------------------------
+-- courses（课程库，TASK_02）
+-- ----------------------------------------------------------------
+alter table public.courses enable row level security;
+
+create policy "courses_select" on public.courses
+  for select using (family_id = public.get_my_family_id());
+
+create policy "courses_insert" on public.courses
+  for insert with check (family_id = public.get_my_family_id());
+
+create policy "courses_update" on public.courses
+  for update using (family_id = public.get_my_family_id());
+
+create policy "courses_delete" on public.courses
+  for delete using (family_id = public.get_my_family_id());
+
+-- ----------------------------------------------------------------
 -- activity_logs：只追加，不允许 update / delete
 -- ----------------------------------------------------------------
 alter table public.activity_logs enable row level security;
@@ -432,6 +487,7 @@ grant select, insert, update, delete on table public.tasks to authenticated;
 grant select, insert, update, delete on table public.task_checklist_items to authenticated;
 grant select, insert, update, delete on table public.task_occurrence_statuses to authenticated;
 grant select, insert, update, delete on table public.plan_periods to authenticated;
+grant select, insert, update, delete on table public.courses to authenticated;
 grant select, insert, update, delete on table public.app_settings to authenticated;
 
 grant select, insert on table public.activity_logs to authenticated;

@@ -1,4 +1,4 @@
-import type { ExtraContentType, MainCategory, RolloverMode, TaskStatus, TaskTimeType } from "../types/task";
+import type { CourseStatus, ExtraContentType, MainCategory, RolloverMode, TaskStatus, TaskTimeType } from "../types/task";
 
 export const MAIN_CATEGORY_META: Record<MainCategory, { label: string; className: string; dot: string }> = {
   school: { label: "学校作业", className: "bg-blue-50 text-blue-700", dot: "bg-blue-500" },
@@ -28,6 +28,18 @@ export const SUB_CATEGORY_OPTIONS: Record<MainCategory, { value: string; label: 
     { value: "examCompetition", label: "考试或比赛" }, { value: "travel", label: "旅游" },
     { value: "leisure", label: "休闲" }, { value: "other", label: "其他" },
   ],
+};
+
+// 课程库（TASK_02）：课程只挂在“课外”和“兴趣班”两类下
+export const COURSE_MAIN_OPTIONS: { value: MainCategory; label: string }[] = [
+  { value: "extraHomework", label: "课外（主学科）" },
+  { value: "interestClass", label: "兴趣班" },
+];
+
+export const COURSE_STATUS_META: Record<CourseStatus, { label: string; className: string }> = {
+  active: { label: "进行中", className: "bg-emerald-50 text-emerald-700" },
+  ended: { label: "已结课", className: "bg-stone-200 text-stone-500" },
+  planned: { label: "计划中", className: "bg-amber-50 text-amber-700" },
 };
 
 export const STATUS_META: Record<TaskStatus, { label: string; className: string }> = {

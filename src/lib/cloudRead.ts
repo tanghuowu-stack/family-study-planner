@@ -27,6 +27,7 @@ export function rowToTask(row: any): Task {
     mainCategory: row.main_category,
     subCategory: row.sub_category,
     extraContentType: row.extra_content_type ?? undefined,
+    courseId: row.course_id ?? undefined,
     timeType: row.time_type,
     schedulePattern: row.schedule_pattern ?? undefined,
     date: row.date ?? undefined,

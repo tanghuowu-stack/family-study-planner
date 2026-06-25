@@ -2,7 +2,8 @@ import { ArrowDown, ArrowUp, Plus, Trash2, X } from "lucide-react";
 import { addDays, addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, isSameMonth, startOfMonth, startOfWeek } from "date-fns";
 import { useEffect, useState, type FormEvent } from "react";
 import { taskRepository } from "../data/taskRepository";
-import type { ExtraContentType, MainCategory, PlanPeriod, RolloverMode, SchedulePattern, Task, TaskDraft, TaskStatus, TaskTimeType, WeeklyQuota } from "../types/task";
+import { getRepository } from "../data/repositoryProvider";
+import type { Course, ExtraContentType, MainCategory, PlanPeriod, RolloverMode, SchedulePattern, Task, TaskDraft, TaskStatus, TaskTimeType, WeeklyQuota } from "../types/task";
 import { fromDateKey, getWeekStartKey, todayKey, toDateKey } from "../utils/date";
 import { EXTRA_CONTENT_OPTIONS, MAIN_CATEGORY_META, ROLLOVER_META, STATUS_META, SUB_CATEGORY_OPTIONS, TIME_TYPE_META, WEEKDAY_LABELS, defaultSortOrder } from "../utils/taskMeta";
 
@@ -42,6 +43,7 @@ const strip = (task: Task): TaskDraft => { const { id: _id, createdAt: _createdA
 export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Props) {
   const [draft, setDraft] = useState<TaskDraft>(task ? strip(task) : newDraft(initialDate));
   const [periods, setPeriods] = useState<PlanPeriod[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [titleTouched, setTitleTouched] = useState(!!task?.title);
   const [periodTouched, setPeriodTouched] = useState(!!task?.id);
   const [autoBoundHint, setAutoBoundHint] = useState("");
@@ -53,7 +55,35 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
   const input = "mt-1.5 w-full rounded-xl border border-stone-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-sage-500 focus:ring-2 focus:ring-sage-100";
   const label = "text-sm font-medium text-stone-600";
 
-  useEffect(() => { taskRepository.listPlanPeriods().then(setPeriods); const handler = (event: KeyboardEvent) => event.key === "Escape" && onClose(); window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler); }, [onClose]);
+  useEffect(() => { taskRepository.listPlanPeriods().then(setPeriods); getRepository().listCourses().then(setCourses); const handler = (event: KeyboardEvent) => event.key === "Escape" && onClose(); window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler); }, [onClose]);
+
+  // 可选课程：进行中且在有效期内；编辑时始终保留已绑定的课程，避免结课后选项消失
+  const selectableCourses = courses.filter((course) => {
+    if (course.id === draft.courseId) return true;
+    if (course.status !== "active") return false;
+    const today = todayKey();
+    if (course.startDate && course.startDate > today) return false;
+    if (course.endDate && course.endDate < today) return false;
+    return true;
+  });
+  // 选课后带出分类/上课/时间，并记录 courseId；选“不关联”则清除绑定
+  const selectCourse = (courseId: string) => {
+    if (!courseId) return set("courseId", undefined);
+    const course = courses.find((item) => item.id === courseId);
+    if (!course) return;
+    setTitleTouched(true);
+    setDraft((current) => ({
+      ...current,
+      courseId,
+      mainCategory: course.mainCategory,
+      subCategory: course.subCategory,
+      extraContentType: course.mainCategory === "extraHomework" ? (course.isClass ? "class" : course.extraContentType ?? "homework") : undefined,
+      title: current.title.trim() ? current.title : course.name,
+      sortOrder: defaultSortOrder(course.mainCategory, course.subCategory),
+      startTime: course.schedule?.startTime ?? current.startTime,
+      endTime: course.schedule?.endTime ?? current.endTime,
+    }));
+  };
 
   useEffect(() => {
     if (periodTouched || !periods.length) return;
@@ -135,7 +165,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
     const reading = mainCategory === "readingPlan";
     const auto = mainCategory === "extraHomework" || reading || subCategory === "pianoPractice";
     setDraft((current) => ({
-      ...current, mainCategory, subCategory, title: titleTouched ? current.title : defaultTitle(mainCategory, subCategory, mainCategory === "extraHomework" ? "homework" : undefined),
+      ...current, mainCategory, subCategory, courseId: undefined, title: titleTouched ? current.title : defaultTitle(mainCategory, subCategory, mainCategory === "extraHomework" ? "homework" : undefined),
       timeType: reading ? "weekGoal" : current.timeType, weekStart: reading ? getWeekStartKey(initialDate) : current.weekStart,
       schedulePattern: reading ? "singleDate" : current.schedulePattern, specificDates: reading ? undefined : current.specificDates,
       weeklyQuota: reading ? { enabled: true, targetCount: 1, unit: "本", isWeeklyRecurring: true, allowAutoDistribute: true, allowRollover: true } : undefined,
@@ -145,7 +175,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
   };
   const changeSub = (subCategory: string) => {
     const auto = draft.mainCategory === "extraHomework" || draft.mainCategory === "readingPlan" || subCategory === "pianoPractice";
-    setDraft((current) => ({ ...current, subCategory, title: titleTouched ? current.title : defaultTitle(current.mainCategory, subCategory, current.extraContentType), rolloverMode: auto ? "autoNextDay" : "keepOverdue", allowRollover: auto, sortOrder: defaultSortOrder(current.mainCategory, subCategory) }));
+    setDraft((current) => ({ ...current, subCategory, courseId: undefined, title: titleTouched ? current.title : defaultTitle(current.mainCategory, subCategory, current.extraContentType), rolloverMode: auto ? "autoNextDay" : "keepOverdue", allowRollover: auto, sortOrder: defaultSortOrder(current.mainCategory, subCategory) }));
   };
   const changeExtraContent = (extraContentType: ExtraContentType) => {
     const routine = extraContentType === "dictation" || (extraContentType === "practice" && /每日|计算|口算/.test(draft.title));
@@ -211,6 +241,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
   return <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/30 backdrop-blur-sm sm:items-center sm:p-5" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><form onSubmit={submit} className="max-h-[95vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-paper shadow-2xl sm:rounded-3xl">
     <header className="sticky top-0 z-10 flex items-center justify-between border-b border-stone-200 bg-paper/95 px-5 py-4 backdrop-blur sm:px-7"><div><p className="text-xs font-semibold tracking-widest text-sage-700">{task ? "编辑任务" : "新建任务"}</p><h2 className="mt-1 text-xl font-semibold">{task?.title ?? "添加一项安排"}</h2></div><button type="button" aria-label="关闭" onClick={onClose} className="rounded-full bg-white p-2 text-stone-500"><X className="h-5 w-5" /></button></header>
     <div className="space-y-5 px-5 py-6 sm:px-7">
+      {selectableCourses.length > 0 && <label className={label}>选择课程（可选）<select value={draft.courseId ?? ""} onChange={(e) => selectCourse(e.target.value)} className={input}><option value="">不关联课程（自由输入）</option>{selectableCourses.map((course) => <option key={course.id} value={course.id}>{course.name}</option>)}</select><span className="mt-1 block text-xs text-stone-400">选择课程会自动带出分类与上课时间；改动下方分类会解除绑定</span></label>}
       <div className="grid gap-4 sm:grid-cols-2"><label className={label}>一级分类<select value={draft.mainCategory} onChange={(e) => changeMain(e.target.value as MainCategory)} className={input}>{Object.entries(MAIN_CATEGORY_META).filter(([value]) => value !== "readingPlan").map(([value, meta]) => <option key={value} value={value}>{meta.label}</option>)}</select></label><label className={label}>二级类型<select value={draft.subCategory} onChange={(e) => changeSub(e.target.value)} className={input}>{SUB_CATEGORY_OPTIONS[draft.mainCategory].map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label></div>
       {draft.mainCategory === "extraHomework" && <label className={label}>内容类型<select value={draft.extraContentType ?? "homework"} onChange={(e) => changeExtraContent(e.target.value as ExtraContentType)} className={input}>{EXTRA_CONTENT_OPTIONS.filter((item) => item.value !== "reading" || draft.subCategory === "other").map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>}
       <label className={label}>任务标题{draft.mainCategory === "interestClass" || draft.extraContentType === "reading" ? "（可选）" : " *"}<input autoFocus value={draft.title} onChange={(e) => { const title = e.target.value; setTitleTouched(true); const routine = draft.mainCategory === "extraHomework" && (draft.extraContentType === "dictation" || (draft.extraContentType === "practice" && /每日|计算|口算/.test(title))); setDraft((current) => ({ ...current, title, ...(routine ? { calendarVisibility: "hide" as const, rolloverMode: "skipIfMissed" as const, allowRollover: false } : {}) })); }} className={input} placeholder={draft.mainCategory === "interestClass" || draft.extraContentType === "reading" ? "可留空，填写时用于补充具体内容" : "输入具体任务内容"} /></label>

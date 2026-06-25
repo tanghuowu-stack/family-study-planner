@@ -15,8 +15,8 @@ import { cloudRepository } from "../data/cloudRepository";
 const DEBOUNCE_MS = 600;
 /** 前台/focus/online 触发的整页刷新节流间隔 */
 const FOREGROUND_THROTTLE_MS = 10_000;
-/** 加入 realtime publication 的 4 张表 */
-const TABLES = ["tasks", "task_checklist_items", "task_occurrence_statuses", "plan_periods"] as const;
+/** 加入 realtime publication 的表 */
+const TABLES = ["tasks", "task_checklist_items", "task_occurrence_statuses", "plan_periods", "courses"] as const;
 
 type Channel = ReturnType<NonNullable<typeof supabase>["channel"]>;
 
@@ -26,6 +26,7 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let pulling = false;
 let pendingWhilePulling = false;
 let lastForegroundPull = 0;
+let authListener: { unsubscribe: () => void } | null = null;
 
 /**
  * 拉取一次云端最新数据并通知 UI。
@@ -77,21 +78,37 @@ function handleVisibility(): void {
  * 启动 Realtime 订阅 + 回前台兜底。
  * @param onChangeCb 数据更新后用来触发页面重渲染（传 App 的 refresh）
  */
-export function startRealtimeSync(onChangeCb: () => void): void {
+export async function startRealtimeSync(onChangeCb: () => void): Promise<void> {
   if (!supabase) return;
   if (channel) return; // 已订阅，避免重复
   onChange = onChangeCb;
+
+  // 关键：把当前登录用户的 JWT 交给 Realtime WebSocket。
+  // 否则 socket 以匿名身份连接，RLS 在 realtime 上下文里按 anon 过滤，
+  // get_my_family_id() 返回 null，postgres_changes 收不到任何事件
+  // （写入和手动刷新走带 JWT 的 REST，所以照常工作，只有实时推送失效）。
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (token) await supabase.realtime.setAuth(token);
+
+  // session 约每小时刷新一次，token 变化后必须同步给 realtime，
+  // 否则订阅会在 token 过期后悄悄失效（iPad 长期挂在前台尤其需要）。
+  authListener = supabase.auth.onAuthStateChange((_event, session) => {
+    if (session?.access_token && supabase) void supabase.realtime.setAuth(session.access_token);
+  }).data.subscription;
 
   const ch = supabase.channel("family-sync");
   for (const table of TABLES) {
     ch.on("postgres_changes", { event: "*", schema: "public", table }, () => schedulePull());
   }
-  ch.subscribe((status) => {
+  ch.subscribe((status, err) => {
     // 订阅成功 / 断线重连成功后，先做一次全量拉取，补回断线期间错过的变更，
     // 不能只依赖后续推送。
     if (status === "SUBSCRIBED") {
       lastForegroundPull = Date.now();
       void doPull();
+    } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+      console.warn(`[realtimeSync] 订阅异常：${status}`, err ?? "");
     }
   });
   channel = ch;
@@ -111,6 +128,10 @@ export function stopRealtimeSync(): void {
   document.removeEventListener("visibilitychange", handleVisibility);
   window.removeEventListener("focus", foregroundPull);
   window.removeEventListener("online", foregroundPull);
+  if (authListener) {
+    authListener.unsubscribe();
+    authListener = null;
+  }
   if (channel && supabase) {
     void supabase.removeChannel(channel);
   }

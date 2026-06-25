@@ -47,7 +47,7 @@ export default function App() {
           );
           refresh();
           // 进入云端模式后建立 Realtime 订阅，数据变更自动拉取并重渲染
-          startRealtimeSync(refresh);
+          await startRealtimeSync(refresh);
         }
       } catch (e) {
         console.warn("[App] 云同步初始化失败，使用本地模式", e);

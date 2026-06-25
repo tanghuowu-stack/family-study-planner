@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from "dexie";
-import type { ActivityLog, MainCategory, PlanPeriod, ReadingLog, Task, TaskOccurrenceStatus } from "../types/task";
+import type { ActivityLog, Course, MainCategory, PlanPeriod, ReadingLog, Task, TaskOccurrenceStatus } from "../types/task";
 
 type LegacyTask = Record<string, unknown> & { category?: string; subType?: string; courseType?: string };
 
@@ -23,6 +23,7 @@ export class PlannerDatabase extends Dexie {
   planPeriods!: EntityTable<PlanPeriod, "id">;
   activityLogs!: EntityTable<ActivityLog, "id">;
   readingLogs!: EntityTable<ReadingLog, "id">;
+  courses!: EntityTable<Course, "id">;
 
   constructor() {
     super("familyLearningPlanner");
@@ -128,6 +129,15 @@ export class PlannerDatabase extends Dexie {
       planPeriods: "id, type, startDate, endDate, isActive, updatedAt",
       activityLogs: "id, actionType, entityType, entityId, createdAt",
       readingLogs: "id, taskId, weekStart, date, [taskId+weekStart], createdAt",
+    });
+    // 版本 8：新增课程库表（TASK_02），tasks 增加可选 courseId 索引。仅加表，不迁移现有数据。
+    this.version(8).stores({
+      tasks: "id, timeType, mainCategory, subCategory, extraContentType, calendarVisibility, date, startDate, endDate, weekStart, month, status, parentTaskId, allocationWeekStart, planPeriodId, courseId, deletedAt, updatedAt",
+      taskOccurrenceStatuses: "id, taskId, occurrenceDate, overrideDate, [taskId+occurrenceDate], status",
+      planPeriods: "id, type, startDate, endDate, isActive, updatedAt",
+      activityLogs: "id, actionType, entityType, entityId, createdAt",
+      readingLogs: "id, taskId, weekStart, date, [taskId+weekStart], createdAt",
+      courses: "id, mainCategory, subCategory, status, sortOrder, updatedAt",
     });
   }
 }

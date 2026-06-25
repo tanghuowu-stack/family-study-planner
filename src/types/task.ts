@@ -39,6 +39,36 @@ export interface PlanPeriod {
   updatedAt: string;
 }
 
+export type CourseStatus = "active" | "ended" | "planned";
+
+/** 课程固定上课规律（仅作默认带出，不做自动排课） */
+export interface CourseSchedule {
+  weekdays?: number[];
+  startTime?: string;
+  endTime?: string;
+}
+
+/**
+ * 课程库：把会变动的“课程”从硬编码字符串变成可配置数据（TASK_02）。
+ * 字段对齐 task 的分类字段，选课时 1:1 带出，无需翻译层。
+ * 仅用于 extraHomework（课外）与 interestClass（兴趣班）两类。
+ */
+export interface Course {
+  id: string;
+  name: string;
+  mainCategory: MainCategory;
+  subCategory: string;
+  extraContentType?: ExtraContentType;
+  isClass: boolean;
+  status: CourseStatus;
+  startDate?: string;
+  endDate?: string;
+  schedule?: CourseSchedule;
+  sortOrder?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface RecurrenceRule {
   frequency: "daily" | "weekly" | "monthly";
   weekdays?: number[];
@@ -66,6 +96,7 @@ export interface Task {
   mainCategory: MainCategory;
   subCategory: string;
   extraContentType?: ExtraContentType;
+  courseId?: string;
   timeType: TaskTimeType;
   date?: string;
   startDate?: string;
@@ -164,12 +195,13 @@ export type TaskDraft = Omit<Task, "id" | "createdAt" | "updatedAt">;
 export type ActivityActionType =
   | "create" | "edit" | "complete" | "uncomplete" | "delete" | "batchDelete" | "restore"
   | "cancelOccurrence" | "postponeOccurrence" | "createHoliday" | "editHoliday" | "deleteHoliday"
+  | "createCourse" | "editCourse" | "deleteCourse"
   | "recordReading" | "undoReading" | "import" | "export";
 
 export interface ActivityLog {
   id: string;
   actionType: ActivityActionType;
-  entityType: "task" | "taskOccurrence" | "planPeriod" | "readingLog" | "backup";
+  entityType: "task" | "taskOccurrence" | "planPeriod" | "course" | "readingLog" | "backup";
   entityId?: string;
   entityTitle?: string;
   beforeSnapshot?: unknown;

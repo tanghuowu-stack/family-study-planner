@@ -12,13 +12,13 @@ import { TASK_SUBJECT_GROUPS, taskSubjectGroup } from "../utils/taskGrouping";
 
 function ProgressCircle({ completed, total }: { completed: number; total: number }) {
   const percentage = total === 0 ? 0 : (completed / total) * 100;
-  const radius = 24;
+  const radius = 17;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (percentage / 100) * circumference;
-  return <svg width="64" height="64" viewBox="0 0 64 64" className="inline-block">
-    <circle cx="32" cy="32" r={radius} className="fill-none stroke-mint" strokeWidth="3" />
-    <circle cx="32" cy="32" r={radius} className="fill-none stroke-primary transition-all duration-500" strokeWidth="3" strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" />
-    <text x="32" y="37" textAnchor="middle" className="text-xs font-semibold" fill="currentColor">
+  return <svg width="44" height="44" viewBox="0 0 44 44" className="inline-block shrink-0">
+    <circle cx="22" cy="22" r={radius} className="fill-none stroke-mint" strokeWidth="3" />
+    <circle cx="22" cy="22" r={radius} className="fill-none stroke-primary transition-all duration-500" strokeWidth="3" strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" transform="rotate(-90 22 22)" />
+    <text x="22" y="26" textAnchor="middle" fontSize="9" fontWeight="600" fill="currentColor">
       {completed}/{total}
     </text>
   </svg>;
@@ -51,8 +51,8 @@ export function DayPage(props: Props) {
   const annotationLabels = [...annotation.solarTerms, ...annotation.festivals];
   const renderTask = (task: TaskDisplay) => <TaskItem key={`${task.id}:${task.occurrenceDate ?? task.date}`} task={task} {...rowProps} />;
 
-  return <main ref={swipeRef} className="mx-auto w-full max-w-7xl px-4 pb-28 pt-5 sm:px-6 sm:pt-8">
-    <div className="mb-5 flex flex-col items-center justify-center"><div className="flex items-baseline justify-center gap-4 text-center"><h1 className="text-3xl font-semibold text-ink sm:text-4xl">{formatFullDate(props.date)}{annotationLabels.length > 0 && <span className="ml-2 text-base font-medium text-amber-700 sm:text-lg">· {annotationLabels.join(" · ")}</span>}{annotation.holidayStatus && <span className={`ml-2 inline-flex rounded-md px-2 py-0.5 align-middle text-sm font-bold ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{annotation.holidayStatus}</span>}</h1><ProgressCircle completed={done.length} total={pending.length + done.length} /></div></div>
+  return <main ref={swipeRef} className="mx-auto w-full max-w-7xl px-4 pb-28 pt-3 sm:px-6 sm:pt-5">
+    <div className="mb-5 flex flex-col items-center justify-center"><div className="flex items-center justify-center gap-3 text-center"><h1 className="text-3xl font-semibold text-ink sm:text-4xl">{formatFullDate(props.date)}{annotationLabels.length > 0 && <span className="ml-2 text-base font-medium text-amber-700 sm:text-lg">· {annotationLabels.join(" · ")}</span>}{annotation.holidayStatus && <span className={`ml-2 inline-flex rounded-md px-2 py-0.5 align-middle text-sm font-bold ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{annotation.holidayStatus}</span>}</h1><ProgressCircle completed={done.length} total={pending.length + done.length} /></div></div>
     <div className="mb-5 grid grid-cols-3 rounded-2xl border border-stone-100 bg-white p-1.5 text-sm"><button onClick={() => move(-1)} className="rounded-xl px-2 py-2 text-stone-500 hover:bg-stone-50">← 昨天</button><button onClick={() => props.onDateChange(todayKey())} className="rounded-xl px-2 py-2 font-medium text-primary hover:bg-mint">回到今天</button><button onClick={() => move(1)} className="rounded-xl px-2 py-2 text-stone-500 hover:bg-stone-50">明天 →</button></div>
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_480px] lg:items-start"><div><section className="rounded-2xl border border-stone-100 bg-white p-4 shadow-card"><div className="border-b border-stone-100 px-1 pb-3.5"><h2 className="text-base font-bold text-ink">今日清单</h2></div>{pending.length ? <GroupedTaskGrid tasks={pending} renderTask={renderTask} /> : <div className="p-2"><EmptyState compact /></div>}</section>{overdue.length > 0 && <section className="mt-6 overflow-visible rounded-2xl border border-alert/30 bg-white"><div className="border-b border-alert/30 bg-alert/10 px-4 py-3"><h2 className="font-semibold text-alert">逾期未完成 · {overdue.length}</h2></div>{overdue.map(renderTask)}</section>}{done.length > 0 && <section className="mt-6 rounded-2xl border border-stone-100 bg-white p-4"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-1 py-1 text-base font-bold text-stone-600">已完成 · {done.length}<ChevronDown className={`h-4 w-4 transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <GroupedTaskGrid tasks={done} renderTask={renderTask} />}</section>}</div><aside className="grid gap-3 lg:sticky lg:top-20"><PlanSummary title="本周计划" items={weekSummary} onClick={props.onOpenWeek} /><PlanSummary title="本月计划" items={monthSummary} onClick={props.onOpenMonth} /></aside></div>
   </main>;

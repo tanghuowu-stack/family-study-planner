@@ -1,6 +1,6 @@
 import type { CourseStatus, ExtraContentType, MainCategory, RolloverMode, TaskStatus, TaskTimeType, SubCategory } from "../types/task";
 
-export const SUB_CATEGORY_META: Record<SubCategory, { icon: string; color: string; bgColor: string; label: string }> = {
+export const SUB_CATEGORY_META: Record<SubCategory | ExtraContentType, { icon: string; color: string; bgColor: string; label: string }> = {
   chinese: { icon: "📖", color: "#C65D3B", bgColor: "#F5E6E0", label: "语文" },
   math: { icon: "🔢", color: "#4F46E5", bgColor: "#EEF2FF", label: "数学" },
   english: { icon: "🔤", color: "#7C3AED", bgColor: "#F3E8FF", label: "英语" },

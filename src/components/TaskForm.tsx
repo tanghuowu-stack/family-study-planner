@@ -5,7 +5,7 @@ import { taskRepository } from "../data/taskRepository";
 import { getRepository } from "../data/repositoryProvider";
 import type { Course, ExtraContentType, MainCategory, PlanPeriod, RolloverMode, SchedulePattern, Task, TaskDraft, TaskStatus, TaskTimeType, WeeklyQuota } from "../types/task";
 import { fromDateKey, getWeekStartKey, todayKey, toDateKey } from "../utils/date";
-import { EXTRA_CONTENT_OPTIONS, MAIN_CATEGORY_META, ROLLOVER_META, STATUS_META, SUB_CATEGORY_OPTIONS, TIME_TYPE_META, WEEKDAY_LABELS, defaultSortOrder } from "../utils/taskMeta";
+import { EXTRA_CONTENT_OPTIONS_SIMPLE, MAIN_CATEGORY_META, ROLLOVER_META, STATUS_META, SUB_CATEGORY_OPTIONS, TIME_TYPE_META, WEEKDAY_LABELS, defaultSortOrder } from "../utils/taskMeta";
 
 interface Props { task?: Task; initialDate?: string; onClose: () => void; onSave: (draft: TaskDraft, force?: boolean) => Promise<void>; }
 const PREF_KEY = "familyPlanner.taskFormPreferences.v1";
@@ -78,7 +78,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
       courseId,
       mainCategory: course.mainCategory,
       subCategory: course.subCategory,
-      extraContentType: course.mainCategory === "extraHomework" ? (course.isClass ? "class" : course.extraContentType ?? "homework") : undefined,
+      extraContentType: course.mainCategory === "extraHomework" ? (course.isClass ? "class" : (["class", "homework"].includes(course.extraContentType ?? "") ? course.extraContentType : "homework")) : undefined,
       title: current.title.trim() ? current.title : course.name,
       sortOrder: defaultSortOrder(course.mainCategory, course.subCategory),
       startTime: course.schedule?.startTime ?? current.startTime,
@@ -170,18 +170,24 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
       timeType: reading ? "weekGoal" : current.timeType, weekStart: reading ? getWeekStartKey(initialDate) : current.weekStart,
       schedulePattern: reading ? "singleDate" : current.schedulePattern, specificDates: reading ? undefined : current.specificDates,
       weeklyQuota: reading ? { enabled: true, targetCount: 1, unit: "本", isWeeklyRecurring: true, allowAutoDistribute: true, allowRollover: true } : undefined,
-      extraContentType: mainCategory === "extraHomework" ? "homework" : undefined,
+      extraContentType: mainCategory === "extraHomework" && subCategory !== "reading" ? "homework" : undefined,
       rolloverMode: auto ? "autoNextDay" : "keepOverdue", allowRollover: auto, sortOrder: defaultSortOrder(mainCategory, subCategory),
     }));
   };
   const changeSub = (subCategory: string) => {
     const auto = draft.mainCategory === "extraHomework" || draft.mainCategory === "readingPlan" || subCategory === "pianoPractice";
-    setDraft((current) => ({ ...current, subCategory, courseId: undefined, title: titleTouched ? current.title : defaultTitle(current.mainCategory, subCategory, current.extraContentType), rolloverMode: auto ? "autoNextDay" : "keepOverdue", allowRollover: auto, sortOrder: defaultSortOrder(current.mainCategory, subCategory) }));
+    const isReading = draft.mainCategory === "extraHomework" && subCategory === "reading";
+    setDraft((current) => ({
+      ...current, subCategory, courseId: undefined,
+      extraContentType: isReading ? undefined : (draft.mainCategory === "extraHomework" ? (current.extraContentType ?? "homework") : current.extraContentType),
+      title: isReading ? "" : (titleTouched ? current.title : defaultTitle(current.mainCategory, subCategory, current.extraContentType)),
+      rolloverMode: auto ? "autoNextDay" : "keepOverdue", allowRollover: auto,
+      sortOrder: defaultSortOrder(current.mainCategory, subCategory),
+    }));
+    if (isReading) setTitleTouched(false);
   };
   const changeExtraContent = (extraContentType: ExtraContentType) => {
-    const routine = extraContentType === "dictation" || (extraContentType === "practice" && /每日|计算|口算/.test(draft.title));
-    const defaultText = defaultTitle("extraHomework", draft.subCategory, extraContentType);
-    setDraft((current) => ({ ...current, extraContentType, title: titleTouched ? current.title : defaultText, calendarVisibility: routine ? "hide" : current.calendarVisibility ?? "show", rolloverMode: routine ? "skipIfMissed" : current.rolloverMode, allowRollover: routine ? false : current.allowRollover }));
+    setDraft((current) => ({ ...current, extraContentType }));
   };
   const changeTimeType = (timeType: TaskTimeType) => setDraft((current) => ({
     ...current, timeType,
@@ -193,17 +199,13 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
     assignmentWindow: timeType === "assignmentWindow" ? current.assignmentWindow ?? { startDate: initialDate, endDate: initialDate } : undefined,
     recurrence: timeType === "recurring" ? current.recurrence ?? { frequency: "weekly", weekdays: [new Date(`${initialDate}T00:00:00`).getDay()], startDate: initialDate } : undefined,
   }));
-  const changePattern = (schedulePattern: SchedulePattern) => setDraft((current) => {
-    const dailyRoutine = schedulePattern === "dailyRecurring" && current.mainCategory === "extraHomework" && ["dictation", "recitation"].includes(current.extraContentType ?? "");
-    return {
-      ...current, schedulePattern,
-      recurrence: schedulePattern === "weeklyRecurring" ? current.recurrence ?? { frequency: "weekly", weekdays: [1], startDate: initialDate } : schedulePattern === "dailyRecurring" ? { frequency: "daily", startDate: current.recurrence?.startDate ?? initialDate, endDate: current.recurrence?.endDate } : undefined,
-      specificDates: schedulePattern === "specificDates" ? current.specificDates ?? [initialDate] : undefined,
-      startDate: ["dateRangeDaily", "dateRangeWeekdays"].includes(schedulePattern) ? current.startDate ?? initialDate : current.startDate,
-      endDate: ["dateRangeDaily", "dateRangeWeekdays"].includes(schedulePattern) ? current.endDate ?? initialDate : current.endDate,
-      ...(dailyRoutine ? { calendarVisibility: "hide" as const, rolloverMode: "skipIfMissed" as const, allowRollover: false } : {}),
-    };
-  });
+  const changePattern = (schedulePattern: SchedulePattern) => setDraft((current) => ({
+    ...current, schedulePattern,
+    recurrence: schedulePattern === "weeklyRecurring" ? current.recurrence ?? { frequency: "weekly", weekdays: [1], startDate: initialDate } : schedulePattern === "dailyRecurring" ? { frequency: "daily", startDate: current.recurrence?.startDate ?? initialDate, endDate: current.recurrence?.endDate } : undefined,
+    specificDates: schedulePattern === "specificDates" ? current.specificDates ?? [initialDate] : undefined,
+    startDate: ["dateRangeDaily", "dateRangeWeekdays"].includes(schedulePattern) ? current.startDate ?? initialDate : current.startDate,
+    endDate: ["dateRangeDaily", "dateRangeWeekdays"].includes(schedulePattern) ? current.endDate ?? initialDate : current.endDate,
+  }));
   const toggleDays = (day: number, field: "allowedWeekdays" | "recurrence" | "rangeWeekdays") => {
     const values = field === "recurrence" ? draft.recurrence?.weekdays ?? [] : field === "rangeWeekdays" ? draft.rangeWeekdays ?? [] : draft.allowedWeekdays ?? [];
     const next = values.includes(day) ? values.filter((item) => item !== day) : [...values, day];
@@ -215,7 +217,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
 
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setError("");
-    if (!draft.title.trim() && draft.mainCategory !== "interestClass" && draft.extraContentType !== "reading") return setError("请填写任务标题");
+    if (!draft.title.trim() && draft.mainCategory !== "interestClass" && !(draft.mainCategory === "extraHomework" && draft.subCategory === "reading")) return setError("请填写任务标题");
     if (draft.endTime && (!draft.startTime || draft.endTime <= draft.startTime)) return setError("结束时间必须晚于开始时间");
     if ((draft.timeType === "dateRange" || (draft.timeType === "recurring" && ["dateRangeDaily", "dateRangeWeekdays"].includes(draft.schedulePattern ?? ""))) && (!draft.startDate || !draft.endDate || draft.startDate > draft.endDate)) return setError("日期范围不正确");
     if (draft.timeType === "recurring" && draft.schedulePattern === "specificDates" && !draft.specificDates?.length) return setError("请至少填写一个指定日期");
@@ -253,9 +255,9 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
 
       <label className={label}>二级类型<select value={draft.subCategory} onChange={(e) => changeSub(e.target.value)} className={input}>{SUB_CATEGORY_OPTIONS[draft.mainCategory].map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
 
-      {draft.mainCategory === "extraHomework" && <label className={label}>内容类型<select value={draft.extraContentType ?? "homework"} onChange={(e) => changeExtraContent(e.target.value as ExtraContentType)} className={input}>{EXTRA_CONTENT_OPTIONS.filter((item) => item.value !== "reading" || draft.subCategory === "other").map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>}
+      {draft.mainCategory === "extraHomework" && draft.subCategory !== "reading" && <label className={label}>内容类型<select value={draft.extraContentType ?? "homework"} onChange={(e) => changeExtraContent(e.target.value as ExtraContentType)} className={input}>{EXTRA_CONTENT_OPTIONS_SIMPLE.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>}
 
-      <label className={label}>任务标题{draft.mainCategory === "interestClass" || draft.extraContentType === "reading" ? "（可选）" : " *"}<input autoFocus value={draft.title} onChange={(e) => { const title = e.target.value; setTitleTouched(true); const routine = draft.mainCategory === "extraHomework" && (draft.extraContentType === "dictation" || (draft.extraContentType === "practice" && /每日|计算|口算/.test(title))); setDraft((current) => ({ ...current, title, ...(routine ? { calendarVisibility: "hide" as const, rolloverMode: "skipIfMissed" as const, allowRollover: false } : {}) })); }} className={input} placeholder={draft.mainCategory === "interestClass" || draft.extraContentType === "reading" ? "可留空，填写时用于补充具体内容" : "输入具体任务内容"} /></label>
+      <label className={label}>任务标题{draft.mainCategory === "interestClass" || (draft.mainCategory === "extraHomework" && draft.subCategory === "reading") ? "（可选）" : " *"}<input autoFocus value={draft.title} onChange={(e) => { setTitleTouched(true); setDraft((current) => ({ ...current, title: e.target.value })); }} className={input} placeholder={draft.mainCategory === "interestClass" || (draft.mainCategory === "extraHomework" && draft.subCategory === "reading") ? "可留空，填写时用于补充具体内容" : "输入具体任务内容"} /></label>
 
       {draft.timeType === "singleDate" && <DateField title="日期" value={draft.date} onChange={(value) => set("date", value)} input={input} label={label} required />}
 

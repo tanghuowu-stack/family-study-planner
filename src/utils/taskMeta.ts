@@ -15,7 +15,7 @@ export const SUB_CATEGORY_OPTIONS: Record<MainCategory, { value: string; label: 
   ],
   extraHomework: [
     { value: "chinese", label: "语文" }, { value: "math", label: "数学" },
-    { value: "english", label: "英语" }, { value: "other", label: "其他" },
+    { value: "english", label: "英语" }, { value: "reading", label: "阅读" },
   ],
   interestClass: [
     { value: "piano", label: "钢琴课" }, { value: "swimming", label: "游泳课" },
@@ -61,9 +61,14 @@ export const ROLLOVER_META: Record<RolloverMode, string> = {
 
 export const WEEKDAY_LABELS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 export const EXTRA_CONTENT_OPTIONS: { value: ExtraContentType; label: string }[] = [
-  { value: "class", label: "上课" }, { value: "homework", label: "作业" }, { value: "practice", label: "练习" },
-  { value: "dictation", label: "听写" }, { value: "recitation", label: "背诵" }, { value: "reading", label: "阅读" },
+  { value: "class", label: "上课" }, { value: "homework", label: "作业" },
+  { value: "practice", label: "练习" }, { value: "dictation", label: "听写" },
+  { value: "recitation", label: "背诵" }, { value: "reading", label: "阅读" },
   { value: "other", label: "其他" },
+];
+// 课外（语文/数学/英语）下可选的内容类型——精简后只保留上课和作业
+export const EXTRA_CONTENT_OPTIONS_SIMPLE: { value: ExtraContentType; label: string }[] = [
+  { value: "class", label: "上课" }, { value: "homework", label: "作业" },
 ];
 export const extraContentLabel = (value?: ExtraContentType) => EXTRA_CONTENT_OPTIONS.find((item) => item.value === value)?.label ?? "其他";
 
@@ -71,12 +76,11 @@ export const subCategoryLabel = (main: MainCategory, sub: string) =>
   SUB_CATEGORY_OPTIONS[main]?.find((item) => item.value === sub)?.label ?? "其他";
 
 export const taskDisplayName = (task: { mainCategory: MainCategory; subCategory: string; title: string; extraContentType?: ExtraContentType }) => {
-  const base = `${MAIN_CATEGORY_META[task.mainCategory].label}·${subCategoryLabel(task.mainCategory, task.subCategory)}${task.mainCategory === "extraHomework" ? `｜${extraContentLabel(task.extraContentType)}` : ""}`;
+  const showContentType = task.mainCategory === "extraHomework" && task.subCategory !== "reading";
+  const base = `${MAIN_CATEGORY_META[task.mainCategory].label}·${subCategoryLabel(task.mainCategory, task.subCategory)}${showContentType ? `｜${extraContentLabel(task.extraContentType)}` : ""}`;
   const title = task.title.trim();
   const repeatedInterestTitle = task.mainCategory === "interestClass" && title === subCategoryLabel(task.mainCategory, task.subCategory);
-  // 课外·其他｜阅读 且标题为空时，不显示多余的" - 阅读"
-  const isReadingNoTitle = task.mainCategory === "extraHomework" && task.extraContentType === "reading" && !title;
-  return title && !repeatedInterestTitle && !isReadingNoTitle ? `${base} - ${title}` : base;
+  return title && !repeatedInterestTitle ? `${base} - ${title}` : base;
 };
 
 export const isCourseTask = (task: { mainCategory: MainCategory; subCategory: string; extraContentType?: ExtraContentType }) =>
@@ -85,7 +89,7 @@ export const isCourseTask = (task: { mainCategory: MainCategory; subCategory: st
 
 const SORT_KEYS = [
   "school:chinese", "school:math", "school:english", "school:other",
-  "extraHomework:chinese", "extraHomework:math", "extraHomework:english", "extraHomework:other",
+  "extraHomework:chinese", "extraHomework:math", "extraHomework:english", "extraHomework:reading",
   "readingPlan:chineseReading", "readingPlan:englishReading", "interestClass:pianoPractice",
   "interestClass:piano", "interestClass:swimming", "interestClass:rollerSkating",
   "temporary:examCompetition", "temporary:travel", "temporary:leisure", "temporary:other",

@@ -5,6 +5,7 @@ import { TaskForm } from "./components/TaskForm";
 import { getRepository, isCloudMode, setCloudMode } from "./data/repositoryProvider";
 import { cloudRepository } from "./data/cloudRepository";
 import { loadAuthState } from "./lib/cloudAuth";
+import { startRealtimeSync, stopRealtimeSync } from "./lib/realtimeSync";
 import { BackupPage } from "./pages/BackupPage";
 import { DayPage } from "./pages/DayPage";
 import { MonthPage } from "./pages/MonthPage";
@@ -45,6 +46,8 @@ export default function App() {
             console.warn("[App] 首次云端同步失败，降级到本地模式", e)
           );
           refresh();
+          // 进入云端模式后建立 Realtime 订阅，数据变更自动拉取并重渲染
+          startRealtimeSync(refresh);
         }
       } catch (e) {
         console.warn("[App] 云同步初始化失败，使用本地模式", e);
@@ -53,6 +56,7 @@ export default function App() {
       }
     }
     void initCloud();
+    return () => stopRealtimeSync();
   }, []);
 
   const repo = () => getRepository();

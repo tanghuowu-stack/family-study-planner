@@ -3,15 +3,23 @@
 @tailwind utilities;
 
 :root {
+  --color-primary: #6BB089;
+  --color-mint: #EAF5EC;
+  --color-lavender: #ECE6F7;
+  --color-ink: #2A3B30;
+  --color-muted: #7A8A80;
+  --color-alert: #E8743B;
+  --color-paper: #F8FAF7;
+
   font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
-  color: #25302b;
-  background: #f7f8f3;
+  color: var(--color-ink);
+  background: var(--color-paper);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
 
 * { box-sizing: border-box; }
-html { background: #f7f8f3; }
+html { background: var(--color-paper); }
 body { margin: 0; min-width: 320px; min-height: 100vh; }
 button, input, select, textarea { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
@@ -24,8 +32,8 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(circle at 8% 5%, rgba(240, 188, 104, 0.10), transparent 24rem),
-    radial-gradient(circle at 90% 30%, rgba(103, 134, 108, 0.08), transparent 28rem);
+    radial-gradient(circle at 8% 5%, rgba(107, 176, 137, 0.07), transparent 24rem),
+    radial-gradient(circle at 90% 30%, rgba(236, 230, 247, 0.50), transparent 28rem);
 }
 
 @media (prefers-reduced-motion: reduce) {

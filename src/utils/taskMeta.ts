@@ -1,4 +1,26 @@
-import type { CourseStatus, ExtraContentType, MainCategory, RolloverMode, TaskStatus, TaskTimeType } from "../types/task";
+import type { CourseStatus, ExtraContentType, MainCategory, RolloverMode, TaskStatus, TaskTimeType, SubCategory } from "../types/task";
+
+export const SUB_CATEGORY_META: Record<SubCategory, { icon: string; color: string; bgColor: string; label: string }> = {
+  chinese: { icon: "📖", color: "#C65D3B", bgColor: "#F5E6E0", label: "语文" },
+  math: { icon: "🔢", color: "#4F46E5", bgColor: "#EEF2FF", label: "数学" },
+  english: { icon: "🔤", color: "#7C3AED", bgColor: "#F3E8FF", label: "英语" },
+  piano: { icon: "🎹", color: "#EC4899", bgColor: "#FCE7F3", label: "钢琴课" },
+  swimming: { icon: "🏊", color: "#0891B2", bgColor: "#E0F2FE", label: "游泳课" },
+  rollerSkating: { icon: "🛼", color: "#F59E0B", bgColor: "#FEF3C7", label: "轮滑课" },
+  pianoPractice: { icon: "🎹", color: "#EC4899", bgColor: "#FCE7F3", label: "钢琴练习" },
+  chineseReading: { icon: "📚", color: "#C65D3B", bgColor: "#F5E6E0", label: "中文阅读" },
+  englishReading: { icon: "📖", color: "#7C3AED", bgColor: "#F3E8FF", label: "英文阅读" },
+  examCompetition: { icon: "🏆", color: "#DC2626", bgColor: "#FEE2E2", label: "考试或比赛" },
+  travel: { icon: "✈️", color: "#0891B2", bgColor: "#E0F2FE", label: "旅游" },
+  leisure: { icon: "🎮", color: "#7C3AED", bgColor: "#F3E8FF", label: "休闲" },
+  other: { icon: "📝", color: "#6B7280", bgColor: "#F3F4F6", label: "其他" },
+  reading: { icon: "📚", color: "#C65D3B", bgColor: "#F5E6E0", label: "阅读" },
+  class: { icon: "👨‍🏫", color: "#4F46E5", bgColor: "#EEF2FF", label: "上课" },
+  homework: { icon: "📝", color: "#6B7280", bgColor: "#F3F4F6", label: "作业" },
+  practice: { icon: "✏️", color: "#8B5CF6", bgColor: "#F5F3FF", label: "练习" },
+  dictation: { icon: "🔤", color: "#7C3AED", bgColor: "#F3E8FF", label: "听写" },
+  recitation: { icon: "🗣️", color: "#C65D3B", bgColor: "#F5E6E0", label: "背诵" },
+};
 
 export const MAIN_CATEGORY_META: Record<MainCategory, { label: string; className: string; dot: string }> = {
   school: { label: "学校作业", className: "bg-blue-50 text-blue-700", dot: "bg-blue-500" },

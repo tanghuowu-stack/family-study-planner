@@ -4,8 +4,13 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: "#25302b",
-        paper: "#f7f8f3",
+        ink: "#2A3B30",
+        paper: "#F8FAF7",
+        primary: "#6BB089",
+        mint: "#EAF5EC",
+        lavender: "#ECE6F7",
+        muted: "#7A8A80",
+        alert: "#E8743B",
         sage: { 50: "#f0f5ef", 100: "#dfeadd", 500: "#67866c", 700: "#47604c" },
         sun: "#f0bc68"
       },

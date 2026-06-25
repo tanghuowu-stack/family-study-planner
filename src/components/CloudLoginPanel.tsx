@@ -5,7 +5,7 @@
  * 邮箱+密码登录 / 退出 / 刷新功能。
  * 不影响任何任务数据，不修改 IndexedDB 逻辑。
  */
-import { Cloud, CloudOff, LogIn, LogOut, RefreshCw, Upload } from "lucide-react";
+import { ChevronDown, Cloud, CloudOff, LogIn, LogOut, RefreshCw, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   loadAuthState,
@@ -25,6 +25,7 @@ export function CloudLoginPanel({ cloudMode }: { cloudMode?: boolean }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [debugOpen, setDebugOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [uploadError, setUploadError] = useState("");
@@ -116,7 +117,7 @@ export function CloudLoginPanel({ cloudMode }: { cloudMode?: boolean }) {
     try {
       const result = await downloadCloudDataToLocal(auth.familyId);
       setDownloadResult(result);
-      await refresh(); // 刷新本地/云端对比可能需要，但这里只刷新本地状态也可以，暂时可选
+      await refresh();
     } catch (err) {
       setDownloadError(err instanceof Error ? `下载失败：${err.message}` : "下载失败");
     } finally {
@@ -202,27 +203,32 @@ export function CloudLoginPanel({ cloudMode }: { cloudMode?: boolean }) {
             {auth!.profile?.display_name && (
               <Row label="显示名称" value={auth!.profile.display_name} />
             )}
-            <details className="mt-3 group">
-              <summary className="cursor-pointer text-xs font-medium text-stone-400 hover:text-stone-600 list-none flex items-center gap-1">
-                高级信息 / 调试
-                <span className="inline-block transition-transform group-open:rotate-90">▸</span>
-              </summary>
-              <div className="mt-2 pl-2 space-y-1.5 border-l-2 border-stone-100">
-                <Row
-                  label="Family ID"
-                  value={
-                    auth!.familyId ? (
-                      <code className="rounded bg-stone-100 px-1 text-[11px] break-all text-stone-500">{auth!.familyId}</code>
-                    ) : (
-                      "初始化中…"
-                    )
-                  }
-                />
-              </div>
-            </details>
           </>
         )}
       </dl>
+
+      {/* 操作按钮：登录 / 退出登录 */}
+      <div className="mt-4 flex gap-2">
+        {!isLoggedIn && !showForm && (
+          <button
+            onClick={() => setShowForm(true)}
+            className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white"
+          >
+            <LogIn className="h-4 w-4" />
+            登录
+          </button>
+        )}
+        {isLoggedIn && (
+          <button
+            onClick={handleSignOut}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-lg border px-4 py-2 text-sm text-stone-600 hover:bg-stone-50 disabled:opacity-50"
+          >
+            <LogOut className="h-4 w-4" />
+            退出登录
+          </button>
+        )}
+      </div>
 
       {/* 登录表单 */}
       {!isLoggedIn && showForm && (
@@ -252,7 +258,7 @@ export function CloudLoginPanel({ cloudMode }: { cloudMode?: boolean }) {
             <button
               type="submit"
               disabled={loading}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
             >
               <LogIn className="h-4 w-4" />
               {loading ? "登录中…" : "登录"}
@@ -268,222 +274,186 @@ export function CloudLoginPanel({ cloudMode }: { cloudMode?: boolean }) {
         </form>
       )}
 
-      {/* 上传按钮区域 */}
-      <div className="mt-6 border-t border-stone-100 pt-4 space-y-2">
-        <div className="flex flex-col gap-2">
-          <button
-            onClick={handleUpload}
-            disabled={!isLoggedIn || !auth?.familyId || uploading || loading}
-            className="flex w-fit items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:bg-stone-100 disabled:text-stone-400 disabled:opacity-100 transition-colors"
-          >
-            <Upload className="h-4 w-4" />
-            {uploading ? "上传中…" : "上传本地数据到云端"}
-          </button>
-          {(!isLoggedIn || !auth?.familyId) && (
-            <p className="text-xs text-stone-400">
-              请先登录云同步账号
-            </p>
-          )}
-        </div>
-        {uploadResult && (
-          <div className="rounded-lg bg-green-50 p-3 text-xs text-green-800 space-y-1">
-            <p className="font-semibold text-sm mb-1 flex items-center gap-1">
-              <span className="text-green-600">✓</span> 上传完成
-            </p>
-            <p>任务：{uploadResult.tasks} 条</p>
-            <p>清单小项：{uploadResult.checklistItems} 条</p>
-            <p>单次状态：{uploadResult.occurrenceStatuses} 条</p>
-            <p>假期阶段：{uploadResult.planPeriods} 条</p>
-            <p>操作日志：本阶段暂不上传</p>
-            {(uploadResult.skippedTasks > 0 || uploadResult.skippedOccurrenceStatuses > 0 || uploadResult.skippedPlanPeriods > 0) && (
-              <div className="mt-2 pt-2 border-t border-green-200/50 text-amber-600">
-                {uploadResult.skippedTasks > 0 && <p>跳过无效日期任务：{uploadResult.skippedTasks} 条</p>}
-                {uploadResult.skippedOccurrenceStatuses > 0 && <p>跳过无效单次状态：{uploadResult.skippedOccurrenceStatuses} 条</p>}
-                {uploadResult.skippedPlanPeriods > 0 && <p>跳过无效假期阶段：{uploadResult.skippedPlanPeriods} 条</p>}
-              </div>
-            )}
-          </div>
-        )}
-        {uploadError && (
-          <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600 flex items-start gap-2">
-            <span className="text-red-500 font-bold">!</span>
-            <span>{uploadError}</span>
-          </div>
-        )}
-      </div>
-
-      {/* 读取与下载数据区域 */}
+      {/* 高级操作 / 调试（折叠） */}
       {isLoggedIn && auth?.familyId && (
-        <div className="mt-6 border-t border-stone-100 pt-4 space-y-2">
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <button
-              onClick={handleReadCloud}
-              disabled={reading || downloading || loading}
-              className="flex w-fit items-center gap-1.5 rounded-lg border border-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:bg-stone-50 disabled:text-stone-400 transition-colors"
-            >
-              <Cloud className="h-4 w-4" />
-              {reading ? "读取中…" : "读取云端数据预览"}
-            </button>
-            <button
-              onClick={handleDownload}
-              disabled={reading || downloading || loading}
-              className="flex w-fit items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:bg-stone-50 disabled:text-stone-400 disabled:border-stone-200 transition-colors"
-            >
-              <RefreshCw className={`h-4 w-4 ${downloading ? "animate-spin" : ""}`} />
-              {downloading ? "下载中…" : "从云端下载数据到本地"}
-            </button>
-          </div>
-          
-          <div className="flex">
-            <button
-              onClick={handleCheckDiff}
-              disabled={reading || downloading || checkingDiff || loading}
-              className="flex w-fit items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-medium text-purple-700 hover:bg-purple-100 disabled:bg-stone-50 disabled:text-stone-400 disabled:border-stone-200 transition-colors"
-            >
-              {checkingDiff ? "检查中…" : "检查本地/云端差异"}
-            </button>
-          </div>
+        <div className="mt-4 border-t border-stone-100 pt-3">
+          <button
+            onClick={() => setDebugOpen(!debugOpen)}
+            className="flex w-full items-center justify-between rounded-lg px-1 py-1.5 text-xs font-medium text-stone-400 hover:text-stone-600"
+          >
+            高级操作 / 调试
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${debugOpen ? "rotate-180" : ""}`} />
+          </button>
 
-          {diffResult && (
-            <div className="mt-3 rounded-lg bg-purple-50 p-4 text-sm text-purple-800 space-y-3">
-              <p className="font-semibold text-sm flex items-center gap-1">
-                差异检查完成
-              </p>
-              
-              <div>
-                <p className="font-medium mb-1">本地多出的任务：{diffResult.localOnlyTasks.length} 条</p>
-                {diffResult.localOnlyTasks.length > 0 && (
-                  <ul className="space-y-1 text-xs list-disc list-inside bg-white/50 p-2 rounded max-h-40 overflow-y-auto">
-                    {diffResult.localOnlyTasks.slice(0, 10).map(t => (
-                      <li key={t.id} className="truncate">
-                        {t.title || "无标题"} ({t.mainCategory}) [{t.date || t.startDate || t.timeType}] 
-                        {t.deletedAt ? ` [已删除: ${t.deletedAt}]` : ""}
-                        <span className="text-purple-400 ml-1">id: {t.id}</span>
-                      </li>
-                    ))}
-                    {diffResult.localOnlyTasks.length > 10 && (
-                      <li className="text-purple-600 font-medium">还有 {diffResult.localOnlyTasks.length - 10} 条...</li>
+          {debugOpen && (
+            <div className="mt-3 space-y-4 pl-1">
+              {/* Family ID */}
+              <div className="space-y-1 text-sm">
+                <Row
+                  label="Family ID"
+                  value={
+                    <code className="rounded bg-stone-100 px-1 text-[11px] break-all text-stone-500">{auth!.familyId}</code>
+                  }
+                />
+              </div>
+
+              {/* 上传 */}
+              <div className="space-y-2">
+                <button
+                  onClick={handleUpload}
+                  disabled={uploading || loading}
+                  className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  <Upload className="h-4 w-4" />
+                  {uploading ? "上传中…" : "上传本地数据到云端"}
+                </button>
+                {uploadResult && (
+                  <div className="rounded-lg bg-green-50 p-3 text-xs text-green-800 space-y-1">
+                    <p className="font-semibold text-sm mb-1 flex items-center gap-1">
+                      <span className="text-green-600">✓</span> 上传完成
+                    </p>
+                    <p>任务：{uploadResult.tasks} 条</p>
+                    <p>清单小项：{uploadResult.checklistItems} 条</p>
+                    <p>单次状态：{uploadResult.occurrenceStatuses} 条</p>
+                    <p>假期阶段：{uploadResult.planPeriods} 条</p>
+                    <p>操作日志：本阶段暂不上传</p>
+                    {(uploadResult.skippedTasks > 0 || uploadResult.skippedOccurrenceStatuses > 0 || uploadResult.skippedPlanPeriods > 0) && (
+                      <div className="mt-2 pt-2 border-t border-green-200/50 text-amber-600">
+                        {uploadResult.skippedTasks > 0 && <p>跳过无效日期任务：{uploadResult.skippedTasks} 条</p>}
+                        {uploadResult.skippedOccurrenceStatuses > 0 && <p>跳过无效单次状态：{uploadResult.skippedOccurrenceStatuses} 条</p>}
+                        {uploadResult.skippedPlanPeriods > 0 && <p>跳过无效假期阶段：{uploadResult.skippedPlanPeriods} 条</p>}
+                      </div>
                     )}
-                  </ul>
+                  </div>
                 )}
+                {uploadError && <ErrorBox message={uploadError} />}
               </div>
 
-              <div>
-                <p className="font-medium mb-1">云端多出的任务：{diffResult.cloudOnlyTasks.length} 条</p>
-                {diffResult.cloudOnlyTasks.length > 0 && (
-                  <ul className="space-y-1 text-xs list-disc list-inside bg-white/50 p-2 rounded max-h-40 overflow-y-auto">
-                    {diffResult.cloudOnlyTasks.slice(0, 10).map(t => (
-                      <li key={t.id} className="truncate">
-                        {t.title || "无标题"} ({t.mainCategory}) [{t.date || t.startDate || t.timeType}]
-                        {t.deletedAt ? ` [已删除: ${t.deletedAt}]` : ""}
-                        <span className="text-purple-400 ml-1">id: {t.id}</span>
-                      </li>
-                    ))}
-                    {diffResult.cloudOnlyTasks.length > 10 && (
-                      <li className="text-purple-600 font-medium">还有 {diffResult.cloudOnlyTasks.length - 10} 条...</li>
-                    )}
-                  </ul>
-                )}
-              </div>
-            </div>
-          )}
-
-          {diffError && (
-            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600 flex items-start gap-2">
-              <span className="text-red-500 font-bold">!</span>
-              <span>{diffError}</span>
-            </div>
-          )}
-
-          {downloadResult && (
-            <div className="mt-3 rounded-lg bg-green-50 p-3 text-xs text-green-800 space-y-1">
-              <p className="font-semibold text-sm mb-1 flex items-center gap-1">
-                <span className="text-green-600">✓</span> 下载完成
-              </p>
-              <p>任务：{downloadResult.tasks} 条</p>
-              <p>清单小项：{downloadResult.checklistItems} 条</p>
-              <p>单次状态：{downloadResult.occurrenceStatuses} 条</p>
-              <p>假期阶段：{downloadResult.planPeriods} 条</p>
-            </div>
-          )}
-
-          {downloadError && (
-            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600 flex items-start gap-2">
-              <span className="text-red-500 font-bold">!</span>
-              <span>{downloadError}</span>
-            </div>
-          )}
-
-          {previewResult && (
-            <div className="mt-3 space-y-4 rounded-lg bg-stone-50 p-4 text-sm text-stone-700 border border-stone-200">
-              <div>
-                <p className="font-semibold mb-2">云端读取预览</p>
-                <ul className="space-y-1 list-disc list-inside text-stone-600">
-                  <li>任务总数：{previewResult.cloudCounts.tasks}</li>
-                  <li>有效任务：{previewResult.cloudCounts.activeTasks}</li>
-                  <li>已删除任务：{previewResult.cloudCounts.deletedTasks}</li>
-                  <li>清单小项：{previewResult.cloudCounts.checklistItems}</li>
-                  <li>单次状态：{previewResult.cloudCounts.occurrenceStatuses}</li>
-                  <li>假期阶段：{previewResult.cloudCounts.planPeriods}</li>
-                </ul>
-              </div>
-
-              <div>
-                <p className="font-semibold mb-2">本地 / 云端对比</p>
-                <ul className="space-y-1 list-disc list-inside text-stone-600">
-                  <li>任务：本地 {previewResult.localCounts.tasks} / 云端 {previewResult.cloudCounts.tasks}</li>
-                  <li>清单小项：本地 {previewResult.localCounts.checklistItems} / 云端 {previewResult.cloudCounts.checklistItems}</li>
-                  <li>单次状态：本地 {previewResult.localCounts.occurrenceStatuses} / 云端 {previewResult.cloudCounts.occurrenceStatuses}</li>
-                  <li>假期阶段：本地 {previewResult.localCounts.planPeriods} / 云端 {previewResult.cloudCounts.planPeriods}</li>
-                </ul>
-              </div>
-
-              {previewResult.recentTasks.length > 0 && (
-                <div>
-                  <p className="font-semibold mb-2">最近 {previewResult.recentTasks.length} 条云端任务</p>
-                  <ol className="space-y-1.5 list-decimal list-inside text-xs text-stone-600">
-                    {previewResult.recentTasks.map(t => (
-                      <li key={t.id} className="truncate">
-                        {t.title || "无标题"} / {t.mainCategory} / {t.date || t.startDate || t.timeType}
-                      </li>
-                    ))}
-                  </ol>
+              {/* 下载 + 读取预览 */}
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={handleDownload}
+                    disabled={reading || downloading || loading}
+                    className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${downloading ? "animate-spin" : ""}`} />
+                    {downloading ? "下载中…" : "从云端下载数据到本地"}
+                  </button>
+                  <button
+                    onClick={handleReadCloud}
+                    disabled={reading || downloading || loading}
+                    className="flex items-center gap-1.5 rounded-lg border border-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50 transition-colors"
+                  >
+                    <Cloud className="h-4 w-4" />
+                    {reading ? "读取中…" : "读取云端数据预览"}
+                  </button>
                 </div>
-              )}
-            </div>
-          )}
+                {downloadResult && (
+                  <div className="rounded-lg bg-green-50 p-3 text-xs text-green-800 space-y-1">
+                    <p className="font-semibold text-sm mb-1 flex items-center gap-1">
+                      <span className="text-green-600">✓</span> 下载完成
+                    </p>
+                    <p>任务：{downloadResult.tasks} 条</p>
+                    <p>清单小项：{downloadResult.checklistItems} 条</p>
+                    <p>单次状态：{downloadResult.occurrenceStatuses} 条</p>
+                    <p>假期阶段：{downloadResult.planPeriods} 条</p>
+                  </div>
+                )}
+                {downloadError && <ErrorBox message={downloadError} />}
+                {previewResult && (
+                  <div className="space-y-4 rounded-lg bg-stone-50 p-4 text-sm text-stone-700 border border-stone-200">
+                    <div>
+                      <p className="font-semibold mb-2">云端读取预览</p>
+                      <ul className="space-y-1 list-disc list-inside text-stone-600">
+                        <li>任务总数：{previewResult.cloudCounts.tasks}</li>
+                        <li>有效任务：{previewResult.cloudCounts.activeTasks}</li>
+                        <li>已删除任务：{previewResult.cloudCounts.deletedTasks}</li>
+                        <li>清单小项：{previewResult.cloudCounts.checklistItems}</li>
+                        <li>单次状态：{previewResult.cloudCounts.occurrenceStatuses}</li>
+                        <li>假期阶段：{previewResult.cloudCounts.planPeriods}</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="font-semibold mb-2">本地 / 云端对比</p>
+                      <ul className="space-y-1 list-disc list-inside text-stone-600">
+                        <li>任务：本地 {previewResult.localCounts.tasks} / 云端 {previewResult.cloudCounts.tasks}</li>
+                        <li>清单小项：本地 {previewResult.localCounts.checklistItems} / 云端 {previewResult.cloudCounts.checklistItems}</li>
+                        <li>单次状态：本地 {previewResult.localCounts.occurrenceStatuses} / 云端 {previewResult.cloudCounts.occurrenceStatuses}</li>
+                        <li>假期阶段：本地 {previewResult.localCounts.planPeriods} / 云端 {previewResult.cloudCounts.planPeriods}</li>
+                      </ul>
+                    </div>
+                    {previewResult.recentTasks.length > 0 && (
+                      <div>
+                        <p className="font-semibold mb-2">最近 {previewResult.recentTasks.length} 条云端任务</p>
+                        <ol className="space-y-1.5 list-decimal list-inside text-xs text-stone-600">
+                          {previewResult.recentTasks.map(t => (
+                            <li key={t.id} className="truncate">
+                              {t.title || "无标题"} / {t.mainCategory} / {t.date || t.startDate || t.timeType}
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {previewError && <ErrorBox message={previewError} />}
+              </div>
 
-          {previewError && (
-            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600 flex items-start gap-2">
-              <span className="text-red-500 font-bold">!</span>
-              <span>{previewError}</span>
+              {/* 差异检查 */}
+              <div className="space-y-2">
+                <button
+                  onClick={handleCheckDiff}
+                  disabled={reading || downloading || checkingDiff || loading}
+                  className="flex items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-50 transition-colors"
+                >
+                  {checkingDiff ? "检查中…" : "检查本地/云端差异"}
+                </button>
+                {diffResult && (
+                  <div className="rounded-lg bg-purple-50 p-4 text-sm text-purple-800 space-y-3">
+                    <p className="font-semibold">差异检查完成</p>
+                    <div>
+                      <p className="font-medium mb-1">本地多出的任务：{diffResult.localOnlyTasks.length} 条</p>
+                      {diffResult.localOnlyTasks.length > 0 && (
+                        <ul className="space-y-1 text-xs list-disc list-inside bg-white/50 p-2 rounded max-h-40 overflow-y-auto">
+                          {diffResult.localOnlyTasks.slice(0, 10).map(t => (
+                            <li key={t.id} className="truncate">
+                              {t.title || "无标题"} ({t.mainCategory}) [{t.date || t.startDate || t.timeType}]
+                              {t.deletedAt ? ` [已删除: ${t.deletedAt}]` : ""}
+                              <span className="text-purple-400 ml-1">id: {t.id}</span>
+                            </li>
+                          ))}
+                          {diffResult.localOnlyTasks.length > 10 && (
+                            <li className="text-purple-600 font-medium">还有 {diffResult.localOnlyTasks.length - 10} 条...</li>
+                          )}
+                        </ul>
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-medium mb-1">云端多出的任务：{diffResult.cloudOnlyTasks.length} 条</p>
+                      {diffResult.cloudOnlyTasks.length > 0 && (
+                        <ul className="space-y-1 text-xs list-disc list-inside bg-white/50 p-2 rounded max-h-40 overflow-y-auto">
+                          {diffResult.cloudOnlyTasks.slice(0, 10).map(t => (
+                            <li key={t.id} className="truncate">
+                              {t.title || "无标题"} ({t.mainCategory}) [{t.date || t.startDate || t.timeType}]
+                              {t.deletedAt ? ` [已删除: ${t.deletedAt}]` : ""}
+                              <span className="text-purple-400 ml-1">id: {t.id}</span>
+                            </li>
+                          ))}
+                          {diffResult.cloudOnlyTasks.length > 10 && (
+                            <li className="text-purple-600 font-medium">还有 {diffResult.cloudOnlyTasks.length - 10} 条...</li>
+                          )}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {diffError && <ErrorBox message={diffError} />}
+              </div>
             </div>
           )}
         </div>
       )}
-
-      {/* 操作按钮 */}
-      <div className="mt-4 flex gap-2">
-        {!isLoggedIn && !showForm && (
-          <button
-            onClick={() => setShowForm(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white"
-          >
-            <LogIn className="h-4 w-4" />
-            登录
-          </button>
-        )}
-        {isLoggedIn && (
-          <button
-            onClick={handleSignOut}
-            disabled={loading}
-            className="flex items-center gap-1.5 rounded-lg border px-4 py-2 text-sm text-stone-600 hover:bg-stone-50 disabled:opacity-50"
-          >
-            <LogOut className="h-4 w-4" />
-            退出登录
-          </button>
-        )}
-      </div>
 
       <p className="mt-4 text-xs text-stone-400">
         {cloudMode
@@ -494,17 +464,20 @@ export function CloudLoginPanel({ cloudMode }: { cloudMode?: boolean }) {
   );
 }
 
-function Row({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-baseline gap-2">
       <dt className="w-24 shrink-0 text-stone-400">{label}</dt>
       <dd className="font-medium text-stone-700">{value}</dd>
+    </div>
+  );
+}
+
+function ErrorBox({ message }: { message: string }) {
+  return (
+    <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600 flex items-start gap-2">
+      <span className="font-bold">!</span>
+      <span>{message}</span>
     </div>
   );
 }

@@ -105,6 +105,14 @@ export const taskDisplayName = (task: { mainCategory: MainCategory; subCategory:
   return title && !repeatedInterestTitle ? `${base} - ${title}` : base;
 };
 
+export const taskShortName = (task: { mainCategory: MainCategory; subCategory: string; title: string; extraContentType?: ExtraContentType }) => {
+  const title = task.title.trim();
+  if (title) return title;
+  if (task.mainCategory === "interestClass") return subCategoryLabel(task.mainCategory, task.subCategory);
+  if (task.mainCategory === "extraHomework" && task.subCategory === "reading") return "阅读";
+  return subCategoryLabel(task.mainCategory, task.subCategory);
+};
+
 export const isCourseTask = (task: { mainCategory: MainCategory; subCategory: string; extraContentType?: ExtraContentType }) =>
   (task.mainCategory === "extraHomework" && task.extraContentType === "class")
   || (task.mainCategory === "interestClass" && ["piano", "swimming", "rollerSkating"].includes(task.subCategory));

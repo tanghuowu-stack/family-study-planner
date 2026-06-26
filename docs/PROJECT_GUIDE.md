@@ -55,7 +55,17 @@ App.tsx                 正式任务动作汇聚点（增删改查、勾选、�
 
 ---
 
-## 4. 三条铁律（违反会出严重 bug 或安全问题）
+## 4. UI / 视觉改动规范
+
+**所有 UI 和视觉相关改动必须参照 [`docs/style.md`](./style.md)。**
+
+- 颜色、间距、字号、字重、圆角、阴影、按钮配色，一律从 style.md 选取，不允许现场发明新值
+- 新增任何标签/badge/按钮前，先查 style.md §6（按钮规范）和 §7（标签铁律）
+- 改动完成后如引入了新的视觉规则，同步写进 style.md
+
+---
+
+## 5. 三条铁律（违反会出严重 bug 或安全问题）
 
 1. **`service_role key` 绝不进前端**：不进 `.env.local`、Vercel、GitHub、任何前端代码。前端只用 `anon public key`。
 2. **date 字段只传 `YYYY-MM-DD` 或 `null`，绝不传空字符串**。空字符串会让 Supabase 报错。

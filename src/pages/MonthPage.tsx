@@ -62,7 +62,6 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay }: { date:
           const annotation = getCalendarAnnotation(key);
           const annotations = [...annotation.solarTerms, ...annotation.festivals];
           const isSelected = selectedDay === key;
-          const dotTypes = [...new Set(labels.map((l) => l.type))].slice(0, 5);
 
           return (
             <button
@@ -93,13 +92,15 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay }: { date:
                 <div className="mt-0.5 hidden truncate text-[10px] font-medium text-amber-700 sm:block">{annotations.join("·")}</div>
               )}
 
-              {/* Mobile: colored dots + count */}
-              <div className="mt-1 flex items-center gap-0.5 sm:hidden">
-                {dotTypes.map((type) => (
-                  <span key={type} className={`h-2 w-2 shrink-0 rounded-full ${dotClass(type)}`} />
+              {/* Mobile: mini text chips (max 2) + overflow count */}
+              <div className="mt-0.5 flex flex-col gap-0.5 sm:hidden">
+                {labels.slice(0, 2).map((label) => (
+                  <div key={`${label.type}:${label.text}`} className={`rounded px-1 py-0.5 text-[9px] font-medium leading-tight ${compactLabelClass(label.type)}`}>
+                    {shortLabel(label.text)}
+                  </div>
                 ))}
-                {labels.length > 0 && (
-                  <span className="ml-0.5 text-[9px] text-stone-400">{labels.length}</span>
+                {labels.length > 2 && (
+                  <div className="px-0.5 text-[8px] text-stone-400">+{labels.length - 2}</div>
                 )}
               </div>
 
@@ -163,7 +164,7 @@ function DayPanel({ day, tasks, onOpenDay, onClose }: { day: string; tasks: Task
         <div className="mt-3 space-y-2">
           {labels.map((label) => (
             <div key={`${label.type}:${label.text}`} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${labelClass(label.type)}`}>
-              <span className={`h-2 w-2 shrink-0 rounded-full ${dotClass(label.type)}`} />
+              <span className={`h-2 w-2 shrink-0 rounded-full ${dotBg(label.type)}`} />
               <span className="flex-1">{label.text}</span>
             </div>
           ))}
@@ -218,21 +219,39 @@ function labelClass(type: string) {
   return styles[type] ?? "border-stone-200 bg-stone-50 text-stone-600";
 }
 
-function dotClass(type: string) {
+/** First ≤4 chars of the label, strip trailing " ✓" first */
+function shortLabel(text: string): string {
+  return text.replace(/ ✓$/, "").slice(0, 4);
+}
+
+/** Small dot color for the DayPanel task rows */
+function dotBg(type: string) {
   const dots: Record<string, string> = {
-    school: "bg-blue-400",
-    extra: "bg-orange-400",
-    reading: "bg-emerald-400",
-    aoshu: "bg-violet-400",
-    dazeng: "bg-amber-500",
-    cambridge: "bg-cyan-400",
-    piano: "bg-fuchsia-400",
-    pianoPractice: "bg-fuchsia-400",
-    swimming: "bg-teal-400",
-    rollerSkating: "bg-indigo-400",
-    travel: "bg-rose-400",
-    leisure: "bg-sage-500",
+    school: "bg-blue-400", extra: "bg-orange-400", reading: "bg-emerald-400",
+    aoshu: "bg-violet-400", dazeng: "bg-amber-500", cambridge: "bg-cyan-400",
+    piano: "bg-fuchsia-400", pianoPractice: "bg-fuchsia-400", swimming: "bg-teal-400",
+    rollerSkating: "bg-indigo-400", travel: "bg-rose-400", leisure: "bg-sage-500",
     examCompetition: "bg-red-400",
   };
   return dots[type] ?? "bg-stone-400";
+}
+
+/** Compact chip style for mobile cells — no border, softer bg */
+function compactLabelClass(type: string) {
+  const styles: Record<string, string> = {
+    school: "bg-blue-100 text-blue-700",
+    extra: "bg-orange-100 text-orange-700",
+    reading: "bg-emerald-100 text-emerald-700",
+    aoshu: "bg-violet-100 text-violet-700",
+    dazeng: "bg-amber-100 text-amber-800",
+    cambridge: "bg-cyan-100 text-cyan-700",
+    piano: "bg-fuchsia-100 text-fuchsia-700",
+    pianoPractice: "bg-fuchsia-100 text-fuchsia-700",
+    swimming: "bg-teal-100 text-teal-700",
+    rollerSkating: "bg-indigo-100 text-indigo-700",
+    travel: "bg-rose-100 text-rose-700",
+    leisure: "bg-sage-100 text-sage-700",
+    examCompetition: "bg-red-100 text-red-700",
+  };
+  return styles[type] ?? "bg-stone-100 text-stone-600";
 }

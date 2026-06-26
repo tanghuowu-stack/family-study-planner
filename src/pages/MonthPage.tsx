@@ -26,7 +26,7 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay }: { date:
 
   const move = (months: number) => onDateChange(toDateKey(addMonths(monthDate, months)));
 
-  const swipeRef = useSwipe<HTMLElement>(
+  const swipeRef = useSwipe<HTMLDivElement>(
     () => move(1),   // left swipe → next month
     () => move(-1),  // right swipe → prev month
   );
@@ -40,7 +40,7 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay }: { date:
   };
 
   return (
-    <main ref={swipeRef} className="mx-auto w-full max-w-7xl px-3 pb-28 pt-6 sm:px-6">
+    <main className="mx-auto w-full max-w-7xl overflow-x-hidden px-3 pb-28 pt-6 sm:px-6">
       <div className="mb-5 text-center">
         <p className="text-xs font-semibold tracking-widest text-sage-700">MONTH</p>
         <h1 className="mt-1 text-3xl font-semibold text-ink sm:text-4xl">{format(monthDate, "yyyy年M月")}</h1>
@@ -52,7 +52,7 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay }: { date:
         <button onClick={() => move(1)} className="rounded-xl px-2 py-2 text-stone-500 hover:bg-stone-50">下一月 →</button>
       </div>
 
-      <div className="grid grid-cols-7 overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-card">
+      <div ref={swipeRef} className="grid grid-cols-7 overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-card">
         {["一", "二", "三", "四", "五", "六", "日"].map((day) => (
           <div key={day} className="border-b bg-stone-50 px-2 py-2 text-center text-xs font-semibold text-stone-500">周{day}</div>
         ))}

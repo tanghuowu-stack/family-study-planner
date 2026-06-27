@@ -129,7 +129,7 @@ const inferCalendarVisibility = (task: Partial<Task>) => {
 const isCalendarPlanTask = (task: Task) =>
   (task.mainCategory === "extraHomework" && task.extraContentType === "class")
   || (task.mainCategory === "interestClass" && task.subCategory !== "pianoPractice")
-  || (task.mainCategory === "temporary" && ["examCompetition", "leisure", "travel"].includes(task.subCategory));
+  || task.mainCategory === "temporary";
 
 const scheduleOccursOn = (task: Task, date: string) => {
   if (task.schedulePattern === "specificDates") return task.specificDates?.includes(date) ?? false;

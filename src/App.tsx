@@ -3,7 +3,7 @@ import { addDays } from "date-fns";
 import { useEffect, useState } from "react";
 import { TaskForm } from "./components/TaskForm";
 import { getRepository, isCloudMode, setCloudMode } from "./data/repositoryProvider";
-import { cloudRepository } from "./data/cloudRepository";
+import { cloudRepository, setCloudSyncErrorHandler } from "./data/cloudRepository";
 import { loadAuthState } from "./lib/cloudAuth";
 import { startRealtimeSync, stopRealtimeSync } from "./lib/realtimeSync";
 import { BackupPage } from "./pages/BackupPage";
@@ -41,6 +41,7 @@ export default function App() {
         if (state.familyId) {
           setCloudMode(state.familyId);
           setCloudModeState(true);
+          setCloudSyncErrorHandler((msg) => notify(`⚠️ ${msg}，请检查网络`));
           // 首次加载：从云端拉取最新数据到本地缓存
           await cloudRepository.refreshFromCloud().catch((e) =>
             console.warn("[App] 首次云端同步失败，降级到本地模式", e)

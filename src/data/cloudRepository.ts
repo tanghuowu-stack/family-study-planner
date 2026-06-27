@@ -23,6 +23,17 @@ import { taskRepository } from "./taskRepository";
 import { getWeekStartKey, getWeekEndKey, getMonthKey, getMonthBounds, todayKey, toDateKey } from "../utils/date";
 import { addDays, eachDayOfInterval, parseISO } from "date-fns";
 
+// ─── 云端同步失败回调（由 App.tsx 注册，写失败时提示用户） ──────────────────────
+
+let _onSyncError: ((msg: string) => void) | null = null;
+export function setCloudSyncErrorHandler(cb: (msg: string) => void): void {
+  _onSyncError = cb;
+}
+function notifySyncError(label: string, e: unknown): void {
+  console.error(`[cloudRepository] ${label}`, e);
+  _onSyncError?.(`${label}，数据已保存到本地`);
+}
+
 // ─── helpers (reuse from cloudUpload logic) ─────────────────────────────────
 
 function stripUndefined<T extends object>(obj: T): T {
@@ -392,7 +403,7 @@ export const cloudRepository = {
     const task = await taskRepository.create(draft);
     if (_familyId) {
       await upsertTask(task, _familyId).catch((e) =>
-        console.error("[cloudRepository] 创建任务云端同步失败", e)
+        notifySyncError("任务云端同步失败", e)
       );
     }
     return task;
@@ -402,7 +413,7 @@ export const cloudRepository = {
     const task = await taskRepository.update(id, changes);
     if (_familyId) {
       await upsertTask(task, _familyId).catch((e) =>
-        console.error("[cloudRepository] 更新任务云端同步失败", e)
+        notifySyncError("任务云端同步失败", e)
       );
     }
     return task;
@@ -415,7 +426,7 @@ export const cloudRepository = {
       const task = await db.tasks.get(id);
       if (task) {
         await upsertTask(task, _familyId).catch((e) =>
-          console.error("[cloudRepository] 删除任务云端同步失败", e)
+          notifySyncError("任务云端同步失败", e)
         );
       }
     }
@@ -428,7 +439,7 @@ export const cloudRepository = {
       for (const task of tasks) {
         if (task) {
           await upsertTask(task, _familyId).catch((e) =>
-            console.error("[cloudRepository] 批量删除云端同步失败", e)
+            notifySyncError("任务云端同步失败", e)
           );
         }
       }
@@ -442,7 +453,7 @@ export const cloudRepository = {
       const task = await db.tasks.get(id);
       if (task) {
         await upsertTask(task, _familyId).catch((e) =>
-          console.error("[cloudRepository] 恢复任务云端同步失败", e)
+          notifySyncError("任务云端同步失败", e)
         );
       }
     }
@@ -452,7 +463,7 @@ export const cloudRepository = {
     const copy = await taskRepository.copyToDate(id, date);
     if (_familyId) {
       await upsertTask(copy, _familyId).catch((e) =>
-        console.error("[cloudRepository] 复制任务云端同步失败", e)
+        notifySyncError("任务云端同步失败", e)
       );
     }
     return copy;
@@ -479,7 +490,7 @@ export const cloudRepository = {
       const updated = await db.tasks.get(task.id);
       if (updated) {
         await upsertTask(updated, _familyId).catch((e) =>
-          console.error("[cloudRepository] 设置状态云端同步失败", e)
+          notifySyncError("任务云端同步失败", e)
         );
       }
       if (task.occurrenceDate) {
@@ -498,7 +509,7 @@ export const cloudRepository = {
       const updated = await db.tasks.get(taskId);
       if (updated) {
         await upsertTask(updated, _familyId).catch((e) =>
-          console.error("[cloudRepository] checklist 更新云端同步失败", e)
+          notifySyncError("任务云端同步失败", e)
         );
       }
       if (occurrenceDate) {
@@ -524,7 +535,7 @@ export const cloudRepository = {
       const occ = await db.taskOccurrenceStatuses.get(id);
       if (occ) {
         await upsertOccurrence(occ, _familyId).catch((e) =>
-          console.error("[cloudRepository] 单次状态云端同步失败", e)
+          notifySyncError("任务云端同步失败", e)
         );
       }
     }
@@ -552,7 +563,7 @@ export const cloudRepository = {
         updated_at: toTimestampOrNull(period.updatedAt) ?? new Date().toISOString(),
       });
       await supabase.from("plan_periods").upsert(row, { onConflict: "id" }).then(({ error }) => {
-        if (error) console.error("[cloudRepository] 创建假期阶段云端同步失败", error);
+        if (error) notifySyncError("假期设置云端同步失败", error);
       });
     }
     return period;
@@ -576,7 +587,7 @@ export const cloudRepository = {
           updated_at: toTimestampOrNull(period.updatedAt) ?? new Date().toISOString(),
         });
         await supabase.from("plan_periods").upsert(row, { onConflict: "id" }).then(({ error }) => {
-          if (error) console.error("[cloudRepository] 更新假期阶段云端同步失败", error);
+          if (error) notifySyncError("假期设置云端同步失败", error);
         });
       }
     }
@@ -586,7 +597,7 @@ export const cloudRepository = {
     await taskRepository.removePlanPeriod(id);
     if (_familyId && supabase) {
       await supabase.from("plan_periods").delete().eq("id", id).then(({ error }) => {
-        if (error) console.error("[cloudRepository] 删除假期阶段云端同步失败", error);
+        if (error) notifySyncError("假期设置云端同步失败", error);
       });
     }
   },
@@ -601,7 +612,7 @@ export const cloudRepository = {
     const course = await taskRepository.createCourse(input);
     if (_familyId && supabase) {
       await supabase.from("courses").upsert(courseToRow(course, _familyId), { onConflict: "id" }).then(({ error }) => {
-        if (error) console.error("[cloudRepository] 创建课程云端同步失败", error);
+        if (error) notifySyncError("课程云端同步失败", error);
       });
     }
     return course;
@@ -613,7 +624,7 @@ export const cloudRepository = {
       const course = await db.courses.get(id);
       if (course) {
         await supabase.from("courses").upsert(courseToRow(course, _familyId), { onConflict: "id" }).then(({ error }) => {
-          if (error) console.error("[cloudRepository] 更新课程云端同步失败", error);
+          if (error) notifySyncError("课程云端同步失败", error);
         });
       }
     }
@@ -623,7 +634,7 @@ export const cloudRepository = {
     await taskRepository.removeCourse(id);
     if (_familyId && supabase) {
       await supabase.from("courses").delete().eq("id", id).then(({ error }) => {
-        if (error) console.error("[cloudRepository] 删除课程云端同步失败", error);
+        if (error) notifySyncError("课程云端同步失败", error);
       });
     }
   },

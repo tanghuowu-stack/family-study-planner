@@ -1,5 +1,5 @@
 import { addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, isSameMonth, startOfMonth, startOfWeek } from "date-fns";
-import { X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSwipe } from "../hooks/useSwipe";
 import { taskRepository } from "../data/taskRepository";
@@ -8,7 +8,7 @@ import type { TaskDisplay } from "../types/task";
 import { fromDateKey, toDateKey, todayKey } from "../utils/date";
 import { subCategoryLabel } from "../utils/taskMeta";
 
-export function MonthPage({ date, refreshKey, onDateChange, onOpenDay }: { date: string; refreshKey: number; onDateChange: (date: string) => void; onOpenDay: (date: string) => void }) {
+export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask }: { date: string; refreshKey: number; onDateChange: (date: string) => void; onOpenDay: (date: string) => void; onAddTask: (date: string) => void }) {
   const monthDate = fromDateKey(date);
   const monthKey = date.slice(0, 7);
   const gridDates = useMemo(() => eachDayOfInterval({ start: startOfWeek(startOfMonth(monthDate), { weekStartsOn: 1 }), end: endOfWeek(endOfMonth(monthDate), { weekStartsOn: 1 }) }).map(toDateKey), [monthKey]);
@@ -124,6 +124,7 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay }: { date:
           day={selectedDay}
           tasks={items[selectedDay] ?? []}
           onOpenDay={onOpenDay}
+          onAddTask={onAddTask}
           onClose={() => setSelectedDay(null)}
         />
       )}
@@ -131,7 +132,7 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay }: { date:
   );
 }
 
-function DayPanel({ day, tasks, onOpenDay, onClose }: { day: string; tasks: TaskDisplay[]; onOpenDay: (d: string) => void; onClose: () => void }) {
+function DayPanel({ day, tasks, onOpenDay, onAddTask, onClose }: { day: string; tasks: TaskDisplay[]; onOpenDay: (d: string) => void; onAddTask: (d: string) => void; onClose: () => void }) {
   const labels = calendarLabels(tasks);
   const annotation = getCalendarAnnotation(day);
   const annotations = [...annotation.solarTerms, ...annotation.festivals];
@@ -171,12 +172,20 @@ function DayPanel({ day, tasks, onOpenDay, onClose }: { day: string; tasks: Task
         </div>
       )}
 
-      <button
-        onClick={() => onOpenDay(day)}
-        className="mt-4 w-full rounded-xl border border-sage-100 bg-sage-50/50 py-2.5 text-sm font-medium text-sage-700"
-      >
-        查看完整当日页 →
-      </button>
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <button
+          onClick={() => onAddTask(day)}
+          className="flex items-center justify-center gap-1.5 rounded-xl bg-primary py-2.5 text-sm font-medium text-white"
+        >
+          <Plus className="h-4 w-4" />新建任务
+        </button>
+        <button
+          onClick={() => onOpenDay(day)}
+          className="rounded-xl border border-sage-100 bg-sage-50/50 py-2.5 text-sm font-medium text-sage-700"
+        >
+          查看当日页 →
+        </button>
+      </div>
     </div>
   );
 }

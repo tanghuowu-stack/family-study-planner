@@ -30,6 +30,7 @@ interface Props {
   onDelete: (task: TaskDisplay) => void; onOccurrenceCancel: (task: TaskDisplay) => void;
   onOccurrencePostpone: (task: TaskDisplay) => void; onChecklistToggle: (task: TaskDisplay, itemId: string) => void;
   onCopy: (task: TaskDisplay) => void; onOpenWeek: () => void; onOpenMonth: () => void;
+  onSaveActualTime?: (taskId: string, itemId: string | null, minutes: number) => Promise<void>;
 }
 
 export function DayPage(props: Props) {
@@ -46,7 +47,7 @@ export function DayPage(props: Props) {
     () => move(1),   // left swipe → next day
     () => move(-1),  // right swipe → prev day
   );
-  const rowProps = { compact: true, onStatusChange: props.onStatusChange, onEdit: props.onEdit, onDelete: props.onDelete, onOccurrenceCancel: props.onOccurrenceCancel, onOccurrencePostpone: props.onOccurrencePostpone, onChecklistToggle: props.onChecklistToggle, onCopy: props.onCopy };
+  const rowProps = { compact: true, onStatusChange: props.onStatusChange, onEdit: props.onEdit, onDelete: props.onDelete, onOccurrenceCancel: props.onOccurrenceCancel, onOccurrencePostpone: props.onOccurrencePostpone, onChecklistToggle: props.onChecklistToggle, onCopy: props.onCopy, onSaveActualTime: props.onSaveActualTime };
   const annotation = getCalendarAnnotation(props.date);
   const annotationLabels = [...annotation.solarTerms, ...annotation.festivals];
   const renderTask = (task: TaskDisplay) => <TaskItem key={`${task.id}:${task.occurrenceDate ?? task.date}`} task={task} {...rowProps} />;

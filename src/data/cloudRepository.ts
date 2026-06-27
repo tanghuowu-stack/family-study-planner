@@ -102,6 +102,7 @@ function taskToRow(task: Task, familyId: string): Record<string, unknown> {
     start_time: task.startTime ?? task.time ?? null,
     end_time: task.endTime ?? null,
     estimated_minutes: task.estimatedMinutes ?? null,
+    actual_minutes: task.actualMinutes ?? null,
     location: task.location ?? null,
     note: task.note ?? null,
     important: task.important ?? false,
@@ -128,6 +129,8 @@ function checklistItemRows(task: Task, familyId: string): Record<string, unknown
       title: item.title ?? "",
       done: item.done ?? false,
       sort_order: item.sortOrder ?? idx,
+      estimated_minutes: item.estimatedMinutes ?? null,
+      actual_minutes: item.actualMinutes ?? null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -249,6 +252,8 @@ async function fetchAndCacheTasks(familyId: string): Promise<Task[]> {
         title: row.title,
         done: row.done,
         sortOrder: row.sort_order,
+        estimatedMinutes: row.estimated_minutes ?? undefined,
+        actualMinutes: row.actual_minutes ?? undefined,
       });
     }
   });
@@ -499,6 +504,18 @@ export const cloudRepository = {
         if (occ) {
           await upsertOccurrence(occ, _familyId).catch(() => {});
         }
+      }
+    }
+  },
+
+  async saveActualMinutes(taskId: string, itemId: string | null, additionalMinutes: number): Promise<void> {
+    await taskRepository.saveActualMinutes(taskId, itemId, additionalMinutes);
+    if (_familyId) {
+      const updated = await db.tasks.get(taskId);
+      if (updated) {
+        await upsertTask(updated, _familyId).catch((e) =>
+          notifySyncError("计时数据同步失败", e)
+        );
       }
     }
   },

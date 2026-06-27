@@ -597,6 +597,25 @@ export const taskRepository = {
     }
   },
 
+  async saveActualMinutes(taskId: string, itemId: string | null, additionalMinutes: number): Promise<void> {
+    const now = new Date().toISOString();
+    const task = await db.tasks.get(taskId);
+    if (!task) return;
+    if (itemId) {
+      const items = (task.checklistItems ?? []).map((item) =>
+        item.id === itemId
+          ? { ...item, actualMinutes: (item.actualMinutes ?? 0) + additionalMinutes }
+          : item
+      );
+      await db.tasks.update(taskId, { checklistItems: items, updatedAt: now });
+    } else {
+      await db.tasks.update(taskId, {
+        actualMinutes: (task.actualMinutes ?? 0) + additionalMinutes,
+        updatedAt: now,
+      });
+    }
+  },
+
   async toggleChecklistItem(taskId: string, itemId: string, occurrenceDate?: string) {
     const task = await db.tasks.get(taskId);
     if (!task?.checklistItems) return;

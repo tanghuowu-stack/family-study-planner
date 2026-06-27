@@ -88,6 +88,8 @@ export interface ChecklistItem {
   title: string;
   done: boolean;
   sortOrder?: number;
+  estimatedMinutes?: number;
+  actualMinutes?: number;
 }
 
 export interface Task {
@@ -129,6 +131,7 @@ export interface Task {
   startTime?: string;
   endTime?: string;
   estimatedMinutes?: number;
+  actualMinutes?: number;
   location?: string;
   important?: boolean;
   calendarVisibility?: "show" | "hide";

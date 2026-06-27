@@ -17,7 +17,7 @@ import { fromDateKey, todayKey, toDateKey } from "./utils/date";
 type Page = "today" | "week" | "month" | "tasks" | "backup";
 const navItems = [
   { page: "today" as const, label: "今日", icon: Home }, { page: "week" as const, label: "周计划", icon: Rows3 },
-  { page: "month" as const, label: "月历", icon: CalendarDays }, { page: "tasks" as const, label: "任务管理", icon: ClipboardList },
+  { page: "month" as const, label: "月计划", icon: CalendarDays }, { page: "tasks" as const, label: "任务管理", icon: ClipboardList },
   { page: "backup" as const, label: "打印/备份", icon: Database },
 ];
 

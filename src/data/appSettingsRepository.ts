@@ -10,7 +10,7 @@ export async function loadGroupSortOrder(): Promise<TaskSubjectGroup[] | null> {
   const cached = localStorage.getItem(LOCAL_CACHE_KEY);
   const cachedValue: TaskSubjectGroup[] | null = cached ? JSON.parse(cached) : null;
 
-  if (!isCloudMode()) return cachedValue;
+  if (!isCloudMode() || !supabase) return cachedValue;
 
   try {
     const familyId = cloudRepository.getFamilyId();
@@ -35,7 +35,7 @@ export async function loadGroupSortOrder(): Promise<TaskSubjectGroup[] | null> {
 
 export async function saveGroupSortOrder(order: TaskSubjectGroup[]): Promise<void> {
   localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(order));
-  if (!isCloudMode()) return;
+  if (!isCloudMode() || !supabase) return;
   try {
     const familyId = cloudRepository.getFamilyId();
     await supabase.from("app_settings").upsert(

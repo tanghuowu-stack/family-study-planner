@@ -1,5 +1,5 @@
-import { Check, Copy, MoreHorizontal, Pause, Pencil, Play, Square, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { Check, Copy, MoreHorizontal, Pause, Pencil, Play, RotateCcw, Square, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { formatElapsed, useTimer, type TimerSaveFn } from "../context/TimerContext";
 import type { ChecklistItem, TaskDisplay, TaskStatus } from "../types/task";
 import { STATUS_META, isCourseTask, taskShortName, SUB_CATEGORY_META } from "../utils/taskMeta";
@@ -16,6 +16,7 @@ interface Props {
   onChecklistToggle?: (task: TaskDisplay, itemId: string) => void;
   onCopy?: (task: TaskDisplay) => void;
   onSaveActualTime?: TimerSaveFn;
+  onSaveEstimatedMinutes?: (taskId: string, itemId: string | null, minutes: number | undefined) => void;
 }
 
 type AnimState = "idle" | "checking" | "unchecking";
@@ -43,7 +44,7 @@ function TimerControls({
   targetType: "checklist" | "task";
   saveFn: TimerSaveFn;
 }) {
-  const { activeId, elapsed, isRunning, start, pause, stop } = useTimer();
+  const { activeId, elapsed, isRunning, start, pause, stop, reset } = useTimer();
   const isActive = activeId === targetId;
 
   if (!isActive) {
@@ -52,69 +53,70 @@ function TimerControls({
         type="button"
         onClick={() => void start(targetId, targetType, taskId, saveFn)}
         title="开始计时"
-        className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted hover:bg-mint hover:text-primary"
+        className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted hover:bg-mint hover:text-primary"
       >
-        <Play className="h-3 w-3" />
+        <Play className="h-4 w-4" />
+        <span>计时</span>
       </button>
     );
   }
 
   return (
     <span className="flex items-center gap-1">
-      <span className="min-w-[38px] text-center font-mono text-[11px] font-medium text-primary">
+      <span className="min-w-[42px] text-center font-mono text-xs font-medium text-primary">
         {formatElapsed(elapsed)}
       </span>
       {isRunning ? (
-        <button
-          type="button"
-          onClick={() => pause()}
-          title="暂停"
-          className="rounded-md p-0.5 text-primary hover:bg-mint"
-        >
-          <Pause className="h-3 w-3" />
+        <button type="button" onClick={() => pause()} title="暂停"
+          className="rounded-lg p-1 text-primary hover:bg-mint">
+          <Pause className="h-4 w-4" />
         </button>
       ) : (
-        <button
-          type="button"
-          onClick={() => void start(targetId, targetType, taskId, saveFn)}
-          title="继续"
-          className="rounded-md p-0.5 text-primary hover:bg-mint"
-        >
-          <Play className="h-3 w-3" />
+        <button type="button" onClick={() => void start(targetId, targetType, taskId, saveFn)} title="继续"
+          className="rounded-lg p-1 text-primary hover:bg-mint">
+          <Play className="h-4 w-4" />
         </button>
       )}
-      <button
-        type="button"
-        onClick={() => void stop(saveFn)}
-        title="完成计时"
-        className="rounded-md p-0.5 text-stone-400 hover:bg-rose-50 hover:text-rose-500"
-      >
-        <Square className="h-3 w-3" />
+      <button type="button" onClick={() => void stop(saveFn)} title="完成计时"
+        className="rounded-lg p-1 text-stone-400 hover:bg-rose-50 hover:text-rose-500">
+        <Square className="h-4 w-4" />
+      </button>
+      <button type="button" onClick={() => reset()} title="重置计时"
+        className="rounded-lg p-1 text-stone-300 hover:bg-stone-100 hover:text-stone-500">
+        <RotateCcw className="h-3.5 w-3.5" />
       </button>
     </span>
   );
 }
 
-export function TaskItem({ task, compact = false, print = false, onStatusChange, onEdit, onDelete, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onCopy, onSaveActualTime }: Props) {
+export function TaskItem({ task, compact = false, print = false, onStatusChange, onEdit, onDelete, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onCopy, onSaveActualTime, onSaveEstimatedMinutes }: Props) {
   const [menu, setMenu] = useState(false);
   const [checkState, setCheckState] = useState<AnimState>("idle");
   const [itemAnim, setItemAnim] = useState<Record<string, AnimState>>({});
+  const [optimisticDone, setOptimisticDone] = useState<boolean | null>(null);
+  const [optimisticItems, setOptimisticItems] = useState<Record<string, boolean>>({});
+
   const effectiveStatus = task.occurrenceStatus === "postponed" && task.overrideDate ? "todo" : task.status;
-  const done = effectiveStatus === "done";
+  const done = optimisticDone !== null ? optimisticDone : effectiveStatus === "done";
   const hasChecklist = !!task.checklistItems?.length;
+
+  // 父组件刷新后清除乐观覆盖
+  useEffect(() => { setOptimisticDone(null); }, [task.status, task.id]);
+  useEffect(() => { setOptimisticItems({}); }, [task.checklistItems]);
 
   const handleStatusChange = (newStatus: TaskStatus) => {
     const completing = newStatus === "done";
+    setOptimisticDone(completing);
     setCheckState(completing ? "checking" : "unchecking");
-    setTimeout(() => { onStatusChange?.(task, newStatus); setCheckState("idle"); }, completing ? 400 : 250);
+    setTimeout(() => setCheckState("idle"), completing ? 400 : 250);
+    onStatusChange?.(task, newStatus); // 立即触发，不等动画
   };
 
   const handleChecklistToggle = (itemId: string, wasDone: boolean) => {
+    setOptimisticItems(prev => ({ ...prev, [itemId]: !wasDone }));
     setItemAnim(prev => ({ ...prev, [itemId]: wasDone ? "unchecking" : "checking" }));
-    setTimeout(() => {
-      onChecklistToggle?.(task, itemId);
-      setItemAnim(prev => { const next = { ...prev }; delete next[itemId]; return next; });
-    }, wasDone ? 250 : 400);
+    setTimeout(() => setItemAnim(prev => { const next = { ...prev }; delete next[itemId]; return next; }), wasDone ? 250 : 400);
+    onChecklistToggle?.(task, itemId); // 立即触发
   };
 
   return (
@@ -142,36 +144,43 @@ export function TaskItem({ task, compact = false, print = false, onStatusChange,
           {isCourseTask(task) && (
             <span className={`ml-2 inline-flex rounded-md px-2 py-0.5 align-middle text-[10px] font-semibold no-underline ${done || effectiveStatus === "cancelled" ? "bg-stone-200 text-stone-400" : "bg-mint text-primary"}`}>上课</span>
           )}
-          {hasChecklist && (
+          {hasChecklist && (() => {
+            const items = task.checklistItems!.map(i => ({ ...i, done: optimisticItems[i.id] !== undefined ? optimisticItems[i.id] : i.done }));
+            const doneCount = items.filter(i => i.done).length;
+            return (
             <span className="ml-2 inline-flex items-center gap-1.5">
               <span className="relative inline-block h-1.5 w-16 rounded-full bg-stone-200">
-                <span className="absolute h-full rounded-full bg-primary transition-all" style={{ width: `${(task.checklistItems!.filter((item) => item.done).length / task.checklistItems!.length) * 100}%` }} />
+                <span className="absolute h-full rounded-full bg-primary transition-all" style={{ width: `${(doneCount / items.length) * 100}%` }} />
               </span>
-              <span className="text-xs font-normal text-stone-400">{task.checklistItems!.filter((item) => item.done).length}/{task.checklistItems!.length}</span>
+              <span className="text-xs font-normal text-stone-400">{doneCount}/{items.length}</span>
             </span>
-          )}
+            );
+          })()}
         </div>
 
         {/* Checklist 小项 */}
         {hasChecklist && (
           <div className="mt-1.5 space-y-0.5">
-            {task.checklistItems!.map((item) => (
+            {task.checklistItems!.map((item) => {
+              const optimisticItemDone = optimisticItems[item.id] !== undefined ? optimisticItems[item.id] : item.done;
+              return (
               <ChecklistRow
                 key={item.id}
-                item={item}
+                item={{ ...item, done: optimisticItemDone }}
                 taskId={task.id}
                 animState={itemAnim[item.id] ?? "idle"}
                 print={print}
                 onToggle={() => handleChecklistToggle(item.id, item.done)}
-                saveFn={onSaveActualTime}
-              />
-            ))}
+                saveFn={task.enableTimer ? onSaveActualTime : undefined}
+                onSaveEstimated={onSaveEstimatedMinutes ? (mins) => onSaveEstimatedMinutes(task.id, item.id, mins) : undefined}
+              />);
+            })}
           </div>
         )}
 
-        {/* 任务级计时器（无 checklist 时显示） */}
-        {!hasChecklist && !print && !done && onSaveActualTime && (
-          <TaskLevelTimer task={task} saveFn={onSaveActualTime} />
+        {/* 预计用时内联编辑（无 checklist，非打印，未完成时显示） */}
+        {!hasChecklist && !print && !done && (
+          <TaskLevelTimerRow task={task} saveFn={task.enableTimer ? onSaveActualTime : undefined} onSaveEstimated={onSaveEstimatedMinutes} />
         )}
 
         {/* 顺延/延期标注 */}
@@ -212,13 +221,14 @@ export function TaskItem({ task, compact = false, print = false, onStatusChange,
   );
 }
 
-function ChecklistRow({ item, taskId, animState, print, onToggle, saveFn }: {
+function ChecklistRow({ item, taskId, animState, print, onToggle, saveFn, onSaveEstimated }: {
   item: ChecklistItem;
   taskId: string;
   animState: AnimState;
   print: boolean;
   onToggle: () => void;
   saveFn?: TimerSaveFn;
+  onSaveEstimated?: (mins: number | undefined) => void;
 }) {
   return (
     <div className={`flex items-center gap-2 rounded-md px-1.5 py-1 ${item.done ? "text-stone-400" : "text-stone-600"}`}>
@@ -229,14 +239,16 @@ function ChecklistRow({ item, taskId, animState, print, onToggle, saveFn }: {
       </button>
       <span className={`min-w-0 flex-1 text-sm ${item.done ? "line-through" : ""}`}>{item.title}</span>
       {!print && !item.done && (
-        <>
-          {item.estimatedMinutes && (
-            <span className="shrink-0 text-[11px] text-muted">~{item.estimatedMinutes}m</span>
-          )}
+        <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
+          {onSaveEstimated ? (
+            <EstimatedInput value={item.estimatedMinutes} onSave={onSaveEstimated} />
+          ) : item.estimatedMinutes ? (
+            <span className="text-[11px] text-muted">预计{item.estimatedMinutes}m</span>
+          ) : null}
           {saveFn && (
             <TimerControls targetId={item.id} taskId={taskId} targetType="checklist" saveFn={saveFn} />
           )}
-        </>
+        </span>
       )}
       {item.actualMinutes ? (
         <span className="shrink-0 rounded bg-mint px-1.5 py-0.5 text-[11px] text-primary">实{item.actualMinutes}m</span>
@@ -245,22 +257,50 @@ function ChecklistRow({ item, taskId, animState, print, onToggle, saveFn }: {
   );
 }
 
-function TaskLevelTimer({ task, saveFn }: { task: TaskDisplay; saveFn: TimerSaveFn }) {
-  const hasTime = task.estimatedMinutes || task.actualMinutes;
-  if (!hasTime) {
-    // Still show a start button even when no estimated/actual time
+function EstimatedInput({ value, onSave }: { value?: number; onSave: (v: number | undefined) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value?.toString() ?? "");
+
+  if (!editing) {
     return (
-      <div className="mt-1 flex items-center gap-1.5">
-        <TimerControls targetId={task.id} taskId={task.id} targetType="task" saveFn={saveFn} />
-      </div>
+      <button type="button" onClick={() => { setDraft(value?.toString() ?? ""); setEditing(true); }}
+        className="rounded px-1 text-[11px] text-muted hover:bg-mint hover:text-primary"
+        title="点击编辑预计用时">
+        {value ? `预计${value}m` : <span className="text-stone-300">+预计</span>}
+      </button>
     );
   }
   return (
-    <div className="mt-1 flex items-center gap-2">
-      {task.estimatedMinutes && (
-        <span className="text-[11px] text-muted">~{task.estimatedMinutes}m</span>
-      )}
-      <TimerControls targetId={task.id} taskId={task.id} targetType="task" saveFn={saveFn} />
+    <input
+      autoFocus
+      type="number" min="1" step="1" inputMode="numeric"
+      value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={() => {
+        const v = parseInt(draft, 10);
+        onSave(v > 0 ? v : undefined);
+        setEditing(false);
+      }}
+      onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
+      className="w-14 rounded border px-1.5 py-0.5 text-[11px] text-ink focus:outline-none focus:ring-1 focus:ring-primary"
+      placeholder="分钟"
+    />
+  );
+}
+
+function TaskLevelTimerRow({ task, saveFn, onSaveEstimated }: {
+  task: TaskDisplay;
+  saveFn?: TimerSaveFn;
+  onSaveEstimated?: (taskId: string, itemId: string | null, mins: number | undefined) => void;
+}) {
+  return (
+    <div className="mt-1 hidden items-center gap-2 sm:flex">
+      {onSaveEstimated ? (
+        <EstimatedInput value={task.estimatedMinutes} onSave={mins => onSaveEstimated(task.id, null, mins)} />
+      ) : task.estimatedMinutes ? (
+        <span className="text-[11px] text-muted">预计{task.estimatedMinutes}m</span>
+      ) : null}
+      {saveFn && <TimerControls targetId={task.id} taskId={task.id} targetType="task" saveFn={saveFn} />}
       {task.actualMinutes ? (
         <span className="rounded bg-mint px-1.5 py-0.5 text-[11px] text-primary">实{task.actualMinutes}m</span>
       ) : null}

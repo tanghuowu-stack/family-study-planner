@@ -21,6 +21,7 @@ interface TimerCtx {
   start: (targetId: string, targetType: "checklist" | "task", taskId: string, saveFn: TimerSaveFn) => Promise<void>;
   pause: () => void;
   stop: (saveFn: TimerSaveFn) => Promise<void>;
+  reset: () => void;
 }
 
 const Ctx = createContext<TimerCtx | null>(null);
@@ -91,6 +92,8 @@ export function TimerProvider({ children }: { children: ReactNode }) {
     persist({ ...store, startedAt: null, accumulated: calcElapsed(store) });
   };
 
+  const reset = () => { persist(null); setTick(0); };
+
   const stop = async (saveFn: TimerSaveFn) => {
     if (!store || savingRef.current) return;
     const secs = calcElapsed(store);
@@ -113,6 +116,7 @@ export function TimerProvider({ children }: { children: ReactNode }) {
       start,
       pause,
       stop,
+      reset,
     }}>
       {children}
     </Ctx.Provider>

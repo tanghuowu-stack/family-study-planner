@@ -138,6 +138,7 @@ export interface Task {
   parentTaskId?: string;
   sessionIndex?: number;
   allocationWeekStart?: string;
+  enableTimer?: boolean;
   checklistItems?: ChecklistItem[];
   completedAt?: string;
   deletedAt?: string;

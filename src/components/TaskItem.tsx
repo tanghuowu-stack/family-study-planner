@@ -171,7 +171,7 @@ export function TaskItem({ task, compact = false, print = false, onStatusChange,
                 animState={itemAnim[item.id] ?? "idle"}
                 print={print}
                 onToggle={() => handleChecklistToggle(item.id, item.done)}
-                saveFn={task.enableTimer ? onSaveActualTime : undefined}
+                saveFn={task.enableTimer !== false ? onSaveActualTime : undefined}
                 onSaveEstimated={onSaveEstimatedMinutes ? (mins) => onSaveEstimatedMinutes(task.id, item.id, mins) : undefined}
               />);
             })}
@@ -180,7 +180,7 @@ export function TaskItem({ task, compact = false, print = false, onStatusChange,
 
         {/* 预计用时内联编辑（无 checklist，非打印，未完成时显示） */}
         {!hasChecklist && !print && !done && (
-          <TaskLevelTimerRow task={task} saveFn={task.enableTimer ? onSaveActualTime : undefined} onSaveEstimated={onSaveEstimatedMinutes} />
+          <TaskLevelTimerRow task={task} saveFn={task.enableTimer !== false ? onSaveActualTime : undefined} onSaveEstimated={onSaveEstimatedMinutes} />
         )}
 
         {/* 顺延/延期标注 */}

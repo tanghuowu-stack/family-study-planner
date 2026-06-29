@@ -1,5 +1,5 @@
 import { addDays } from "date-fns";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, GripVertical } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useSwipe } from "../hooks/useSwipe";
 import { EmptyState } from "../components/EmptyState";
@@ -8,7 +8,8 @@ import { getCalendarAnnotation } from "../data/calendarAnnotations";
 import { taskRepository } from "../data/taskRepository";
 import type { PlanOverviewItem, TaskDisplay, TaskStatus } from "../types/task";
 import { formatFullDate, fromDateKey, toDateKey, todayKey } from "../utils/date";
-import { TASK_SUBJECT_GROUPS, taskSubjectGroup } from "../utils/taskGrouping";
+import { TASK_SUBJECT_GROUPS, taskSubjectGroup, type TaskSubjectGroup } from "../utils/taskGrouping";
+import { useGroupOrder } from "../hooks/useGroupOrder";
 
 function ProgressCircle({ completed, total }: { completed: number; total: number }) {
   const percentage = total === 0 ? 0 : (completed / total) * 100;
@@ -41,6 +42,7 @@ export function DayPage(props: Props) {
   const [showDone, setShowDone] = useState(true);
   const [weekSummary, setWeekSummary] = useState<PlanOverviewItem[]>([]);
   const [monthSummary, setMonthSummary] = useState<PlanOverviewItem[]>([]);
+  const { order, updateOrder } = useGroupOrder();
   useEffect(() => { Promise.all([taskRepository.getTasksForDate(props.date), taskRepository.getOverdueTasks(props.date), taskRepository.getWeekOverview(props.date), taskRepository.getMonthOverview(props.date)]).then(([items, late, week, month]) => { setTasks(items); setOverdue(late); setWeekSummary(week); setMonthSummary(month); }); }, [props.date, props.refreshKey]);
   const pending = tasks.filter((task) => !["done", "cancelled"].includes(task.status));
   const done = tasks.filter((task) => ["done", "cancelled"].includes(task.status));
@@ -57,12 +59,65 @@ export function DayPage(props: Props) {
   return <main className="mx-auto w-full max-w-7xl overflow-x-hidden px-4 pb-28 pt-3 sm:px-6 sm:pt-5">
     <div className="mb-5 flex flex-col items-center justify-center"><div className="flex items-center justify-center gap-3 text-center"><h1 className="text-3xl font-bold text-ink sm:text-4xl">{formatFullDate(props.date)}{annotationLabels.length > 0 && <span className="ml-2 text-base font-medium text-amber-700 sm:text-lg">· {annotationLabels.join(" · ")}</span>}{annotation.holidayStatus && <span className={`ml-2 inline-flex rounded-md px-2 py-0.5 align-middle text-sm font-bold ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{annotation.holidayStatus}</span>}</h1><ProgressCircle completed={done.length} total={pending.length + done.length} /></div></div>
     <div className="mb-5 grid grid-cols-3 rounded-2xl border border-stone-100 bg-white p-1.5 text-sm"><button onClick={() => move(-1)} className="rounded-xl px-2 py-2 text-stone-500 hover:bg-stone-50">← 昨天</button><button onClick={() => props.onDateChange(todayKey())} className="rounded-xl px-2 py-2 font-medium text-primary hover:bg-mint">回到今天</button><button onClick={() => move(1)} className="rounded-xl px-2 py-2 text-stone-500 hover:bg-stone-50">明天 →</button></div>
-    <div ref={swipeRef}><section className="rounded-2xl border border-stone-100 bg-white p-4 shadow-card"><div className="border-b border-stone-100 px-1 pb-3.5"><h2 className="text-base font-bold text-ink">今日清单</h2></div>{pending.length ? <GroupedTaskGrid tasks={pending} renderTask={renderTask} /> : <div className="p-2"><EmptyState compact /></div>}</section>{overdue.length > 0 && <section className="mt-6 overflow-visible rounded-2xl border border-alert/30 bg-white"><div className="border-b border-alert/30 bg-alert/10 px-4 py-3"><h2 className="font-semibold text-alert">逾期未完成 · {overdue.length}</h2></div>{overdue.map(renderTask)}</section>}{done.length > 0 && <section className="mt-6 rounded-2xl border border-stone-100 bg-white p-4"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-1 py-1 text-base font-bold text-stone-600">已完成 · {done.length}<ChevronDown className={`h-4 w-4 transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <GroupedTaskGrid tasks={done} renderTask={renderTask} />}</section>}</div>
+    <div ref={swipeRef}><section className="rounded-2xl border border-stone-100 bg-white p-4 shadow-card"><div className="border-b border-stone-100 px-1 pb-3.5"><h2 className="text-base font-bold text-ink">今日清单</h2></div>{pending.length ? <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} /> : <div className="p-2"><EmptyState compact /></div>}</section>{overdue.length > 0 && <section className="mt-6 overflow-visible rounded-2xl border border-alert/30 bg-white"><div className="border-b border-alert/30 bg-alert/10 px-4 py-3"><h2 className="font-semibold text-alert">逾期未完成 · {overdue.length}</h2></div>{overdue.map(renderTask)}</section>}{done.length > 0 && <section className="mt-6 rounded-2xl border border-stone-100 bg-white p-4"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-1 py-1 text-base font-bold text-stone-600">已完成 · {done.length}<ChevronDown className={`h-4 w-4 transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <GroupedTaskGrid tasks={done} renderTask={renderTask} order={order} onReorder={updateOrder} />}</section>}</div>
   </main>;
 }
 
-function GroupedTaskGrid({ tasks, renderTask }: { tasks: TaskDisplay[]; renderTask: (task: TaskDisplay) => ReactNode }) {
-  return <div className="mt-4 space-y-3">{TASK_SUBJECT_GROUPS.map((group) => { const groupTasks = tasks.filter((task) => taskSubjectGroup(task) === group.key); if (!groupTasks.length) return null; return <section key={group.key} className="w-full overflow-visible rounded-xl border border-mint bg-mint/40"><h3 className="border-b border-mint px-3 py-2.5 text-xs font-semibold text-ink">{group.label}</h3>{groupTasks.map(renderTask)}</section>; })}</div>;
+function GroupedTaskGrid({
+  tasks,
+  renderTask,
+  order,
+  onReorder,
+}: {
+  tasks: TaskDisplay[];
+  renderTask: (task: TaskDisplay) => ReactNode;
+  order: TaskSubjectGroup[];
+  onReorder: (newOrder: TaskSubjectGroup[]) => void;
+}) {
+  const [dragKey, setDragKey] = useState<TaskSubjectGroup | null>(null);
+  const [dragOverKey, setDragOverKey] = useState<TaskSubjectGroup | null>(null);
+
+  const orderedGroups = order
+    .map((key) => TASK_SUBJECT_GROUPS.find((g) => g.key === key)!)
+    .filter(Boolean);
+
+  function handleDrop(targetKey: TaskSubjectGroup) {
+    if (!dragKey || dragKey === targetKey) return;
+    const next = [...order];
+    const fromIdx = next.indexOf(dragKey);
+    const toIdx = next.indexOf(targetKey);
+    next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, dragKey);
+    onReorder(next);
+  }
+
+  return (
+    <div className="mt-4 space-y-3">
+      {orderedGroups.map((group) => {
+        const groupTasks = tasks.filter((task) => taskSubjectGroup(task) === group.key);
+        if (!groupTasks.length) return null;
+        const isDragging = dragKey === group.key;
+        const isOver = dragOverKey === group.key && dragKey !== group.key;
+        return (
+          <section
+            key={group.key}
+            draggable
+            onDragStart={() => setDragKey(group.key)}
+            onDragEnd={() => { setDragKey(null); setDragOverKey(null); }}
+            onDragOver={(e) => { e.preventDefault(); setDragOverKey(group.key); }}
+            onDrop={(e) => { e.preventDefault(); handleDrop(group.key); setDragKey(null); setDragOverKey(null); }}
+            className={`w-full overflow-visible rounded-xl border bg-mint/40 transition-all ${isOver ? "border-primary" : "border-mint"} ${isDragging ? "opacity-40" : ""}`}
+          >
+            <h3 className="flex cursor-grab items-center gap-1.5 border-b border-mint px-3 py-2.5 text-xs font-semibold text-ink active:cursor-grabbing">
+              <GripVertical className="h-3 w-3 shrink-0 text-stone-300" />
+              {group.label}
+            </h3>
+            {groupTasks.map(renderTask)}
+          </section>
+        );
+      })}
+    </div>
+  );
 }
 
 function PlanSummary({ title, items, onClick }: { title: string; items: PlanOverviewItem[]; onClick: () => void }) {

@@ -82,6 +82,17 @@ export default function App() {
   const cancelOccurrence = async (task: TaskDisplay) => { if (!task.occurrenceDate || !confirm("只取消这一次课程吗？")) return; await repo().setOccurrence(task.id, task.occurrenceDate, "cancelled"); refresh(); notify("本次课程已取消"); };
   const postponeOccurrence = async (task: TaskDisplay) => { if (!task.occurrenceDate) return; const date = prompt("延期到哪一天？请输入 YYYY-MM-DD", task.overrideDate ?? task.occurrenceDate); if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return; const note = prompt("调整备注（可选）", task.overrideNote ?? "") ?? ""; await repo().setOccurrence(task.id, task.occurrenceDate, "postponed", date, note); refresh(); notify(`已延期到 ${date}`); };
   const saveActualTime = async (taskId: string, itemId: string | null, minutes: number) => { await repo().saveActualMinutes(taskId, itemId, minutes); refresh(); };
+  const saveActualMinutesManual = async (taskId: string, itemId: string | null, minutes: number | undefined) => {
+    if (itemId) {
+      const task = (await repo().listAll()).find(t => t.id === taskId);
+      if (!task) return;
+      const items = (task.checklistItems ?? []).map(i => i.id === itemId ? { ...i, actualMinutes: minutes } : i);
+      await repo().update(taskId, { checklistItems: items });
+    } else {
+      await repo().update(taskId, { actualMinutes: minutes });
+    }
+    refresh();
+  };
   const saveEstimatedMinutes = async (taskId: string, itemId: string | null, minutes: number | undefined) => {
     if (itemId) {
       const task = (await repo().listAll()).find(t => t.id === taskId);
@@ -94,7 +105,7 @@ export default function App() {
     refresh();
   };
   const openDay = (date: string) => { setSelectedDate(date); setPage("today"); window.scrollTo({ top: 0, behavior: "smooth" }); };
-  const actions = { onStatusChange: changeStatus, onChecklistToggle: toggleChecklist, onCopy: copyTask, onEdit: (task: Task) => setForm({ open: true, task }), onDelete: deleteTask, onOccurrenceCancel: cancelOccurrence, onOccurrencePostpone: postponeOccurrence, onSaveActualTime: saveActualTime, onSaveEstimatedMinutes: saveEstimatedMinutes };
+  const actions = { onStatusChange: changeStatus, onChecklistToggle: toggleChecklist, onCopy: copyTask, onEdit: (task: Task) => setForm({ open: true, task }), onDelete: deleteTask, onOccurrenceCancel: cancelOccurrence, onOccurrencePostpone: postponeOccurrence, onSaveActualTime: saveActualTime, onSaveActualTimeManual: saveActualMinutesManual, onSaveEstimatedMinutes: saveEstimatedMinutes };
   return <TimerProvider><div className="min-h-screen bg-paper text-ink"><header className="screen-only sticky top-0 z-40 border-b border-primary/30 bg-primary backdrop-blur-xl"><div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6"><button onClick={() => setPage("today")} className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20 text-white"><CalendarCheck2 className="h-5 w-5" /></span><span className="text-left"><span className="block text-lg font-bold text-white">小步计划</span><span className="hidden text-[10px] tracking-wider text-white/60 sm:block">家庭学习生活规划</span></span></button><nav className="hidden items-center gap-1 lg:flex">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium ${page === value ? "bg-white/20 text-white shadow-sm" : "text-white/80 hover:bg-white/10"}`}><Icon className="h-4 w-4" />{label}</button>)}</nav><div className="flex items-center gap-2">{!cloudInitializing && (<span className={`hidden items-center gap-1 text-xs sm:flex ${cloudMode ? "text-white/90" : "text-white/60"}`}><Cloud className="h-3.5 w-3.5" />{cloudMode ? "云端同步" : "本地模式"}</span>)}<button onClick={() => setForm({ open: true })} className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2.5 text-sm font-semibold text-primary"><Plus className="h-4 w-4" /><span className="hidden sm:inline">添加任务</span></button></div></div></header>
     {page === "today" && <DayPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenWeek={() => setPage("week")} onOpenMonth={() => setPage("month")} {...actions} />}
     {page === "week" && <WeekPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onRefresh={refresh} notify={notify} {...actions} />}

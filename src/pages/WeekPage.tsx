@@ -24,7 +24,7 @@ export function WeekPage(props: Props) {
     () => move(7),   // left swipe → next week
     () => move(-7),  // right swipe → prev week
   );
-  const rowProps = { compact: true, onStatusChange: props.onStatusChange, onEdit: props.onEdit, onDelete: props.onDelete, onCopy: props.onCopy, onOccurrenceCancel: props.onOccurrenceCancel, onOccurrencePostpone: props.onOccurrencePostpone, onChecklistToggle: props.onChecklistToggle, onSaveActualTime: props.onSaveActualTime, onSaveEstimatedMinutes: props.onSaveEstimatedMinutes };
+  const rowProps = { compact: true, showTimerUI: false, onStatusChange: props.onStatusChange, onEdit: props.onEdit, onDelete: props.onDelete, onCopy: props.onCopy, onOccurrenceCancel: props.onOccurrenceCancel, onOccurrencePostpone: props.onOccurrencePostpone, onChecklistToggle: props.onChecklistToggle };
   return <main className="mx-auto w-full max-w-7xl overflow-x-hidden px-4 pb-28 pt-6 sm:px-6">
     <div className="mb-5 text-center"><p className="text-xs font-semibold tracking-widest text-sage-700">WEEK PLAN</p><h1 className="mt-1 text-3xl font-semibold text-ink sm:text-4xl">本周计划 <span className="whitespace-nowrap text-base font-medium text-stone-500 sm:text-lg">（{formatCompactDate(start)} — {formatCompactDate(getWeekEndKey(start))}）</span></h1></div>
     <div className="mb-5 grid grid-cols-3 rounded-2xl border border-stone-100 bg-white p-1.5 text-sm"><button onClick={() => move(-7)} className="rounded-xl px-2 py-2 text-stone-500 hover:bg-stone-50">← 上一周</button><button onClick={() => props.onDateChange(todayKey())} className="rounded-xl px-2 py-2 font-medium text-sage-700 hover:bg-sage-50">回到本周</button><button onClick={() => move(7)} className="rounded-xl px-2 py-2 text-stone-500 hover:bg-stone-50">下一周 →</button></div>

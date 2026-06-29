@@ -8,6 +8,7 @@ interface Props {
   task: TaskDisplay;
   compact?: boolean;
   print?: boolean;
+  showTimerUI?: boolean; // 页面级开关：false = 整页不显示任何计时/用时 UI
   onStatusChange?: (task: TaskDisplay, status: TaskStatus) => void;
   onEdit?: (task: TaskDisplay) => void;
   onDelete?: (task: TaskDisplay) => void;
@@ -16,6 +17,7 @@ interface Props {
   onChecklistToggle?: (task: TaskDisplay, itemId: string) => void;
   onCopy?: (task: TaskDisplay) => void;
   onSaveActualTime?: TimerSaveFn;
+  onSaveActualTimeManual?: (taskId: string, itemId: string | null, minutes: number | undefined) => void;
   onSaveEstimatedMinutes?: (taskId: string, itemId: string | null, minutes: number | undefined) => void;
 }
 
@@ -89,7 +91,7 @@ function TimerControls({
   );
 }
 
-export function TaskItem({ task, compact = false, print = false, onStatusChange, onEdit, onDelete, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onCopy, onSaveActualTime, onSaveEstimatedMinutes }: Props) {
+export function TaskItem({ task, compact = false, print = false, showTimerUI = true, onStatusChange, onEdit, onDelete, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onCopy, onSaveActualTime, onSaveActualTimeManual, onSaveEstimatedMinutes }: Props) {
   const [menu, setMenu] = useState(false);
   const [checkState, setCheckState] = useState<AnimState>("idle");
   const [itemAnim, setItemAnim] = useState<Record<string, AnimState>>({});
@@ -99,6 +101,8 @@ export function TaskItem({ task, compact = false, print = false, onStatusChange,
   const effectiveStatus = task.occurrenceStatus === "postponed" && task.overrideDate ? "todo" : task.status;
   const done = optimisticDone !== null ? optimisticDone : effectiveStatus === "done";
   const hasChecklist = !!task.checklistItems?.length;
+  // 两层开关：页面级(showTimerUI) AND 任务级(enableTimer !== false)
+  const showTimeInfo = showTimerUI && task.enableTimer !== false;
 
   // 父组件刷新后清除乐观覆盖
   useEffect(() => { setOptimisticDone(null); }, [task.status, task.id]);
@@ -170,17 +174,26 @@ export function TaskItem({ task, compact = false, print = false, onStatusChange,
                 taskId={task.id}
                 animState={itemAnim[item.id] ?? "idle"}
                 print={print}
+                showTimeInfo={showTimeInfo}
                 onToggle={() => handleChecklistToggle(item.id, item.done)}
-                saveFn={task.enableTimer !== false ? onSaveActualTime : undefined}
-                onSaveEstimated={onSaveEstimatedMinutes ? (mins) => onSaveEstimatedMinutes(task.id, item.id, mins) : undefined}
+                saveFn={showTimeInfo && !optimisticItemDone ? onSaveActualTime : undefined}
+                onSaveEstimated={showTimeInfo && !optimisticItemDone && onSaveEstimatedMinutes ? (mins) => onSaveEstimatedMinutes(task.id, item.id, mins) : undefined}
+                onSaveActual={showTimeInfo && onSaveActualTimeManual ? (mins) => onSaveActualTimeManual(task.id, item.id, mins) : undefined}
               />);
             })}
           </div>
         )}
 
-        {/* 预计用时内联编辑（无 checklist，非打印，未完成时显示） */}
-        {!hasChecklist && !print && !done && (
-          <TaskLevelTimerRow task={task} saveFn={task.enableTimer !== false ? onSaveActualTime : undefined} onSaveEstimated={onSaveEstimatedMinutes} />
+        {/* 计时/用时行（无 checklist，非打印；完成后仍显示作为记录） */}
+        {!hasChecklist && !print && (
+          <TaskLevelTimerRow
+            task={task}
+            show={showTimeInfo}
+            done={done}
+            saveFn={showTimeInfo && !done ? onSaveActualTime : undefined}
+            onSaveEstimated={showTimeInfo && !done ? onSaveEstimatedMinutes : undefined}
+            onSaveActual={showTimeInfo ? onSaveActualTimeManual : undefined}
+          />
         )}
 
         {/* 顺延/延期标注 */}
@@ -221,14 +234,16 @@ export function TaskItem({ task, compact = false, print = false, onStatusChange,
   );
 }
 
-function ChecklistRow({ item, taskId, animState, print, onToggle, saveFn, onSaveEstimated }: {
+function ChecklistRow({ item, taskId, animState, print, showTimeInfo, onToggle, saveFn, onSaveEstimated, onSaveActual }: {
   item: ChecklistItem;
   taskId: string;
   animState: AnimState;
   print: boolean;
+  showTimeInfo: boolean;
   onToggle: () => void;
   saveFn?: TimerSaveFn;
   onSaveEstimated?: (mins: number | undefined) => void;
+  onSaveActual?: (mins: number | undefined) => void;
 }) {
   return (
     <div className={`flex items-center gap-2 rounded-md px-1.5 py-1 ${item.done ? "text-stone-400" : "text-stone-600"}`}>
@@ -238,21 +253,24 @@ function ChecklistRow({ item, taskId, animState, print, onToggle, saveFn, onSave
         </span>
       </button>
       <span className={`min-w-0 flex-1 text-sm ${item.done ? "line-through" : ""}`}>{item.title}</span>
-      {!print && !item.done && (
+      {!print && showTimeInfo && (
         <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
-          {onSaveEstimated ? (
-            <EstimatedInput value={item.estimatedMinutes} onSave={onSaveEstimated} />
-          ) : item.estimatedMinutes ? (
-            <span className="text-[11px] text-muted">预计{item.estimatedMinutes}m</span>
-          ) : null}
-          {saveFn && (
-            <TimerControls targetId={item.id} taskId={taskId} targetType="checklist" saveFn={saveFn} />
+          {/* 未完成：可编辑预计；已完成：只读显示 */}
+          {!item.done ? (
+            onSaveEstimated
+              ? <EstimatedInput value={item.estimatedMinutes} onSave={onSaveEstimated} />
+              : item.estimatedMinutes ? <span className="text-[11px] text-muted">预计{item.estimatedMinutes}m</span> : null
+          ) : (
+            item.estimatedMinutes ? <span className="text-[11px] text-stone-400">预计{item.estimatedMinutes}m</span> : null
           )}
+          {/* 计时按钮只在未完成时显示 */}
+          {saveFn && <TimerControls targetId={item.id} taskId={taskId} targetType="checklist" saveFn={saveFn} />}
+          {/* 实际用时：可编辑（已完成也可编辑/清除） */}
+          {onSaveActual
+            ? <ActualInput value={item.actualMinutes} onSave={onSaveActual} />
+            : item.actualMinutes ? <span className="shrink-0 rounded bg-mint px-1.5 py-0.5 text-[11px] text-primary">实{item.actualMinutes}m</span> : null}
         </span>
       )}
-      {item.actualMinutes ? (
-        <span className="shrink-0 rounded bg-mint px-1.5 py-0.5 text-[11px] text-primary">实{item.actualMinutes}m</span>
-      ) : null}
     </div>
   );
 }
@@ -288,22 +306,59 @@ function EstimatedInput({ value, onSave }: { value?: number; onSave: (v: number 
   );
 }
 
-function TaskLevelTimerRow({ task, saveFn, onSaveEstimated }: {
+function ActualInput({ value, onSave }: { value?: number; onSave: (v: number | undefined) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value?.toString() ?? "");
+
+  if (!editing) {
+    return (
+      <button type="button" onClick={() => { setDraft(value?.toString() ?? ""); setEditing(true); }}
+        className={`rounded px-1.5 py-0.5 text-[11px] hover:opacity-70 ${value ? "bg-mint text-primary" : "text-stone-300 hover:bg-mint hover:text-primary"}`}
+        title="点击编辑实际用时（留空清除）">
+        {value ? `实${value}m` : "+实际"}
+      </button>
+    );
+  }
+  return (
+    <input
+      autoFocus type="number" min="1" step="1" inputMode="numeric"
+      value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={() => { const v = parseInt(draft, 10); onSave(v > 0 ? v : undefined); setEditing(false); }}
+      onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
+      className="w-14 rounded border px-1.5 py-0.5 text-[11px] text-ink focus:outline-none focus:ring-1 focus:ring-primary"
+      placeholder="分钟"
+    />
+  );
+}
+
+function TaskLevelTimerRow({ task, show, done, saveFn, onSaveEstimated, onSaveActual }: {
   task: TaskDisplay;
+  show: boolean;
+  done: boolean;
   saveFn?: TimerSaveFn;
   onSaveEstimated?: (taskId: string, itemId: string | null, mins: number | undefined) => void;
+  onSaveActual?: (taskId: string, itemId: string | null, mins: number | undefined) => void;
 }) {
+  if (!show) return null;
+  // 已完成且无任何用时数据：不渲染空行
+  if (done && !task.estimatedMinutes && !task.actualMinutes) return null;
   return (
     <div className="mt-1 hidden items-center gap-2 sm:flex">
-      {onSaveEstimated ? (
-        <EstimatedInput value={task.estimatedMinutes} onSave={mins => onSaveEstimated(task.id, null, mins)} />
-      ) : task.estimatedMinutes ? (
-        <span className="text-[11px] text-muted">预计{task.estimatedMinutes}m</span>
-      ) : null}
+      {/* 预计用时：未完成可编辑，已完成只读 */}
+      {!done
+        ? onSaveEstimated
+          ? <EstimatedInput value={task.estimatedMinutes} onSave={mins => onSaveEstimated(task.id, null, mins)} />
+          : task.estimatedMinutes ? <span className="text-[11px] text-muted">预计{task.estimatedMinutes}m</span> : null
+        : task.estimatedMinutes ? <span className="text-[11px] text-stone-400">预计{task.estimatedMinutes}m</span> : null
+      }
+      {/* 计时按钮：只在未完成时显示 */}
       {saveFn && <TimerControls targetId={task.id} taskId={task.id} targetType="task" saveFn={saveFn} />}
-      {task.actualMinutes ? (
-        <span className="rounded bg-mint px-1.5 py-0.5 text-[11px] text-primary">实{task.actualMinutes}m</span>
-      ) : null}
+      {/* 实际用时：可编辑（已完成也可编辑/清除） */}
+      {onSaveActual
+        ? <ActualInput value={task.actualMinutes} onSave={mins => onSaveActual(task.id, null, mins)} />
+        : task.actualMinutes ? <span className="rounded bg-mint px-1.5 py-0.5 text-[11px] text-primary">实{task.actualMinutes}m</span> : null
+      }
     </div>
   );
 }

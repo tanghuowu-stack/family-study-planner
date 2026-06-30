@@ -43,3 +43,29 @@ export const isDateInRange = (date: string, start: string, end: string) =>
 
 export const getUpcomingDateKeys = (from: string, days: number) =>
   Array.from({ length: days }, (_, index) => toDateKey(addDays(fromDateKey(from), index)));
+
+/** 格式化 specificDates 数组：连续日期合并为区间，今年内省略年份 */
+export function formatSpecificDates(dates: string[]): string {
+  if (!dates.length) return "";
+  const sorted = [...dates].sort();
+  const currentYear = new Date().getFullYear().toString();
+  const allThisYear = sorted.every((d) => d.startsWith(currentYear));
+  const fmt = (d: string) => (allThisYear ? d.slice(5) : d);
+
+  const runs: { start: string; end: string }[] = [];
+  let runStart = sorted[0];
+  let runEnd = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
+    const diffMs = fromDateKey(sorted[i]).getTime() - fromDateKey(sorted[i - 1]).getTime();
+    if (Math.round(diffMs / 86400000) === 1) {
+      runEnd = sorted[i];
+    } else {
+      runs.push({ start: runStart, end: runEnd });
+      runStart = sorted[i];
+      runEnd = sorted[i];
+    }
+  }
+  runs.push({ start: runStart, end: runEnd });
+
+  return runs.map((r) => (r.start === r.end ? fmt(r.start) : `${fmt(r.start)}～${fmt(r.end)}`)).join("、");
+}

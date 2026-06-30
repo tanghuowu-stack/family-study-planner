@@ -44,6 +44,13 @@ export const isDateInRange = (date: string, start: string, end: string) =>
 export const getUpcomingDateKeys = (from: string, days: number) =>
   Array.from({ length: days }, (_, index) => toDateKey(addDays(fromDateKey(from), index)));
 
+/** 单个日期：今年内只显示 MM-DD，跨年保留完整日期，undefined/null 返回 fallback */
+export function fmtDate(date: string | undefined | null, fallback = "?"): string {
+  if (!date) return fallback;
+  const currentYear = new Date().getFullYear().toString();
+  return date.startsWith(currentYear) ? date.slice(5) : date;
+}
+
 /** 格式化 specificDates 数组：连续日期合并为区间，今年内省略年份 */
 export function formatSpecificDates(dates: string[]): string {
   if (!dates.length) return "";

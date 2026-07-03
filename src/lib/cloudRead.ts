@@ -119,6 +119,8 @@ export async function fetchCloudDataPreview(familyId: string): Promise<CloudPrev
         title: row.title,
         done: row.done,
         sortOrder: row.sort_order,
+        estimatedMinutes: row.estimated_minutes ?? undefined,
+        actualMinutes: row.actual_minutes ?? undefined,
       });
     }
   });

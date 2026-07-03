@@ -97,12 +97,13 @@ export function TaskItem({ task, compact = false, print = false, showTimerUI = t
   const [itemAnim, setItemAnim] = useState<Record<string, AnimState>>({});
   const [optimisticDone, setOptimisticDone] = useState<boolean | null>(null);
   const [optimisticItems, setOptimisticItems] = useState<Record<string, boolean>>({});
+  const { activeId, activeType, isRunning, stop } = useTimer();
 
   const effectiveStatus = task.occurrenceStatus === "postponed" && task.overrideDate ? "todo" : task.status;
   const done = optimisticDone !== null ? optimisticDone : effectiveStatus === "done";
   const hasChecklist = !!task.checklistItems?.length;
-  // 两层开关：页面级(showTimerUI) AND 任务级(enableTimer !== false)
-  const showTimeInfo = showTimerUI && task.enableTimer !== false;
+  // 两层开关：页面级(showTimerUI) AND 任务级(enableTimer === true，未设置=默认关)
+  const showTimeInfo = showTimerUI && task.enableTimer === true;
 
   // 父组件刷新后清除乐观覆盖
   useEffect(() => { setOptimisticDone(null); }, [task.status, task.id]);
@@ -113,7 +114,16 @@ export function TaskItem({ task, compact = false, print = false, showTimerUI = t
     setOptimisticDone(completing);
     setCheckState(completing ? "checking" : "unchecking");
     setTimeout(() => setCheckState("idle"), completing ? 400 : 250);
-    onStatusChange?.(task, newStatus); // 立即触发，不等动画
+
+    // 完成任务前，若本任务（或其小项）有计时器在跑，先停止计时并保存实际用时，避免留下无法停止的孤儿计时器
+    const timerBelongsToTask = completing && isRunning && !!onSaveActualTime &&
+      ((activeType === "task" && activeId === task.id) ||
+        (activeType === "checklist" && !!task.checklistItems?.some((item) => item.id === activeId)));
+    if (timerBelongsToTask) {
+      void stop(onSaveActualTime!).then(() => onStatusChange?.(task, newStatus));
+    } else {
+      onStatusChange?.(task, newStatus); // 立即触发，不等动画
+    }
   };
 
   const handleChecklistToggle = (itemId: string, wasDone: boolean) => {

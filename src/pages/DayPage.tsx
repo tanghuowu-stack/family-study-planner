@@ -40,10 +40,8 @@ export function DayPage(props: Props) {
   const [tasks, setTasks] = useState<TaskDisplay[]>([]);
   const [overdue, setOverdue] = useState<TaskDisplay[]>([]);
   const [showDone, setShowDone] = useState(true);
-  const [weekSummary, setWeekSummary] = useState<PlanOverviewItem[]>([]);
-  const [monthSummary, setMonthSummary] = useState<PlanOverviewItem[]>([]);
   const { order, updateOrder } = useGroupOrder();
-  useEffect(() => { Promise.all([taskRepository.getTasksForDate(props.date), taskRepository.getOverdueTasks(props.date), taskRepository.getWeekOverview(props.date), taskRepository.getMonthOverview(props.date)]).then(([items, late, week, month]) => { setTasks(items); setOverdue(late); setWeekSummary(week); setMonthSummary(month); }); }, [props.date, props.refreshKey]);
+  useEffect(() => { Promise.all([taskRepository.getTasksForDate(props.date), taskRepository.getOverdueTasks(props.date)]).then(([items, late]) => { setTasks(items); setOverdue(late); }); }, [props.date, props.refreshKey]);
   const pending = tasks.filter((task) => !["done", "cancelled"].includes(task.status));
   const done = tasks.filter((task) => ["done", "cancelled"].includes(task.status));
   const move = (days: number) => props.onDateChange(toDateKey(addDays(fromDateKey(props.date), days)));

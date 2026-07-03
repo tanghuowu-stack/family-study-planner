@@ -1,6 +1,6 @@
 import { supabase } from "../lib/supabase";
 import { isCloudMode } from "./repositoryProvider";
-import { cloudRepository } from "./cloudRepository";
+import { cloudRepository, notifySyncError } from "./cloudRepository";
 import type { TaskSubjectGroup } from "../utils/taskGrouping";
 
 const SETTINGS_KEY = "group_sort_order";
@@ -38,11 +38,13 @@ export async function saveGroupSortOrder(order: TaskSubjectGroup[]): Promise<voi
   if (!isCloudMode() || !supabase) return;
   try {
     const familyId = cloudRepository.getFamilyId();
-    await supabase.from("app_settings").upsert(
+    const { error } = await supabase.from("app_settings").upsert(
       { family_id: familyId, key: SETTINGS_KEY, value: order, updated_at: new Date().toISOString() },
       { onConflict: "family_id,key" }
     );
+    if (error) throw error;
   } catch (e) {
     console.error("[appSettings] saveGroupSortOrder", e);
+    notifySyncError("分组排序云端同步失败", e);
   }
 }

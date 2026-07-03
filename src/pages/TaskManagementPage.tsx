@@ -38,7 +38,7 @@ export function TaskManagementPage(props: Props) {
   const selectIds = (ids: string[]) => setSelected((current) => { const next = new Set(current); const all = ids.every((id) => next.has(id)); ids.forEach((id) => all ? next.delete(id) : next.add(id)); return next; });
   const batchDelete = async () => {
     if (!selected.size || !confirm(`确定删除已选的 ${selected.size} 项任务吗？任务会保留在本地记录中。`)) return;
-    const count = await taskRepository.batchRemove([...selected]);
+    const count = await getRepository().batchRemove([...selected]);
     await reload(); props.onRefresh(); props.notify(`已删除 ${count} 项任务`);
   };
   return <main className="mx-auto w-full max-w-6xl px-4 pb-28 pt-6 sm:px-6">

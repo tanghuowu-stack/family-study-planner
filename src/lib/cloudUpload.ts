@@ -75,6 +75,7 @@ function taskToRow(task: Task, familyId: string): Record<string, unknown> {
     start_time: task.startTime ?? task.time ?? null,
     end_time: task.endTime ?? null,
     estimated_minutes: task.estimatedMinutes ?? null,
+    actual_minutes: task.actualMinutes ?? null,
     location: task.location ?? null,
     note: task.note ?? null,
     important: task.important ?? false,
@@ -102,6 +103,7 @@ function buildMetadata(task: Task): Record<string, unknown> | null {
   if (task.readingTargetUnit !== undefined) meta.readingTargetUnit = task.readingTargetUnit;
   if (task.allowedWeekdays !== undefined) meta.allowedWeekdays = task.allowedWeekdays;
   if (task.allowWeekend !== undefined) meta.allowWeekend = task.allowWeekend;
+  if (task.enableTimer !== undefined) meta.enableTimer = task.enableTimer;
   return Object.keys(meta).length > 0 ? meta : null;
 }
 
@@ -168,6 +170,8 @@ export async function uploadLocalDataToCloud(familyId: string): Promise<UploadRe
         title: item.title ?? "",
         done: item.done ?? false,
         sort_order: item.sortOrder ?? idx,
+        estimated_minutes: item.estimatedMinutes ?? null,
+        actual_minutes: item.actualMinutes ?? null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }));

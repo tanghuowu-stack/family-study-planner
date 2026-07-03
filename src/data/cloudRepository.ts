@@ -29,7 +29,7 @@ let _onSyncError: ((msg: string) => void) | null = null;
 export function setCloudSyncErrorHandler(cb: (msg: string) => void): void {
   _onSyncError = cb;
 }
-function notifySyncError(label: string, e: unknown): void {
+export function notifySyncError(label: string, e: unknown): void {
   console.error(`[cloudRepository] ${label}`, e);
   _onSyncError?.(`${label}，数据已保存到本地`);
 }
@@ -145,18 +145,30 @@ async function upsertTask(task: Task, familyId: string): Promise<void> {
   const { error: taskErr } = await supabase.from("tasks").upsert(row, { onConflict: "id" });
   if (taskErr) throw new Error(`云端保存任务失败: ${taskErr.message}`);
 
-  // 先删除该 task 下的旧小项，再插入新小项（第一版接受覆盖并发修改）
-  const { error: delErr } = await supabase
-    .from("task_checklist_items")
-    .delete()
-    .eq("task_id", task.id)
-    .eq("family_id", familyId);
-  if (delErr) throw new Error(`云端更新清单失败: ${delErr.message}`);
-
+  // upsert 现有小项（按 id），再按 id 差集删除不再存在的旧小项，避免先删后插的原子性问题
   const items = checklistItemRows(task, familyId);
   if (items.length > 0) {
-    const { error: insertErr } = await supabase.from("task_checklist_items").insert(items);
-    if (insertErr) throw new Error(`云端插入清单失败: ${insertErr.message}`);
+    const { error: upsertErr } = await supabase
+      .from("task_checklist_items")
+      .upsert(items, { onConflict: "id" });
+    if (upsertErr) throw new Error(`云端更新清单失败: ${upsertErr.message}`);
+  }
+
+  const { data: existingRows, error: fetchErr } = await supabase
+    .from("task_checklist_items")
+    .select("id")
+    .eq("task_id", task.id)
+    .eq("family_id", familyId);
+  if (fetchErr) throw new Error(`云端读取清单失败: ${fetchErr.message}`);
+
+  const currentIds = new Set(items.map((item) => item.id as string));
+  const staleIds = (existingRows ?? []).map((row) => row.id as string).filter((id) => !currentIds.has(id));
+  if (staleIds.length > 0) {
+    const { error: delErr } = await supabase
+      .from("task_checklist_items")
+      .delete()
+      .in("id", staleIds);
+    if (delErr) throw new Error(`云端清理旧清单失败: ${delErr.message}`);
   }
 }
 
@@ -428,10 +440,16 @@ export const cloudRepository = {
   async remove(id: string) {
     await taskRepository.remove(id);
     if (_familyId) {
-      // Fetch the soft-deleted task and upsert it to cloud with deleted_at
+      // Fetch the soft-deleted task and its cascaded children, upsert both to cloud with deleted_at
       const task = await db.tasks.get(id);
       if (task) {
         await upsertTask(task, _familyId).catch((e) =>
+          notifySyncError("任务云端同步失败", e)
+        );
+      }
+      const children = await db.tasks.where("parentTaskId").equals(id).toArray();
+      for (const child of children) {
+        await upsertTask(child, _familyId).catch((e) =>
           notifySyncError("任务云端同步失败", e)
         );
       }
@@ -448,6 +466,12 @@ export const cloudRepository = {
             notifySyncError("任务云端同步失败", e)
           );
         }
+      }
+      const children = await db.tasks.where("parentTaskId").anyOf(ids).toArray();
+      for (const child of children) {
+        await upsertTask(child, _familyId).catch((e) =>
+          notifySyncError("任务云端同步失败", e)
+        );
       }
     }
     return count;
@@ -484,7 +508,9 @@ export const cloudRepository = {
         .equals(parentId)
         .toArray();
       for (const child of children) {
-        await upsertTask(child, _familyId).catch(() => {});
+        await upsertTask(child, _familyId).catch((e) =>
+          notifySyncError("任务云端同步失败", e)
+        );
       }
     }
     return count;
@@ -503,7 +529,9 @@ export const cloudRepository = {
         const id = `${task.id}:${task.occurrenceDate}`;
         const occ = await db.taskOccurrenceStatuses.get(id);
         if (occ) {
-          await upsertOccurrence(occ, _familyId).catch(() => {});
+          await upsertOccurrence(occ, _familyId).catch((e) =>
+            notifySyncError("单日状态云端同步失败", e)
+          );
         }
       }
     }
@@ -534,7 +562,9 @@ export const cloudRepository = {
         const id = `${taskId}:${occurrenceDate}`;
         const occ = await db.taskOccurrenceStatuses.get(id);
         if (occ) {
-          await upsertOccurrence(occ, _familyId).catch(() => {});
+          await upsertOccurrence(occ, _familyId).catch((e) =>
+            notifySyncError("单日状态云端同步失败", e)
+          );
         }
       }
     }

@@ -49,6 +49,8 @@ export async function downloadCloudDataToLocal(familyId: string): Promise<Downlo
         title: row.title,
         done: row.done,
         sortOrder: row.sort_order,
+        estimatedMinutes: row.estimated_minutes ?? undefined,
+        actualMinutes: row.actual_minutes ?? undefined,
       });
     }
   });

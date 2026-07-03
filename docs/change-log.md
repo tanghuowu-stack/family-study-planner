@@ -2,6 +2,19 @@
 
 此文件只记录简短变更摘要。以后每次完成项目修改后，在顶部日期下追加一条记录，不需要复制完整需求或实现细节。
 
+## 2026-07-03
+
+- Fable 5代码审查修复：按代码审查清单修复 8 项已知问题。
+  1. 批量删除绕过云端同步：`TaskManagementPage.tsx` 的批量删除改为走 `getRepository().batchRemove`。
+  2. 删除父任务时子任务未同步云端：`cloudRepository.ts` 的 `remove`/`batchRemove` 补充级联子任务的 upsert（写入 `deleted_at`）。
+  3. checklist 更新先删后插有丢数据风险：`cloudRepository.ts` 改为按 id upsert + id 差集删除旧项。
+  4. 完成任务时孤儿计时器：`TaskItem.tsx` 勾选完成前自动 stop 正在运行的计时器并保存实际用时。
+  5. enableTimer 默认值不统一：`TaskItem.tsx`/`TaskForm.tsx` 统一为 `enableTimer === true`（未设置=默认关）。
+  6. 云端写失败静默吞掉：`cloudRepository.ts` 三处及 `appSettingsRepository.ts` 的 upsert 改为调用 `notifySyncError` 提示用户。
+  7. 维护工具缺字段：`cloudUpload.ts`/`cloudDownload.ts`/`cloudRead.ts` 补齐 `enableTimer`、`actual_minutes`、checklist 的 `estimated_minutes`/`actual_minutes`。
+  8. 今日页死代码：`DayPage.tsx` 删除未使用的 `weekSummary`/`monthSummary` state 及 `getWeekOverview`/`getMonthOverview` 调用。
+  - 涉及文件：`src/pages/TaskManagementPage.tsx`、`src/data/cloudRepository.ts`、`src/components/TaskItem.tsx`、`src/components/TaskForm.tsx`、`src/data/appSettingsRepository.ts`、`src/lib/cloudUpload.ts`、`src/lib/cloudDownload.ts`、`src/lib/cloudRead.ts`、`src/pages/DayPage.tsx`。
+
 ## 2026-06-24
 
 - 新增 iPad 主屏幕图标与 PWA manifest 配置，方便通过 Safari 添加到主屏幕作为“小步计划”入口。

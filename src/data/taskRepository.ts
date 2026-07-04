@@ -146,6 +146,25 @@ const scheduleOccursOn = (task: Task, date: string) => {
 const isOccurrenceSchedule = (task: Task) => ["dailyRecurring", "weeklyRecurring", "specificDates", "dateRangeDaily", "dateRangeWeekdays"].includes(task.schedulePattern ?? "") || task.timeType === "recurring";
 const isRangeSchedule = (task: Task) => task.timeType === "dateRange" || ["dateRangeDaily", "dateRangeWeekdays"].includes(task.schedulePattern ?? "");
 
+// carryOver（autoNextDay）的重复类任务：往前找最早一个已排期但未完成/未取消/未延期的日子，
+// 当作"欠着"的那一天顶替今天的名额展示；不欠账时才回落到今天本身的正常排期。
+function findPendingOccurrenceDate(task: Task, date: string, byTaskAndDate: Map<string, TaskOccurrenceStatus>): string | undefined {
+  if (!task.allowRollover || task.rolloverMode !== "autoNextDay" || date > todayKey()) return undefined;
+  const start = task.recurrence?.startDate ?? task.startDate ?? (task.specificDates?.length ? [...task.specificDates].sort()[0] : undefined);
+  if (!start) return undefined;
+  let cursor = parseISO(start);
+  let key = toDateKey(cursor);
+  while (key < date) {
+    if (scheduleOccursOn(task, key)) {
+      const status = byTaskAndDate.get(`${task.id}:${key}`)?.status ?? "todo";
+      if (status !== "done" && status !== "cancelled" && status !== "postponed") return key;
+    }
+    cursor = addDays(cursor, 1);
+    key = toDateKey(cursor);
+  }
+  return undefined;
+}
+
 async function dateLimitFor(task: Task, allTasks: Task[]) {
   if (!task.parentTaskId) return undefined;
   const parent = allTasks.find((item) => item.id === task.parentTaskId);
@@ -184,13 +203,19 @@ export const taskRepository = {
     for (const task of tasks) {
       if (task.mainCategory === "readingPlan" || !task.childVisible || (options?.forCalendar && (task.calendarVisibility === "hide" || task.status === "cancelled" || !isCalendarPlanTask(task))) || task.timeType === "weekGoal" || task.timeType === "monthGoal" || task.timeType === "assignmentWindow") continue;
       if (task.status === "done" && task.timeType === "dateRange" && task.completedAt && date > task.completedAt.slice(0, 10)) continue;
-      if (scheduleOccursOn(task, date)) {
-        if (!isOccurrenceSchedule(task)) result.push(task);
-        else {
-        const occurrence = byTaskAndDate.get(`${task.id}:${date}`);
-        if (occurrence?.status === "cancelled" || occurrence?.status === "postponed") continue;
-        result.push({ ...task, status: occurrence?.status as TaskStatus ?? "todo", occurrenceDate: date, occurrenceStatus: occurrence?.status ?? "todo", overrideDate: occurrence?.overrideDate, overrideNote: occurrence?.overrideNote });
+      if (isOccurrenceSchedule(task)) {
+        const pendingDate = findPendingOccurrenceDate(task, date, byTaskAndDate);
+        if (pendingDate) {
+          const occurrence = byTaskAndDate.get(`${task.id}:${pendingDate}`);
+          result.push({ ...task, status: occurrence?.status as TaskStatus ?? "todo", occurrenceDate: pendingDate, occurrenceStatus: occurrence?.status ?? "todo", overrideDate: occurrence?.overrideDate, overrideNote: occurrence?.overrideNote, rolledFromDate: pendingDate });
+        } else if (scheduleOccursOn(task, date)) {
+          const occurrence = byTaskAndDate.get(`${task.id}:${date}`);
+          if (occurrence?.status !== "cancelled" && occurrence?.status !== "postponed") {
+            result.push({ ...task, status: occurrence?.status as TaskStatus ?? "todo", occurrenceDate: date, occurrenceStatus: occurrence?.status ?? "todo", overrideDate: occurrence?.overrideDate, overrideNote: occurrence?.overrideNote });
+          }
         }
+      } else if (scheduleOccursOn(task, date)) {
+        result.push(task);
       }
 
       if (task.timeType === "singleDate" && task.date && task.date < date && date <= todayKey() && unfinished(task.status) && task.allowRollover && task.rolloverMode === "autoNextDay") {

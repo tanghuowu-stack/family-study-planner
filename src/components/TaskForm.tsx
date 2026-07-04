@@ -28,15 +28,20 @@ function newDraft(date: string): TaskDraft {
     const reading = main === "readingPlan";
     const timeType = reading ? "weekGoal" : (["singleDate", "dateRange", "weekGoal", "assignmentWindow", "recurring"].includes(saved.timeType ?? "") ? saved.timeType! : "singleDate");
     const extraContentType = main === "extraHomework" ? saved.extraContentType ?? "homework" : undefined;
+    const schedulePattern = reading ? "singleDate" : saved.schedulePattern ?? (timeType === "recurring" ? "weeklyRecurring" : "singleDate");
     return {
       ...base, mainCategory: main, subCategory: sub, title: defaultTitle(main, sub, extraContentType), timeType,
-      schedulePattern: reading ? "singleDate" : saved.schedulePattern ?? (timeType === "recurring" ? "weeklyRecurring" : "singleDate"),
+      schedulePattern,
       rolloverMode: saved.rolloverMode ?? base.rolloverMode, allowRollover: saved.allowRollover ?? base.allowRollover,
       childVisible: saved.childVisible ?? true, planPeriodId: saved.planPeriodId, applicablePeriodType: saved.applicablePeriodType ?? (saved.planPeriodId ? "holiday" : "all"),
       extraContentType,
       calendarVisibility: forceCalendarVisible({ mainCategory: main, subCategory: sub, extraContentType }) ? "show" : saved.calendarVisibility ?? "show",
       weekStart: timeType === "weekGoal" ? getWeekStartKey(date) : undefined,
-      recurrence: timeType === "recurring" ? { frequency: "weekly", weekdays: [new Date(`${date}T00:00:00`).getDay()], startDate: date } : undefined,
+      recurrence: timeType === "recurring"
+        ? schedulePattern === "weeklyRecurring" ? { frequency: "weekly", weekdays: [new Date(`${date}T00:00:00`).getDay()], startDate: date }
+        : schedulePattern === "dailyRecurring" ? { frequency: "daily", startDate: date }
+        : undefined
+        : undefined,
       weeklyQuota: reading ? { enabled: true, targetCount: 1, unit: "本", isWeeklyRecurring: true, allowAutoDistribute: true, allowRollover: true } : undefined,
     };
   } catch { return base; }

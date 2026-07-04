@@ -156,6 +156,22 @@ async function dateLimitFor(task: Task, allTasks: Task[]) {
   return undefined;
 }
 
+// 子任务全部完成即父任务完成，与父任务自身的时间窗口（周目标/作业周期）是否到期无关；
+// 子任务只要有一个被取消勾选，父任务也跟着退回未完成，避免"显示已完成但子任务其实没做完"的假象。
+async function syncParentCompletion(childTaskId: string): Promise<string | undefined> {
+  const child = await db.tasks.get(childTaskId);
+  if (!child?.parentTaskId) return undefined;
+  const parent = await db.tasks.get(child.parentTaskId);
+  if (!parent || parent.deletedAt) return undefined;
+  const siblings = (await db.tasks.where("parentTaskId").equals(parent.id).toArray()).filter(isActiveTask);
+  if (!siblings.length) return undefined;
+  const allDone = siblings.every((sibling) => sibling.status === "done");
+  if (allDone === (parent.status === "done")) return undefined;
+  const now = new Date().toISOString();
+  await db.tasks.update(parent.id, { status: allDone ? "done" : "todo", completedAt: allDone ? now : undefined, updatedAt: now });
+  return parent.id;
+}
+
 export const taskRepository = {
   async listAll() { return (await db.tasks.toArray()).filter((task) => isActiveTask(task) && task.mainCategory !== "readingPlan").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)); },
 
@@ -584,17 +600,20 @@ export const taskRepository = {
     });
   },
 
-  async setDisplayStatus(task: TaskDisplay, status: TaskStatus) {
+  async setDisplayStatus(task: TaskDisplay, status: TaskStatus): Promise<string | undefined> {
     if (task.occurrenceDate) {
       await this.setOccurrence(task.id, task.occurrenceDate, status);
-    } else {
-      const before = await db.tasks.get(task.id);
-      const now = new Date().toISOString();
-      await db.transaction("rw", db.tasks, db.activityLogs, async () => {
-        await db.tasks.update(task.id, { status, completedAt: status === "done" ? now : undefined, checklistItems: task.checklistItems?.map((item) => ({ ...item, done: status === "done" ? true : status === "todo" ? false : item.done })), updatedAt: now });
-        await writeLog(status === "done" ? "complete" : "uncomplete", "task", { entityId: task.id, entityTitle: task.title, beforeSnapshot: before, afterSnapshot: { status } });
-      });
+      return undefined;
     }
+    const before = await db.tasks.get(task.id);
+    const now = new Date().toISOString();
+    let parentId: string | undefined;
+    await db.transaction("rw", db.tasks, db.activityLogs, async () => {
+      await db.tasks.update(task.id, { status, completedAt: status === "done" ? now : undefined, checklistItems: task.checklistItems?.map((item) => ({ ...item, done: status === "done" ? true : status === "todo" ? false : item.done })), updatedAt: now });
+      await writeLog(status === "done" ? "complete" : "uncomplete", "task", { entityId: task.id, entityTitle: task.title, beforeSnapshot: before, afterSnapshot: { status } });
+      parentId = await syncParentCompletion(task.id);
+    });
+    return parentId;
   },
 
   async saveActualMinutes(taskId: string, itemId: string | null, additionalMinutes: number): Promise<void> {
@@ -616,12 +635,13 @@ export const taskRepository = {
     }
   },
 
-  async toggleChecklistItem(taskId: string, itemId: string, occurrenceDate?: string) {
+  async toggleChecklistItem(taskId: string, itemId: string, occurrenceDate?: string): Promise<string | undefined> {
     const task = await db.tasks.get(taskId);
-    if (!task?.checklistItems) return;
+    if (!task?.checklistItems) return undefined;
     const items = task.checklistItems.map((item) => item.id === itemId ? { ...item, done: !item.done } : item);
     const status: TaskStatus = items.every((item) => item.done) ? "done" : task.status === "done" ? "todo" : task.status;
     const now = new Date().toISOString();
+    let parentId: string | undefined;
     await db.transaction("rw", db.tasks, db.taskOccurrenceStatuses, db.activityLogs, async () => {
       await db.tasks.update(taskId, { checklistItems: items, status, completedAt: status === "done" ? now : undefined, updatedAt: now });
       if (occurrenceDate) {
@@ -630,7 +650,9 @@ export const taskRepository = {
         await db.taskOccurrenceStatuses.put({ id, taskId, occurrenceDate, status: status === "done" ? "done" : "todo", createdAt: existing?.createdAt ?? now, updatedAt: now });
       }
       if (status !== task.status) await writeLog(status === "done" ? "complete" : "uncomplete", "task", { entityId: task.id, entityTitle: task.title, beforeSnapshot: task, afterSnapshot: { status, checklistItems: items } });
+      parentId = await syncParentCompletion(taskId);
     });
+    return parentId;
   },
 
   async setOccurrence(taskId: string, occurrenceDate: string, status: OccurrenceStatus, overrideDate?: string, overrideNote?: string) {

@@ -517,7 +517,7 @@ export const cloudRepository = {
   },
 
   async setDisplayStatus(task: TaskDisplay, status: TaskStatus) {
-    await taskRepository.setDisplayStatus(task, status);
+    const parentId = await taskRepository.setDisplayStatus(task, status);
     if (_familyId) {
       const updated = await db.tasks.get(task.id);
       if (updated) {
@@ -531,6 +531,14 @@ export const cloudRepository = {
         if (occ) {
           await upsertOccurrence(occ, _familyId).catch((e) =>
             notifySyncError("单日状态云端同步失败", e)
+          );
+        }
+      }
+      if (parentId) {
+        const parent = await db.tasks.get(parentId);
+        if (parent) {
+          await upsertTask(parent, _familyId).catch((e) =>
+            notifySyncError("父任务云端同步失败", e)
           );
         }
       }
@@ -550,7 +558,7 @@ export const cloudRepository = {
   },
 
   async toggleChecklistItem(taskId: string, itemId: string, occurrenceDate?: string) {
-    await taskRepository.toggleChecklistItem(taskId, itemId, occurrenceDate);
+    const parentId = await taskRepository.toggleChecklistItem(taskId, itemId, occurrenceDate);
     if (_familyId) {
       const updated = await db.tasks.get(taskId);
       if (updated) {
@@ -564,6 +572,14 @@ export const cloudRepository = {
         if (occ) {
           await upsertOccurrence(occ, _familyId).catch((e) =>
             notifySyncError("单日状态云端同步失败", e)
+          );
+        }
+      }
+      if (parentId) {
+        const parent = await db.tasks.get(parentId);
+        if (parent) {
+          await upsertTask(parent, _familyId).catch((e) =>
+            notifySyncError("父任务云端同步失败", e)
           );
         }
       }

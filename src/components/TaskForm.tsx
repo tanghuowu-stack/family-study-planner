@@ -5,7 +5,11 @@ import { taskRepository } from "../data/taskRepository";
 import { getRepository } from "../data/repositoryProvider";
 import type { Course, ExtraContentType, MainCategory, PlanPeriod, RolloverMode, SchedulePattern, Task, TaskDraft, TaskStatus, TaskTimeType, WeeklyQuota } from "../types/task";
 import { fromDateKey, getWeekStartKey, todayKey, toDateKey } from "../utils/date";
-import { EXTRA_CONTENT_OPTIONS_SIMPLE, MAIN_CATEGORY_META, ROLLOVER_META, STATUS_META, SUB_CATEGORY_OPTIONS, TIME_TYPE_META, WEEKDAY_LABELS, defaultSortOrder } from "../utils/taskMeta";
+import { EXTRA_CONTENT_OPTIONS_SIMPLE, MAIN_CATEGORY_META, ROLLOVER_META, STATUS_META, SUB_CATEGORY_OPTIONS, TIME_TYPE_META, WEEKDAY_LABELS, defaultSortOrder, isCourseTask } from "../utils/taskMeta";
+
+// "事项"分类或"上课"内容类型默认在月计划中显示，不受上次使用偏好影响
+const forceCalendarVisible = (draft: Pick<TaskDraft, "mainCategory" | "subCategory" | "extraContentType">) =>
+  draft.mainCategory === "temporary" || isCourseTask(draft);
 
 interface Props { task?: Task; initialDate?: string; onClose: () => void; onSave: (draft: TaskDraft, force?: boolean) => Promise<void>; }
 const PREF_KEY = "familyPlanner.taskFormPreferences.v1";
@@ -30,7 +34,7 @@ function newDraft(date: string): TaskDraft {
       rolloverMode: saved.rolloverMode ?? base.rolloverMode, allowRollover: saved.allowRollover ?? base.allowRollover,
       childVisible: saved.childVisible ?? true, planPeriodId: saved.planPeriodId, applicablePeriodType: saved.applicablePeriodType ?? (saved.planPeriodId ? "holiday" : "all"),
       extraContentType,
-      calendarVisibility: saved.calendarVisibility ?? "show",
+      calendarVisibility: forceCalendarVisible({ mainCategory: main, subCategory: sub, extraContentType }) ? "show" : saved.calendarVisibility ?? "show",
       weekStart: timeType === "weekGoal" ? getWeekStartKey(date) : undefined,
       recurrence: timeType === "recurring" ? { frequency: "weekly", weekdays: [new Date(`${date}T00:00:00`).getDay()], startDate: date } : undefined,
       weeklyQuota: reading ? { enabled: true, targetCount: 1, unit: "本", isWeeklyRecurring: true, allowAutoDistribute: true, allowRollover: true } : undefined,
@@ -46,6 +50,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
   const [courses, setCourses] = useState<Course[]>([]);
   const [titleTouched, setTitleTouched] = useState(!!task?.title);
   const [periodTouched, setPeriodTouched] = useState(!!task?.id);
+  const [calendarVisibilityTouched, setCalendarVisibilityTouched] = useState(!!task);
   const [autoBoundHint, setAutoBoundHint] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -57,6 +62,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
   const label = "text-sm font-medium text-stone-600";
 
   useEffect(() => { taskRepository.listPlanPeriods().then(setPeriods); getRepository().listCourses().then(setCourses); const handler = (event: KeyboardEvent) => event.key === "Escape" && onClose(); window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler); }, [onClose]);
+  useEffect(() => { if (!calendarVisibilityTouched && forceCalendarVisible(draft) && draft.calendarVisibility !== "show") set("calendarVisibility", "show"); }, [draft.mainCategory, draft.subCategory, draft.extraContentType, calendarVisibilityTouched]);
 
   // 可选课程：进行中且在有效期内；编辑时始终保留已绑定的课程，避免结课后选项消失
   const selectableCourses = courses.filter((course) => {
@@ -277,7 +283,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
         <div className="grid gap-4 sm:grid-cols-3"><label className={label}>开始时间（可选）<input type="time" value={draft.startTime ?? ""} onChange={(e) => { const startTime = e.target.value || undefined; setDraft((current) => ({ ...current, startTime, endTime: startTime && current.estimatedMinutes ? addMinutesToTime(startTime, current.estimatedMinutes) : current.endTime })); }} className={input} /></label><label className={label}>预计时长（分钟）<input type="number" min="1" step="1" inputMode="numeric" value={draft.estimatedMinutes ?? ""} onChange={(e) => { const raw = Number(e.target.value); const estimatedMinutes = Number.isInteger(raw) && raw > 0 ? raw : undefined; setDraft((current) => ({ ...current, estimatedMinutes, endTime: current.startTime && estimatedMinutes ? addMinutesToTime(current.startTime, estimatedMinutes) : current.endTime })); }} className={input} placeholder="任意正整数" /></label><label className={label}>结束时间（可选）<input type="time" value={draft.endTime ?? ""} onChange={(e) => set("endTime", e.target.value || undefined)} className={input} /></label></div>
         {homework && <div className="rounded-2xl border border-blue-100 bg-blue-50/30 p-4"><div className="mb-3 flex justify-between"><p className="text-sm font-semibold">任务小项</p><button type="button" onClick={addChecklist} className="inline-flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-xs"><Plus className="h-3.5 w-3.5" />添加</button></div><div className="space-y-2">{draft.checklistItems?.map((item, index) => <div key={item.id} className="flex gap-2"><input value={item.title} onChange={(e) => set("checklistItems", draft.checklistItems?.map((value) => value.id === item.id ? { ...value, title: e.target.value } : value))} className="min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm" placeholder="小项内容" /><input type="number" min="1" step="1" inputMode="numeric" value={item.estimatedMinutes ?? ""} onChange={(e) => { const raw = parseInt(e.target.value, 10); set("checklistItems", draft.checklistItems?.map((value) => value.id === item.id ? { ...value, estimatedMinutes: raw > 0 ? raw : undefined } : value)); }} className="w-16 shrink-0 rounded-lg border px-2 py-2 text-center text-sm" placeholder="分钟" title="预估用时（分钟）" /><button type="button" onClick={() => moveChecklist(index, -1)}><ArrowUp className="h-4 w-4" /></button><button type="button" onClick={() => moveChecklist(index, 1)}><ArrowDown className="h-4 w-4" /></button><button type="button" onClick={() => set("checklistItems", draft.checklistItems?.filter((value) => value.id !== item.id))}><Trash2 className="h-4 w-4 text-rose-400" /></button></div>)}</div><p className="mt-2 text-[11px] text-stone-400">小项旁的数字框可填写预估用时（分钟，可选）</p></div>}
         <label className={label}>备注<textarea rows={2} value={draft.note ?? ""} onChange={(e) => set("note", e.target.value)} className={input} /></label>
-        <div className="flex flex-wrap gap-4 rounded-2xl bg-white p-4"><Check label="显示在今日清单" checked={draft.childVisible} onChange={(value) => set("childVisible", value)} /><Check label="在月计划中显示" checked={draft.calendarVisibility !== "hide"} onChange={(value) => setDraft((current) => ({ ...current, calendarVisibility: value ? "show" : "hide", ...(!value ? { rolloverMode: "skipIfMissed" as const, allowRollover: false } : {}) }))} /><Check label="显示计时器" checked={draft.enableTimer === true} onChange={(value) => set("enableTimer", value)} /><label className={label}>状态<select value={draft.status} onChange={(e) => set("status", e.target.value as TaskStatus)} className="ml-2 rounded-lg border px-2 py-1">{Object.entries(STATUS_META).map(([value, meta]) => <option key={value} value={value}>{meta.label}</option>)}</select></label></div>
+        <div className="flex flex-wrap gap-4 rounded-2xl bg-white p-4"><Check label="显示在今日清单" checked={draft.childVisible} onChange={(value) => set("childVisible", value)} /><Check label="在月计划中显示" checked={draft.calendarVisibility !== "hide"} onChange={(value) => { setCalendarVisibilityTouched(true); setDraft((current) => ({ ...current, calendarVisibility: value ? "show" : "hide", ...(!value ? { rolloverMode: "skipIfMissed" as const, allowRollover: false } : {}) })); }} /><Check label="显示计时器" checked={draft.enableTimer === true} onChange={(value) => set("enableTimer", value)} /><label className={label}>状态<select value={draft.status} onChange={(e) => set("status", e.target.value as TaskStatus)} className="ml-2 rounded-lg border px-2 py-1">{Object.entries(STATUS_META).map(([value, meta]) => <option key={value} value={value}>{meta.label}</option>)}</select></label></div>
       </div>}
 
       {pendingConflict && <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><p>该时间与已有任务"{conflictTitle}"重叠，是否仍然添加？</p><div className="mt-3 flex gap-2"><button type="button" onClick={() => setPendingConflict(undefined)} className="rounded-lg border border-amber-300 bg-white px-3 py-1.5">返回修改</button><button type="button" onClick={async () => { setSaving(true); try { await onSave(pendingConflict, true); onClose(); } catch (reason) { setError(reason instanceof Error ? reason.message : "保存失败"); setSaving(false); } }} className="rounded-lg bg-primary px-3 py-1.5 font-semibold text-white">仍然添加</button></div></div>}

@@ -18,6 +18,7 @@ import type {
   PlanPeriod,
   Course,
   BackupData,
+  SyncResult,
 } from "../types/task";
 import { taskRepository } from "./taskRepository";
 import { getWeekStartKey, getWeekEndKey, getMonthKey, getMonthBounds, todayKey, toDateKey } from "../utils/date";
@@ -32,6 +33,20 @@ export function setCloudSyncErrorHandler(cb: (msg: string) => void): void {
 export function notifySyncError(label: string, e: unknown): void {
   console.error(`[cloudRepository] ${label}`, e);
   _onSyncError?.(`${label}，数据已保存到本地`);
+}
+
+/** 完成状态类写入抗偶发网络抖动：失败后按固定间隔重试，重试次数用完仍失败才真正抛出 */
+async function withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 1500): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastError = e;
+      if (attempt < retries) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastError;
 }
 
 // ─── helpers (reuse from cloudUpload logic) ─────────────────────────────────
@@ -516,33 +531,37 @@ export const cloudRepository = {
     return count;
   },
 
-  async setDisplayStatus(task: TaskDisplay, status: TaskStatus) {
-    const parentId = await taskRepository.setDisplayStatus(task, status);
+  async setDisplayStatus(task: TaskDisplay, status: TaskStatus): Promise<SyncResult> {
+    const { parentId } = await taskRepository.setDisplayStatus(task, status);
+    let synced = true;
     if (_familyId) {
       const updated = await db.tasks.get(task.id);
       if (updated) {
-        await upsertTask(updated, _familyId).catch((e) =>
-          notifySyncError("任务云端同步失败", e)
-        );
+        await withRetry(() => upsertTask(updated, _familyId!)).catch((e) => {
+          notifySyncError("任务云端同步失败", e);
+          synced = false;
+        });
       }
       if (task.occurrenceDate) {
         const id = `${task.id}:${task.occurrenceDate}`;
         const occ = await db.taskOccurrenceStatuses.get(id);
         if (occ) {
-          await upsertOccurrence(occ, _familyId).catch((e) =>
-            notifySyncError("单日状态云端同步失败", e)
-          );
+          await withRetry(() => upsertOccurrence(occ, _familyId!)).catch((e) => {
+            notifySyncError("单日状态云端同步失败", e);
+            synced = false;
+          });
         }
       }
       if (parentId) {
         const parent = await db.tasks.get(parentId);
         if (parent) {
-          await upsertTask(parent, _familyId).catch((e) =>
+          await withRetry(() => upsertTask(parent, _familyId!)).catch((e) =>
             notifySyncError("父任务云端同步失败", e)
           );
         }
       }
     }
+    return { parentId, synced };
   },
 
   async saveActualMinutes(taskId: string, itemId: string | null, additionalMinutes: number): Promise<void> {
@@ -557,33 +576,61 @@ export const cloudRepository = {
     }
   },
 
-  async toggleChecklistItem(taskId: string, itemId: string, occurrenceDate?: string) {
-    const parentId = await taskRepository.toggleChecklistItem(taskId, itemId, occurrenceDate);
+  async toggleChecklistItem(taskId: string, itemId: string, occurrenceDate?: string): Promise<SyncResult> {
+    const { parentId } = await taskRepository.toggleChecklistItem(taskId, itemId, occurrenceDate);
+    let synced = true;
     if (_familyId) {
       const updated = await db.tasks.get(taskId);
       if (updated) {
-        await upsertTask(updated, _familyId).catch((e) =>
-          notifySyncError("任务云端同步失败", e)
-        );
+        await withRetry(() => upsertTask(updated, _familyId!)).catch((e) => {
+          notifySyncError("任务云端同步失败", e);
+          synced = false;
+        });
       }
       if (occurrenceDate) {
         const id = `${taskId}:${occurrenceDate}`;
         const occ = await db.taskOccurrenceStatuses.get(id);
         if (occ) {
-          await upsertOccurrence(occ, _familyId).catch((e) =>
-            notifySyncError("单日状态云端同步失败", e)
-          );
+          await withRetry(() => upsertOccurrence(occ, _familyId!)).catch((e) => {
+            notifySyncError("单日状态云端同步失败", e);
+            synced = false;
+          });
         }
       }
       if (parentId) {
         const parent = await db.tasks.get(parentId);
         if (parent) {
-          await upsertTask(parent, _familyId).catch((e) =>
+          await withRetry(() => upsertTask(parent, _familyId!)).catch((e) =>
             notifySyncError("父任务云端同步失败", e)
           );
         }
       }
     }
+    return { parentId, synced };
+  },
+
+  /** 手动重试：不触发本地状态变化，重新原样读取本地当前数据推一遍云端 */
+  async resyncTask(taskId: string, occurrenceDate?: string): Promise<boolean> {
+    if (!_familyId) return true;
+    let synced = true;
+    const task = await db.tasks.get(taskId);
+    if (task) {
+      await withRetry(() => upsertTask(task, _familyId!)).catch((e) => {
+        notifySyncError("任务云端同步失败", e);
+        synced = false;
+      });
+    }
+    if (occurrenceDate) {
+      const id = `${taskId}:${occurrenceDate}`;
+      const occ = await db.taskOccurrenceStatuses.get(id);
+      if (occ) {
+        await withRetry(() => upsertOccurrence(occ, _familyId!)).catch((e) => {
+          notifySyncError("单日状态云端同步失败", e);
+          synced = false;
+        });
+      }
+    }
+    return synced;
   },
 
   async setOccurrence(
@@ -592,17 +639,20 @@ export const cloudRepository = {
     status: OccurrenceStatus,
     overrideDate?: string,
     overrideNote?: string
-  ) {
+  ): Promise<SyncResult> {
     await taskRepository.setOccurrence(taskId, occurrenceDate, status, overrideDate, overrideNote);
+    let synced = true;
     if (_familyId) {
       const id = `${taskId}:${occurrenceDate}`;
       const occ = await db.taskOccurrenceStatuses.get(id);
       if (occ) {
-        await upsertOccurrence(occ, _familyId).catch((e) =>
-          notifySyncError("任务云端同步失败", e)
-        );
+        await withRetry(() => upsertOccurrence(occ, _familyId!)).catch((e) => {
+          notifySyncError("任务云端同步失败", e);
+          synced = false;
+        });
       }
     }
+    return { synced };
   },
 
   // ── Plan periods ──────────────────────────────────────────────────────────

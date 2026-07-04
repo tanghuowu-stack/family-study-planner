@@ -1,7 +1,7 @@
 import { addDays, eachDayOfInterval, getDay, parseISO } from "date-fns";
 import { db } from "./db";
 import type {
-  ActivityActionType, ActivityLog, BackupData, Course, MainCategory, OccurrenceStatus, PlanOverviewItem, PlanPeriod, PlanPeriodType, ReadingLog, RolloverMode, Task, TaskDisplay,
+  ActivityActionType, ActivityLog, BackupData, Course, MainCategory, OccurrenceStatus, PlanOverviewItem, PlanPeriod, PlanPeriodType, ReadingLog, RolloverMode, SyncResult, Task, TaskDisplay,
   TaskDraft, TaskOccurrenceStatus, TaskStatus,
 } from "../types/task";
 import { getMonthBounds, getMonthKey, getWeekEndKey, getWeekStartKey, isDateInRange, todayKey, toDateKey } from "../utils/date";
@@ -600,10 +600,9 @@ export const taskRepository = {
     });
   },
 
-  async setDisplayStatus(task: TaskDisplay, status: TaskStatus): Promise<string | undefined> {
+  async setDisplayStatus(task: TaskDisplay, status: TaskStatus): Promise<SyncResult> {
     if (task.occurrenceDate) {
-      await this.setOccurrence(task.id, task.occurrenceDate, status);
-      return undefined;
+      return this.setOccurrence(task.id, task.occurrenceDate, status);
     }
     const before = await db.tasks.get(task.id);
     const now = new Date().toISOString();
@@ -613,7 +612,7 @@ export const taskRepository = {
       await writeLog(status === "done" ? "complete" : "uncomplete", "task", { entityId: task.id, entityTitle: task.title, beforeSnapshot: before, afterSnapshot: { status } });
       parentId = await syncParentCompletion(task.id);
     });
-    return parentId;
+    return { parentId, synced: true };
   },
 
   async saveActualMinutes(taskId: string, itemId: string | null, additionalMinutes: number): Promise<void> {
@@ -635,9 +634,9 @@ export const taskRepository = {
     }
   },
 
-  async toggleChecklistItem(taskId: string, itemId: string, occurrenceDate?: string): Promise<string | undefined> {
+  async toggleChecklistItem(taskId: string, itemId: string, occurrenceDate?: string): Promise<SyncResult> {
     const task = await db.tasks.get(taskId);
-    if (!task?.checklistItems) return undefined;
+    if (!task?.checklistItems) return { synced: true };
     const items = task.checklistItems.map((item) => item.id === itemId ? { ...item, done: !item.done } : item);
     const status: TaskStatus = items.every((item) => item.done) ? "done" : task.status === "done" ? "todo" : task.status;
     const now = new Date().toISOString();
@@ -652,10 +651,10 @@ export const taskRepository = {
       if (status !== task.status) await writeLog(status === "done" ? "complete" : "uncomplete", "task", { entityId: task.id, entityTitle: task.title, beforeSnapshot: task, afterSnapshot: { status, checklistItems: items } });
       parentId = await syncParentCompletion(taskId);
     });
-    return parentId;
+    return { parentId, synced: true };
   },
 
-  async setOccurrence(taskId: string, occurrenceDate: string, status: OccurrenceStatus, overrideDate?: string, overrideNote?: string) {
+  async setOccurrence(taskId: string, occurrenceDate: string, status: OccurrenceStatus, overrideDate?: string, overrideNote?: string): Promise<SyncResult> {
     const id = `${taskId}:${occurrenceDate}`;
     const existing = await db.taskOccurrenceStatuses.get(id);
     const now = new Date().toISOString();
@@ -666,6 +665,12 @@ export const taskRepository = {
       const action = status === "cancelled" ? "cancelOccurrence" : status === "postponed" ? "postponeOccurrence" : status === "done" ? "complete" : "uncomplete";
       await writeLog(action, "taskOccurrence", { entityId: id, entityTitle: task?.title, beforeSnapshot: existing, afterSnapshot: after });
     });
+    return { synced: true };
+  },
+
+  /** 手动重试：把本地当前状态原样重新同步到云端，不触发任何本地状态变化（本地模式无需处理，直接视为已同步） */
+  async resyncTask(_taskId: string, _occurrenceDate?: string): Promise<boolean> {
+    return true;
   },
 
   async listReadingLogs(taskId: string, weekDate: string) {

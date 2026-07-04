@@ -1,4 +1,4 @@
-import { Check, Copy, MoreHorizontal, Pause, Pencil, Play, RotateCcw, Square, Trash2 } from "lucide-react";
+import { Check, Copy, MoreHorizontal, Pause, Pencil, Play, RotateCcw, Square, Trash2, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatElapsed, useTimer, type TimerSaveFn } from "../context/TimerContext";
 import type { ChecklistItem, TaskDisplay, TaskStatus } from "../types/task";
@@ -9,16 +9,34 @@ interface Props {
   compact?: boolean;
   print?: boolean;
   showTimerUI?: boolean; // 页面级开关：false = 整页不显示任何计时/用时 UI
+  unsynced?: boolean; // 任务自身完成状态未同步到云端
+  unsyncedItemIds?: Set<string>; // 哪些清单小项未同步到云端
   onStatusChange?: (task: TaskDisplay, status: TaskStatus) => void;
   onEdit?: (task: TaskDisplay) => void;
   onDelete?: (task: TaskDisplay) => void;
   onOccurrenceCancel?: (task: TaskDisplay) => void;
   onOccurrencePostpone?: (task: TaskDisplay) => void;
   onChecklistToggle?: (task: TaskDisplay, itemId: string) => void;
+  onRetrySync?: () => void;
+  onRetryItemSync?: (itemId: string) => void;
   onCopy?: (task: TaskDisplay) => void;
   onSaveActualTime?: TimerSaveFn;
   onSaveActualTimeManual?: (taskId: string, itemId: string | null, minutes: number | undefined) => void;
   onSaveEstimatedMinutes?: (taskId: string, itemId: string | null, minutes: number | undefined) => void;
+}
+
+/** 未同步到云端的持续可见标记（不是一闪而过的 toast），点击手动重试 */
+function UnsyncedBadge({ onRetry }: { onRetry?: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onRetry?.(); }}
+      title="未同步到云端，点击重试"
+      className="ml-2 inline-flex shrink-0 items-center gap-1 rounded-full bg-sun/25 px-2 py-0.5 text-[10px] font-semibold text-ink no-underline"
+    >
+      <TriangleAlert className="h-3 w-3" />未同步
+    </button>
+  );
 }
 
 type AnimState = "idle" | "checking" | "unchecking";
@@ -91,7 +109,7 @@ function TimerControls({
   );
 }
 
-export function TaskItem({ task, compact = false, print = false, showTimerUI = true, onStatusChange, onEdit, onDelete, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onCopy, onSaveActualTime, onSaveActualTimeManual, onSaveEstimatedMinutes }: Props) {
+export function TaskItem({ task, compact = false, print = false, showTimerUI = true, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onRetrySync, onRetryItemSync, onCopy, onSaveActualTime, onSaveActualTimeManual, onSaveEstimatedMinutes }: Props) {
   const [menu, setMenu] = useState(false);
   const [checkState, setCheckState] = useState<AnimState>("idle");
   const [itemAnim, setItemAnim] = useState<Record<string, AnimState>>({});
@@ -158,6 +176,7 @@ export function TaskItem({ task, compact = false, print = false, showTimerUI = t
           {isCourseTask(task) && (
             <span className={`ml-2 inline-flex rounded-md px-2 py-0.5 align-middle text-[10px] font-semibold no-underline ${done || effectiveStatus === "cancelled" ? "bg-stone-200 text-stone-400" : "bg-mint text-primary"}`}>上课</span>
           )}
+          {unsynced && !print && <UnsyncedBadge onRetry={onRetrySync} />}
           {hasChecklist && (() => {
             const items = task.checklistItems!.map(i => ({ ...i, done: optimisticItems[i.id] !== undefined ? optimisticItems[i.id] : i.done }));
             const doneCount = items.filter(i => i.done).length;
@@ -185,7 +204,9 @@ export function TaskItem({ task, compact = false, print = false, showTimerUI = t
                 animState={itemAnim[item.id] ?? "idle"}
                 print={print}
                 showTimeInfo={showTimeInfo}
+                unsynced={unsyncedItemIds?.has(item.id)}
                 onToggle={() => handleChecklistToggle(item.id, item.done)}
+                onRetrySync={() => onRetryItemSync?.(item.id)}
                 saveFn={showTimeInfo && !optimisticItemDone ? onSaveActualTime : undefined}
                 onSaveEstimated={showTimeInfo && !optimisticItemDone && onSaveEstimatedMinutes ? (mins) => onSaveEstimatedMinutes(task.id, item.id, mins) : undefined}
                 onSaveActual={showTimeInfo && onSaveActualTimeManual ? (mins) => onSaveActualTimeManual(task.id, item.id, mins) : undefined}
@@ -244,13 +265,15 @@ export function TaskItem({ task, compact = false, print = false, showTimerUI = t
   );
 }
 
-function ChecklistRow({ item, taskId, animState, print, showTimeInfo, onToggle, saveFn, onSaveEstimated, onSaveActual }: {
+function ChecklistRow({ item, taskId, animState, print, showTimeInfo, unsynced, onToggle, onRetrySync, saveFn, onSaveEstimated, onSaveActual }: {
   item: ChecklistItem;
   taskId: string;
   animState: AnimState;
   print: boolean;
   showTimeInfo: boolean;
+  unsynced?: boolean;
   onToggle: () => void;
+  onRetrySync?: () => void;
   saveFn?: TimerSaveFn;
   onSaveEstimated?: (mins: number | undefined) => void;
   onSaveActual?: (mins: number | undefined) => void;
@@ -263,6 +286,7 @@ function ChecklistRow({ item, taskId, animState, print, showTimeInfo, onToggle, 
         </span>
       </button>
       <span className={`min-w-0 flex-1 text-sm ${item.done ? "line-through" : ""}`}>{item.title}</span>
+      {unsynced && !print && <UnsyncedBadge onRetry={onRetrySync} />}
       {!print && showTimeInfo && (
         <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
           {/* 未完成：可编辑预计；已完成：只读显示 */}

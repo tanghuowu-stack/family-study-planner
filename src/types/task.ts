@@ -168,6 +168,12 @@ export interface TaskOccurrenceStatus {
   updatedAt: string;
 }
 
+/** 完成状态写入的结果：parentId 是否触发了父任务联动完成，synced 是否已确认同步到云端（本地模式下恒为 true） */
+export interface SyncResult {
+  parentId?: string;
+  synced: boolean;
+}
+
 export interface ReadingLog {
   id: string;
   taskId: string;

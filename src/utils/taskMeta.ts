@@ -129,3 +129,8 @@ export const defaultSortOrder = (main: MainCategory, sub: string) => {
   const index = SORT_KEYS.indexOf(`${main}:${sub}`);
   return index < 0 ? 999 : index;
 };
+
+/** 任务本身完成状态的未同步标记 key（区分同一个重复任务的不同天） */
+export const taskSyncKey = (task: { id: string; occurrenceDate?: string }) => `${task.id}:${task.occurrenceDate ?? ""}`;
+/** 清单小项的未同步标记 key */
+export const itemSyncKey = (taskId: string, itemId: string) => `${taskId}#${itemId}`;

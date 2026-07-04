@@ -10,6 +10,7 @@ import type { PlanOverviewItem, TaskDisplay, TaskStatus } from "../types/task";
 import { formatFullDate, fromDateKey, toDateKey, todayKey } from "../utils/date";
 import { TASK_SUBJECT_GROUPS, taskSubjectGroup, type TaskSubjectGroup } from "../utils/taskGrouping";
 import { useGroupOrder } from "../hooks/useGroupOrder";
+import { itemSyncKey, taskSyncKey } from "../utils/taskMeta";
 
 function ProgressCircle({ completed, total }: { completed: number; total: number }) {
   const percentage = total === 0 ? 0 : (completed / total) * 100;
@@ -34,6 +35,8 @@ interface Props {
   onSaveActualTime?: (taskId: string, itemId: string | null, minutes: number) => Promise<void>;
   onSaveActualTimeManual?: (taskId: string, itemId: string | null, minutes: number | undefined) => void;
   onSaveEstimatedMinutes?: (taskId: string, itemId: string | null, minutes: number | undefined) => void;
+  unsyncedTasks?: Set<string>; unsyncedItems?: Set<string>;
+  onRetrySync?: (task: TaskDisplay) => void; onRetryItemSync?: (task: TaskDisplay, itemId: string) => void;
 }
 
 export function DayPage(props: Props) {
@@ -52,7 +55,15 @@ export function DayPage(props: Props) {
   const rowProps = { compact: true, onStatusChange: props.onStatusChange, onEdit: props.onEdit, onDelete: props.onDelete, onOccurrenceCancel: props.onOccurrenceCancel, onOccurrencePostpone: props.onOccurrencePostpone, onChecklistToggle: props.onChecklistToggle, onCopy: props.onCopy, onSaveActualTime: props.onSaveActualTime, onSaveActualTimeManual: props.onSaveActualTimeManual, onSaveEstimatedMinutes: props.onSaveEstimatedMinutes };
   const annotation = getCalendarAnnotation(props.date);
   const annotationLabels = [...annotation.solarTerms, ...annotation.festivals];
-  const renderTask = (task: TaskDisplay) => <TaskItem key={`${task.id}:${task.occurrenceDate ?? task.date}`} task={task} {...rowProps} />;
+  const renderTask = (task: TaskDisplay) => <TaskItem
+    key={`${task.id}:${task.occurrenceDate ?? task.date}`}
+    task={task}
+    unsynced={props.unsyncedTasks?.has(taskSyncKey(task))}
+    unsyncedItemIds={props.unsyncedItems && task.checklistItems ? new Set(task.checklistItems.filter((item) => props.unsyncedItems!.has(itemSyncKey(task.id, item.id))).map((item) => item.id)) : undefined}
+    onRetrySync={() => props.onRetrySync?.(task)}
+    onRetryItemSync={(itemId) => props.onRetryItemSync?.(task, itemId)}
+    {...rowProps}
+  />;
 
   return <main className="mx-auto w-full max-w-7xl overflow-x-hidden px-4 pb-28 pt-3 sm:px-6 sm:pt-5">
     <div className="mb-5 flex flex-col items-center justify-center"><div className="flex items-center justify-center gap-3 text-center"><h1 className="text-3xl font-bold text-ink sm:text-4xl">{formatFullDate(props.date)}{annotationLabels.length > 0 && <span className="ml-2 text-base font-medium text-amber-700 sm:text-lg">· {annotationLabels.join(" · ")}</span>}{annotation.holidayStatus && <span className={`ml-2 inline-flex rounded-md px-2 py-0.5 align-middle text-sm font-bold ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{annotation.holidayStatus}</span>}</h1><ProgressCircle completed={done.length} total={pending.length + done.length} /></div></div>

@@ -30,7 +30,7 @@ interface Props {
   onStatusChange: (task: TaskDisplay, status: TaskStatus) => void; onEdit: (task: TaskDisplay) => void;
   onDelete: (task: TaskDisplay) => void; onOccurrenceCancel: (task: TaskDisplay) => void;
   onOccurrencePostpone: (task: TaskDisplay) => void; onChecklistToggle: (task: TaskDisplay, itemId: string) => void;
-  onCopy: (task: TaskDisplay) => void; onOpenWeek: () => void; onOpenMonth: () => void;
+  onCopy: (task: TaskDisplay) => void; onOpenMonth: () => void;
   onSaveActualTime?: (taskId: string, itemId: string | null, minutes: number) => Promise<void>;
   onSaveActualTimeManual?: (taskId: string, itemId: string | null, minutes: number | undefined) => void;
   onSaveEstimatedMinutes?: (taskId: string, itemId: string | null, minutes: number | undefined) => void;

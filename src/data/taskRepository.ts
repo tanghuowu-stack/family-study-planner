@@ -202,6 +202,22 @@ async function syncParentCompletion(childTaskId: string): Promise<string | undef
   return parent.id;
 }
 
+async function recomputeStatusFromChecklist(taskId: string, beforeSnapshot?: Task): Promise<{ task?: Task; parentId?: string }> {
+  const task = await db.tasks.get(taskId);
+  if (!task || task.deletedAt || isOccurrenceSchedule(task)) return { task };
+  const items = task.checklistItems ?? [];
+  if (!items.length) return { task, parentId: await syncParentCompletion(taskId) };
+  const allDone = items.every((item) => item.done);
+  const status: TaskStatus = allDone ? "done" : task.status === "done" ? "todo" : task.status;
+  if (status !== task.status) {
+    const now = new Date().toISOString();
+    await db.tasks.update(taskId, { status, completedAt: status === "done" ? now : undefined, updatedAt: now });
+    await writeLog(status === "done" ? "complete" : "uncomplete", "task", { entityId: task.id, entityTitle: task.title, beforeSnapshot: beforeSnapshot ?? task, afterSnapshot: { status, checklistItems: items } });
+  }
+  const parentId = await syncParentCompletion(taskId);
+  return { task: await db.tasks.get(taskId), parentId };
+}
+
 export const taskRepository = {
   async listAll() { return (await db.tasks.toArray()).filter((task) => isActiveTask(task) && task.mainCategory !== "readingPlan").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)); },
 
@@ -517,11 +533,14 @@ export const taskRepository = {
     const existing = await db.tasks.get(id);
     if (!existing) throw new Error("找不到要更新的任务");
     const task = sanitizeTaskWrite({ ...existing, ...changes, id, updatedAt: new Date().toISOString() }, existing.status);
+    const checklistChanged = Object.prototype.hasOwnProperty.call(changes, "checklistItems");
+    let result = task;
     await db.transaction("rw", db.tasks, db.activityLogs, async () => {
       await db.tasks.put(task);
       await writeLog("edit", "task", { entityId: id, entityTitle: task.title, beforeSnapshot: existing, afterSnapshot: task });
+      if (checklistChanged) result = (await recomputeStatusFromChecklist(id, existing)).task ?? task;
     });
-    return task;
+    return result;
   },
 
   async copyToDate(id: string, date: string) {
@@ -703,11 +722,9 @@ export const taskRepository = {
       return { synced: true };
     }
 
-    const status: TaskStatus = allDone ? "done" : task.status === "done" ? "todo" : task.status;
     await db.transaction("rw", db.tasks, db.activityLogs, async () => {
-      await db.tasks.update(taskId, { checklistItems: items, status, completedAt: status === "done" ? now : undefined, updatedAt: now });
-      if (status !== task.status) await writeLog(status === "done" ? "complete" : "uncomplete", "task", { entityId: task.id, entityTitle: task.title, beforeSnapshot: task, afterSnapshot: { status, checklistItems: items } });
-      parentId = await syncParentCompletion(taskId);
+      await db.tasks.update(taskId, { checklistItems: items, updatedAt: now });
+      parentId = (await recomputeStatusFromChecklist(taskId, task)).parentId;
     });
     return { parentId, synced: true };
   },

@@ -459,11 +459,20 @@ export const cloudRepository = {
   },
 
   async update(id: string, changes: Partial<TaskDraft>) {
+    const checklistChanged = Object.prototype.hasOwnProperty.call(changes, "checklistItems");
     const task = await taskRepository.update(id, changes);
     if (_familyId) {
       await upsertTask(task, _familyId).catch((e) =>
         notifySyncError("任务云端同步失败", e)
       );
+      if (checklistChanged && task.parentTaskId) {
+        const parent = await db.tasks.get(task.parentTaskId);
+        if (parent) {
+          await upsertTask(parent, _familyId).catch((e) =>
+            notifySyncError("父任务云端同步失败", e)
+          );
+        }
+      }
     }
     return task;
   },

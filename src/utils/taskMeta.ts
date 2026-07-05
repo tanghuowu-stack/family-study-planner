@@ -1,4 +1,12 @@
-import type { CourseStatus, ExtraContentType, MainCategory, RolloverMode, TaskStatus, TaskTimeType, SubCategory } from "../types/task";
+import type { CourseStatus, ExtraContentType, MainCategory, RolloverMode, SchedulePattern, TaskStatus, TaskTimeType, SubCategory } from "../types/task";
+
+/**
+ * R1 完成状态权威源判定（PROJECT_GUIDE 6.5 数据层铁律）：
+ * occurrence 类任务的完成状态只记 task_occurrence_statuses 表，本体 status 恒为 todo/cancelled；
+ * 非 occurrence 类任务的完成状态记在本体 status/completedAt，不得产生 occurrence 记录。
+ */
+export const isOccurrenceSchedule = (task: { schedulePattern?: SchedulePattern; timeType: TaskTimeType }) =>
+  ["dailyRecurring", "weeklyRecurring", "specificDates", "dateRangeDaily", "dateRangeWeekdays"].includes(task.schedulePattern ?? "") || task.timeType === "recurring";
 
 export const SUB_CATEGORY_META: Record<SubCategory | ExtraContentType, { icon: string; color: string; bgColor: string; label: string }> = {
   chinese: { icon: "📖", color: "#C65D3B", bgColor: "#F5E6E0", label: "语文" },

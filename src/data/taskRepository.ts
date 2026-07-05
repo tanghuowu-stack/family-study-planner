@@ -6,7 +6,7 @@ import type {
 } from "../types/task";
 import { getMonthBounds, getMonthKey, getWeekEndKey, getWeekStartKey, isDateInRange, todayKey, toDateKey } from "../utils/date";
 import { taskOccursOn } from "../utils/recurrence";
-import { defaultSortOrder, isCourseTask, subCategoryLabel } from "../utils/taskMeta";
+import { defaultSortOrder, isCourseTask, isOccurrenceSchedule, subCategoryLabel } from "../utils/taskMeta";
 import { taskSubjectGroup } from "../utils/taskGrouping";
 
 const makeId = () => crypto.randomUUID();
@@ -143,8 +143,19 @@ const scheduleOccursOn = (task: Task, date: string) => {
   return false;
 };
 
-const isOccurrenceSchedule = (task: Task) => ["dailyRecurring", "weeklyRecurring", "specificDates", "dateRangeDaily", "dateRangeWeekdays"].includes(task.schedulePattern ?? "") || task.timeType === "recurring";
 const isRangeSchedule = (task: Task) => task.timeType === "dateRange" || ["dateRangeDaily", "dateRangeWeekdays"].includes(task.schedulePattern ?? "");
+
+// R1/R3 写入口防线（PROJECT_GUIDE 6.5）：剔除 TaskDisplay 的运行时展示字段；
+// occurrence 类任务本体 status 只允许 todo/cancelled，completedAt 恒为空。
+function sanitizeTaskWrite(task: Task, previousStatus?: TaskStatus): Task {
+  const clean = { ...task } as Task & Partial<TaskDisplay>;
+  delete clean.occurrenceDate; delete clean.occurrenceStatus; delete clean.overrideDate; delete clean.overrideNote; delete clean.rolledFromDate;
+  if (isOccurrenceSchedule(clean)) {
+    if (!["todo", "cancelled"].includes(clean.status)) clean.status = previousStatus && ["todo", "cancelled"].includes(previousStatus) ? previousStatus : "todo";
+    clean.completedAt = undefined;
+  }
+  return clean;
+}
 
 // carryOver（autoNextDay）的重复类任务：往前找最早一个已排期但未完成/未取消/未延期的日子，
 // 当作"欠着"的那一天顶替今天的名额展示；不欠账时才回落到今天本身的正常排期。
@@ -488,7 +499,7 @@ export const taskRepository = {
 
   async create(draft: TaskDraft) {
     const now = new Date().toISOString();
-    const task: Task = { ...normalizeDraft(draft), id: makeId(), createdAt: now, updatedAt: now };
+    const task: Task = sanitizeTaskWrite({ ...normalizeDraft(draft), id: makeId(), createdAt: now, updatedAt: now });
     await db.transaction("rw", db.tasks, db.activityLogs, async () => {
       await db.tasks.add(task);
       await writeLog("create", "task", { entityId: task.id, entityTitle: task.title, afterSnapshot: task });
@@ -499,7 +510,7 @@ export const taskRepository = {
   async update(id: string, changes: Partial<TaskDraft>) {
     const existing = await db.tasks.get(id);
     if (!existing) throw new Error("找不到要更新的任务");
-    const task = { ...existing, ...changes, id, updatedAt: new Date().toISOString() };
+    const task = sanitizeTaskWrite({ ...existing, ...changes, id, updatedAt: new Date().toISOString() }, existing.status);
     await db.transaction("rw", db.tasks, db.activityLogs, async () => {
       await db.tasks.put(task);
       await writeLog("edit", "task", { entityId: id, entityTitle: task.title, beforeSnapshot: existing, afterSnapshot: task });
@@ -626,7 +637,10 @@ export const taskRepository = {
   },
 
   async setDisplayStatus(task: TaskDisplay, status: TaskStatus): Promise<SyncResult> {
-    if (task.occurrenceDate) {
+    // R1：按排期类型（而非展示字段）决定权威源——occurrence 类写单日状态表，其余写任务本体。
+    // 被历史 bug 污染了 occurrenceDate 的非重复任务因此也能正确回到本体写入路径。
+    if (isOccurrenceSchedule(task)) {
+      if (!task.occurrenceDate) throw new Error("重复类任务缺少单日日期，无法记录完成状态");
       return this.setOccurrence(task.id, task.occurrenceDate, status);
     }
     const before = await db.tasks.get(task.id);
@@ -663,16 +677,29 @@ export const taskRepository = {
     const task = await db.tasks.get(taskId);
     if (!task?.checklistItems) return { synced: true };
     const items = task.checklistItems.map((item) => item.id === itemId ? { ...item, done: !item.done } : item);
-    const status: TaskStatus = items.every((item) => item.done) ? "done" : task.status === "done" ? "todo" : task.status;
+    const allDone = items.every((item) => item.done);
     const now = new Date().toISOString();
     let parentId: string | undefined;
-    await db.transaction("rw", db.tasks, db.taskOccurrenceStatuses, db.activityLogs, async () => {
+
+    if (isOccurrenceSchedule(task)) {
+      // R1：重复类任务本体 status/completedAt 不动，完成状态只写 occurrence 表
+      await db.transaction("rw", db.tasks, db.taskOccurrenceStatuses, db.activityLogs, async () => {
+        await db.tasks.update(taskId, { checklistItems: items, updatedAt: now });
+        if (occurrenceDate) {
+          const id = `${taskId}:${occurrenceDate}`;
+          const existing = await db.taskOccurrenceStatuses.get(id);
+          const status: OccurrenceStatus = allDone ? "done" : existing?.status === "done" ? "todo" : existing?.status ?? "todo";
+          // R2：patch 语义，保留 override 字段
+          await db.taskOccurrenceStatuses.put({ ...existing, id, taskId, occurrenceDate, status, createdAt: existing?.createdAt ?? now, updatedAt: now });
+          if (status !== (existing?.status ?? "todo")) await writeLog(status === "done" ? "complete" : "uncomplete", "taskOccurrence", { entityId: id, entityTitle: task.title, beforeSnapshot: existing, afterSnapshot: { status, checklistItems: items } });
+        }
+      });
+      return { synced: true };
+    }
+
+    const status: TaskStatus = allDone ? "done" : task.status === "done" ? "todo" : task.status;
+    await db.transaction("rw", db.tasks, db.activityLogs, async () => {
       await db.tasks.update(taskId, { checklistItems: items, status, completedAt: status === "done" ? now : undefined, updatedAt: now });
-      if (occurrenceDate) {
-        const id = `${taskId}:${occurrenceDate}`;
-        const existing = await db.taskOccurrenceStatuses.get(id);
-        await db.taskOccurrenceStatuses.put({ id, taskId, occurrenceDate, status: status === "done" ? "done" : "todo", createdAt: existing?.createdAt ?? now, updatedAt: now });
-      }
       if (status !== task.status) await writeLog(status === "done" ? "complete" : "uncomplete", "task", { entityId: task.id, entityTitle: task.title, beforeSnapshot: task, afterSnapshot: { status, checklistItems: items } });
       parentId = await syncParentCompletion(taskId);
     });
@@ -685,7 +712,8 @@ export const taskRepository = {
     const now = new Date().toISOString();
     const task = await db.tasks.get(taskId);
     await db.transaction("rw", db.taskOccurrenceStatuses, db.activityLogs, async () => {
-      const after = { id, taskId, occurrenceDate, status, overrideDate, overrideNote, createdAt: existing?.createdAt ?? now, updatedAt: now };
+      // R2：patch 语义——未显式传入的 override 字段保留原值，完成/取消一个已延期的任务不会抹掉延期记录
+      const after = { ...existing, id, taskId, occurrenceDate, status, overrideDate: overrideDate ?? existing?.overrideDate, overrideNote: overrideNote ?? existing?.overrideNote, createdAt: existing?.createdAt ?? now, updatedAt: now };
       await db.taskOccurrenceStatuses.put(after);
       const action = status === "cancelled" ? "cancelOccurrence" : status === "postponed" ? "postponeOccurrence" : status === "done" ? "complete" : "uncomplete";
       await writeLog(action, "taskOccurrence", { entityId: id, entityTitle: task?.title, beforeSnapshot: existing, afterSnapshot: after });

@@ -82,6 +82,24 @@ App.tsx                 正式任务动作汇聚点（增删改查、勾选、�
 
 ---
 
+## 6.5 完成状态数据层铁律（2026-07 架构审查确立，任何改动不得违反）
+
+**R1 唯一权威源**：每个任务的完成状态有且只有一个权威源，由 `isOccurrenceSchedule(task)` 判定（schedulePattern 为 dailyRecurring / weeklyRecurring / specificDates / dateRangeDaily / dateRangeWeekdays，或 timeType 为 recurring）。
+- **occurrence 类**：权威源是 `task_occurrence_statuses` 表。任务本体 `status` 只允许 `todo`（常态）或 `cancelled`（整体取消），**永远不为 done / doing / overdue**，`completedAt` 恒为空。
+- **非 occurrence 类**（singleDate / weekGoal / monthGoal / assignmentWindow / dateRange）：权威源是本体 `status` + `completedAt`，不得产生 occurrence 记录。
+
+**R2 occurrence 行是 patch 不是 put**：写 occurrence 状态时必须保留未显式传入的字段（`overrideDate` / `overrideNote` / `overrideTitle`），禁止整行覆盖。否则"完成一个已延期的任务"会抹掉延期记录。
+
+**R3 展示字段永不落库**：`TaskDisplay` 的运行时字段（`occurrenceDate` / `occurrenceStatus` / `overrideDate` / `overrideNote` / `rolledFromDate`）和被覆盖后的 `status` 一律不得写入 `db.tasks`。写入口（create / update）必须做白名单清洗。
+
+**R4 overdue 是派生态**：只在读取时计算（如 getOverdueTasks），不落库，不出现在可写状态集合里。
+
+**R5 云同步不回滚新数据**：任何"云→本地"覆盖必须按 `updatedAt` 做 last-write-wins 比较，本地较新则跳过；任何本地删除必须是软删除（含 allocateTask 重排子任务），否则云端感知不到、下次拉取会复活。
+
+**R6 dateRange 语义**：`timeType: "dateRange"` = "一件事，在这段日期内做完"，整体一次性完成，状态在本体；"每天都要做"的场景一律用 `dailyRecurring` + 结束日期表达。表单的"日期范围"不再挂 dateRangeDaily 排期。
+
+---
+
 ## 7. Supabase 表结构速查
 
 8 张表，全部以 `family_id` 作数据隔离边界，RLS 保护。

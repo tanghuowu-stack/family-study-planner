@@ -482,7 +482,13 @@ export const taskRepository = {
     const amount = perSession ? `${perSession}${parent.weeklyQuota?.unit ?? parent.amountUnit ?? ""}` : "";
 
     await db.transaction("rw", db.tasks, async () => {
-      await Promise.all(existing.filter((task) => task.status !== "done").map((task) => db.tasks.delete(task.id)));
+      // R5：软删除而非物理删除，否则云端不知道这些子任务已作废，
+      // 下次全量拉取会把它们从云端 bulkPut 回本地（"重排后旧子任务复活"）。
+      const staleNow = new Date().toISOString();
+      const staleInfo = deviceInfo();
+      await Promise.all(existing.filter((task) => task.status !== "done").map((task) =>
+        db.tasks.update(task.id, { deletedAt: staleNow, deletedByDevice: staleInfo.deviceLabel, deletedByActor: staleInfo.actorName, updatedAt: staleNow })
+      ));
       await db.tasks.bulkAdd(chosen.map((date, index): Task => ({
         id: makeId(), title: amount ? `${parent.title}（${amount}）` : parent.title,
         mainCategory: parent.mainCategory, subCategory: parent.subCategory, timeType: "singleDate",

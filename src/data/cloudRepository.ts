@@ -251,6 +251,27 @@ function courseToRow(course: Course, familyId: string): Record<string, unknown> 
   });
 }
 
+/**
+ * Last-write-wins 合并（PROJECT_GUIDE 6.5 铁律 R5）：把云端记录写入本地缓存，
+ * 但跳过本地 updatedAt 更新的记录，避免本地刚改、尚未同步成功的数据被云端旧值覆盖回滚
+ * （"任务已完成又弹回未完成"的根因）。只用于自动同步路径（realtime / 回前台拉取）；
+ * 手动「从云端下载数据到本地」是强制覆盖，不走这里。
+ */
+// table 传入的是 Dexie 表实例；其 bulkGet/bulkPut 重载类型与结构化约束难以对齐，
+// 故放宽为 any，类型安全由泛型 incoming: T[] 保证（写入项与目标表同源）。
+async function lwwMerge<T extends { id: string; updatedAt: string }>(table: { bulkGet(keys: string[]): Promise<(T | undefined)[]>; bulkPut(items: T[]): Promise<unknown> } | any, incoming: T[]): Promise<void> {
+  if (incoming.length === 0) return;
+  const locals: (T | undefined)[] = await table.bulkGet(incoming.map((r) => r.id));
+  const localUpdatedAt = new Map<string, string | undefined>();
+  locals.forEach((l) => { if (l) localUpdatedAt.set(l.id, l.updatedAt); });
+  const toWrite = incoming.filter((r) => {
+    if (!localUpdatedAt.has(r.id)) return true;           // 本地不存在 → 新增
+    const local = localUpdatedAt.get(r.id);
+    return !local || r.updatedAt >= local;                // 本地 updatedAt 缺失，或云端不更旧 → 覆盖
+  });
+  if (toWrite.length > 0) await table.bulkPut(toWrite);
+}
+
 /** Load all tasks from Supabase and cache to IndexedDB */
 async function fetchAndCacheTasks(familyId: string): Promise<Task[]> {
   if (!supabase) return db.tasks.toArray();
@@ -286,12 +307,10 @@ async function fetchAndCacheTasks(familyId: string): Promise<Task[]> {
     }
   });
 
-  // cache to local IndexedDB
-  if (tasks.length > 0) {
-    await db.tasks.bulkPut(tasks).catch((e) =>
-      console.warn("[cloudRepository] 缓存到本地失败", e)
-    );
-  }
+  // cache to local IndexedDB（LWW：本地更新的记录不被云端旧值覆盖）
+  await lwwMerge(db.tasks, tasks).catch((e) =>
+    console.warn("[cloudRepository] 缓存到本地失败", e)
+  );
 
   return tasks;
 }
@@ -318,9 +337,8 @@ async function fetchOccurrences(familyId: string): Promise<TaskOccurrenceStatus[
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }));
-  if (statuses.length > 0) {
-    await db.taskOccurrenceStatuses.bulkPut(statuses).catch(() => {});
-  }
+  // LWW：本地更新的单日状态不被云端旧值覆盖
+  await lwwMerge(db.taskOccurrenceStatuses, statuses).catch(() => {});
   return statuses;
 }
 
@@ -384,14 +402,12 @@ export const cloudRepository = {
 
   async refreshFromCloud(): Promise<void> {
     if (!_familyId) return;
-    const [tasks, statuses] = await Promise.all([
+    // fetchAndCacheTasks / fetchOccurrences 内部已按 LWW 写入本地缓存，此处不再重复 bulkPut
+    // （否则会用云端旧值无条件覆盖，绕过 LWW 保护）
+    await Promise.all([
       fetchAndCacheTasks(_familyId),
       fetchOccurrences(_familyId),
     ]);
-    // cache occurrences
-    if (statuses.length > 0) {
-      await db.taskOccurrenceStatuses.bulkPut(statuses).catch(() => {});
-    }
     // also fetch planPeriods
     if (supabase) {
       const { data } = await supabase

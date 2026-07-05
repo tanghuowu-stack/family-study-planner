@@ -84,7 +84,7 @@ App.tsx                 正式任务动作汇聚点（增删改查、勾选、�
 
 ## 6.5 完成状态数据层铁律（2026-07 架构审查确立，任何改动不得违反）
 
-**R1 唯一权威源**：每个任务的完成状态有且只有一个权威源，由 `isOccurrenceSchedule(task)` 判定（schedulePattern 为 dailyRecurring / weeklyRecurring / specificDates / dateRangeDaily / dateRangeWeekdays，或 timeType 为 recurring）。
+**R1 唯一权威源**：每个任务的完成状态有且只有一个权威源，由 `isOccurrenceSchedule(task)` 判定（`timeType === "recurring"`）。
 - **occurrence 类**：权威源是 `task_occurrence_statuses` 表。任务本体 `status` 只允许 `todo`（常态）或 `cancelled`（整体取消），**永远不为 done / doing / overdue**，`completedAt` 恒为空。
 - **非 occurrence 类**（singleDate / weekGoal / monthGoal / assignmentWindow / dateRange）：权威源是本体 `status` + `completedAt`，不得产生 occurrence 记录。
 

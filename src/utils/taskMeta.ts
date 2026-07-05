@@ -6,7 +6,7 @@ import type { CourseStatus, ExtraContentType, MainCategory, RolloverMode, Schedu
  * 非 occurrence 类任务的完成状态记在本体 status/completedAt，不得产生 occurrence 记录。
  */
 export const isOccurrenceSchedule = (task: { schedulePattern?: SchedulePattern; timeType: TaskTimeType }) =>
-  ["dailyRecurring", "weeklyRecurring", "specificDates", "dateRangeDaily", "dateRangeWeekdays"].includes(task.schedulePattern ?? "") || task.timeType === "recurring";
+  task.timeType === "recurring";
 
 export const SUB_CATEGORY_META: Record<SubCategory | ExtraContentType, { icon: string; color: string; bgColor: string; label: string }> = {
   chinese: { icon: "📖", color: "#C65D3B", bgColor: "#F5E6E0", label: "语文" },

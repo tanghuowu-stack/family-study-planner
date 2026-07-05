@@ -204,7 +204,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
   };
   const changeTimeType = (timeType: TaskTimeType) => setDraft((current) => ({
     ...current, timeType,
-    schedulePattern: timeType === "recurring" ? current.schedulePattern === "singleDate" ? "weeklyRecurring" : current.schedulePattern : timeType === "dateRange" ? "dateRangeDaily" : "singleDate",
+    schedulePattern: timeType === "recurring" ? current.schedulePattern === "singleDate" ? "weeklyRecurring" : current.schedulePattern : "singleDate",
     date: timeType === "singleDate" ? current.date ?? initialDate : undefined,
     startDate: ["dateRange", "recurring"].includes(timeType) ? current.startDate ?? initialDate : undefined,
     endDate: ["dateRange", "recurring"].includes(timeType) ? current.endDate ?? initialDate : undefined,

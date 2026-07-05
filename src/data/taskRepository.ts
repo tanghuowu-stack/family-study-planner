@@ -43,8 +43,12 @@ function defaultRollover(main: MainCategory, sub: string): { rolloverMode: Rollo
 function normalizeDraft(draft: TaskDraft): TaskDraft {
   const fallback = defaultRollover(draft.mainCategory, draft.subCategory);
   const calendarVisibility = draft.calendarVisibility ?? inferCalendarVisibility(draft);
+  const schedulePattern = draft.timeType === "recurring"
+    ? (draft.schedulePattern === "singleDate" ? "weeklyRecurring" : draft.schedulePattern ?? "weeklyRecurring")
+    : "singleDate";
   return {
     ...draft,
+    schedulePattern,
     calendarVisibility,
     rolloverMode: calendarVisibility === "hide" ? "skipIfMissed" : draft.rolloverMode ?? fallback.rolloverMode,
     allowRollover: calendarVisibility === "hide" ? false : draft.allowRollover ?? fallback.allowRollover,
@@ -112,7 +116,7 @@ function normalizeImported(raw: Record<string, unknown>): Task {
     rolloverMode: raw.rolloverMode as RolloverMode ?? fallback.rolloverMode,
     allowRollover: typeof raw.allowRollover === "boolean" ? raw.allowRollover : fallback.allowRollover,
     sortOrder: typeof raw.sortOrder === "number" ? raw.sortOrder : defaultSortOrder(mainCategory, subCategory),
-    schedulePattern: (raw.schedulePattern as Task["schedulePattern"]) ?? (raw.timeType === "recurring" ? "weeklyRecurring" : raw.timeType === "dateRange" ? "dateRangeDaily" : "singleDate"),
+    schedulePattern: raw.timeType === "recurring" ? (raw.schedulePattern as Task["schedulePattern"] ?? "weeklyRecurring") : "singleDate",
     startTime: String(raw.startTime ?? raw.time ?? "") || undefined,
     weeklyQuota: mainCategory === "readingPlan" ? (raw.weeklyQuota as Task["weeklyQuota"] ?? { enabled: true, targetCount: readingTarget, unit: (raw.readingTargetUnit ?? raw.amountUnit ?? "本") as "本", isWeeklyRecurring: true, allowAutoDistribute: true, allowRollover: true }) : raw.weeklyQuota as Task["weeklyQuota"],
     calendarVisibility: (raw.calendarVisibility as Task["calendarVisibility"]) ?? inferCalendarVisibility({ ...raw, mainCategory, subCategory, extraContentType }),
@@ -132,18 +136,18 @@ const isCalendarPlanTask = (task: Task) =>
   || task.mainCategory === "temporary";
 
 const scheduleOccursOn = (task: Task, date: string) => {
+  if (task.timeType === "singleDate") return task.date === date;
+  if (task.timeType === "dateRange") return !!task.startDate && !!task.endDate && isDateInRange(date, task.startDate, task.endDate);
+  if (task.timeType !== "recurring") return false;
   if (task.schedulePattern === "specificDates") return task.specificDates?.includes(date) ?? false;
   if (task.schedulePattern === "dateRangeDaily") return !!task.startDate && !!task.endDate && isDateInRange(date, task.startDate, task.endDate);
   if (task.schedulePattern === "dateRangeWeekdays") return !!task.startDate && !!task.endDate && isDateInRange(date, task.startDate, task.endDate) && (task.rangeWeekdays?.includes(getDay(parseISO(date))) ?? false);
   if (task.schedulePattern === "dailyRecurring") return taskOccursOn(task, date);
   if (task.schedulePattern === "weeklyRecurring") return taskOccursOn(task, date);
-  if (task.timeType === "singleDate") return task.date === date;
-  if (task.timeType === "dateRange") return !!task.startDate && !!task.endDate && isDateInRange(date, task.startDate, task.endDate);
-  if (task.timeType === "recurring") return taskOccursOn(task, date);
-  return false;
+  return taskOccursOn(task, date);
 };
 
-const isRangeSchedule = (task: Task) => task.timeType === "dateRange" || ["dateRangeDaily", "dateRangeWeekdays"].includes(task.schedulePattern ?? "");
+const isRangeSchedule = (task: Task) => task.timeType === "dateRange" || (task.timeType === "recurring" && ["dateRangeDaily", "dateRangeWeekdays"].includes(task.schedulePattern ?? ""));
 
 // R1/R3 写入口防线（PROJECT_GUIDE 6.5）：剔除 TaskDisplay 的运行时展示字段；
 // occurrence 类任务本体 status 只允许 todo/cancelled，completedAt 恒为空。
@@ -327,7 +331,7 @@ export const taskRepository = {
       if (task.mainCategory === "temporary") return true;     // 事项类（旅游已在调用处单独处理）
       if (task.mainCategory === "interestClass") return false; // 钢琴练习等非上课兴趣班不显示
       // 只保留日期范围或重复类型的作业（多日大作业）
-      return isRangeSchedule(task) || task.timeType === "recurring" || task.schedulePattern === "weeklyRecurring" || task.schedulePattern === "dailyRecurring" || task.schedulePattern === "dateRangeDaily" || task.schedulePattern === "dateRangeWeekdays";
+      return isRangeSchedule(task) || task.timeType === "recurring";
     };
     daily.forEach((tasks, index) => tasks.filter((task) => !task.parentTaskId).forEach((task) => {
       if (task.mainCategory === "temporary" && task.subCategory === "travel") {

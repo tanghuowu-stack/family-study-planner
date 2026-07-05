@@ -139,6 +139,19 @@ export class PlannerDatabase extends Dexie {
       readingLogs: "id, taskId, weekStart, date, [taskId+weekStart], createdAt",
       courses: "id, mainCategory, subCategory, status, sortOrder, updatedAt",
     });
+    // 版本 9：R6 对齐。dateRange 是整体任务，schedulePattern 只在 recurring 内有意义。
+    this.version(9).stores({
+      tasks: "id, timeType, mainCategory, subCategory, extraContentType, calendarVisibility, date, startDate, endDate, weekStart, month, status, parentTaskId, allocationWeekStart, planPeriodId, courseId, deletedAt, updatedAt",
+      taskOccurrenceStatuses: "id, taskId, occurrenceDate, overrideDate, [taskId+occurrenceDate], status",
+      planPeriods: "id, type, startDate, endDate, isActive, updatedAt",
+      activityLogs: "id, actionType, entityType, entityId, createdAt",
+      readingLogs: "id, taskId, weekStart, date, [taskId+weekStart], createdAt",
+      courses: "id, mainCategory, subCategory, status, sortOrder, updatedAt",
+    }).upgrade(async (transaction) => {
+      await transaction.table("tasks").toCollection().modify((task: Record<string, unknown>) => {
+        if (task.timeType !== "recurring") task.schedulePattern = "singleDate";
+      });
+    });
   }
 }
 

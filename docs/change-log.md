@@ -4,6 +4,11 @@
 
 ## 2026-07-17
 
+- 物理删除遗留问题处置（occurrence 表无 deleted_at 列，物理删除不跨设备传播）：
+  1. 上传防线：`cloudUpload.ts` 上传 occurrence 行时跳过 A 类违规行（挂在非 occurrence 类任务或已软删任务名下），防止本地脏残留复活到云端，跳过条数在上传结果中展示。
+  2. 维护面板新增「对账清理本地缓存」（`cloudCleanup.ts` + `CloudLoginPanel.tsx`）：按云端 occurrence 全量 id 对账，删除本地多出的行；只动本地，执行前弹确认框显示条数；最近 10 分钟内更新的行跳过防误删（可能是尚未同步的新写入）。
+  3. `PROJECT_GUIDE.md`：6.5 节补注"删除一律软删对 occurrence 表暂无法执行，维护性物理删除须先经用户确认"；新增第 13 节待办清单，记录 deleted_at 列缺失 / 墓碑机制的技术债。
+  - 真实验证：本地造违规 occurrence 行 → 点上传，云端确认未上传（跳过 1 条）；点对账清理，确认框显示 1 条、删除后本地恢复 108 条与云端一致；10 分钟窗口内的新行确认被跳过不删。
 - 月历修复：dateRange 任务完成后，月历仍显示完整日期区间（今日页保持"完成日之后不再出现"）。修复"泰国旅游在月计划只显示一天"。`taskRepository.ts` 的 getTasksForDate 对 forCalendar 放开 completedAt 截断。
 - A 类脏数据清洗（云端 Supabase + 本地 IndexedDB 同步执行，扫描确认归零）：
   1. 奥数作业（9d1cf897）、大增课后作业 6/20-6/26（ee333bde）：本体置 done（completedAt 取最后一次完成时间），删除名下共 13 条违规 occurrence。

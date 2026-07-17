@@ -6,6 +6,7 @@
  */
 import { db } from "../data/db";
 import type { Task, TaskOccurrenceStatus, PlanPeriod, Course, ActivityLog } from "../types/task";
+import { isOccurrenceSchedule } from "../utils/taskMeta";
 import { supabase } from "./supabase";
 
 export interface UploadResult {
@@ -17,6 +18,7 @@ export interface UploadResult {
   activityLogs: number;
   skippedTasks: number;
   skippedOccurrenceStatuses: number;
+  skippedDirtyOccurrences: number;
   skippedPlanPeriods: number;
 }
 
@@ -131,6 +133,7 @@ export async function uploadLocalDataToCloud(familyId: string): Promise<UploadRe
     activityLogs: 0,
     skippedTasks: 0,
     skippedOccurrenceStatuses: 0,
+    skippedDirtyOccurrences: 0,
     skippedPlanPeriods: 0,
   };
 
@@ -180,8 +183,16 @@ export async function uploadLocalDataToCloud(familyId: string): Promise<UploadRe
   result.checklistItems = await upsertChunked("task_checklist_items", checklistRows, "id");
 
   // ── 4. 上传 task_occurrence_statuses ───────────────────────────
+  // R1 防线：非 occurrence 类任务不该有 occurrence 行，已软删任务的行也不该复活，
+  // 本地缓存里这类 A 类违规残留一律不上传，防止脏数据回流云端。
+  const taskById = new Map(tasks.map((t) => [t.id, t]));
   const occurrenceRows: Record<string, unknown>[] = [];
   occurrenceStatuses.forEach((s: TaskOccurrenceStatus) => {
+    const owner = taskById.get(s.taskId);
+    if (owner && (owner.deletedAt || !isOccurrenceSchedule(owner))) {
+      result.skippedDirtyOccurrences++;
+      return;
+    }
     const occDate = toDateOrNull(s.occurrenceDate);
     if (!occDate) {
       result.skippedOccurrenceStatuses++;

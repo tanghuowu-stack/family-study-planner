@@ -16,6 +16,7 @@ import {
 import { uploadLocalDataToCloud, type UploadResult } from "../lib/cloudUpload";
 import { fetchCloudDataPreview, type CloudPreviewResult, checkCloudDiff, type CloudDiffResult } from "../lib/cloudRead";
 import { downloadCloudDataToLocal, type DownloadResult } from "../lib/cloudDownload";
+import { previewLocalOccurrenceCleanup, deleteLocalOccurrences } from "../lib/cloudCleanup";
 import { supabaseConfigured } from "../lib/supabase";
 
 export function CloudLoginPanel({ cloudMode }: { cloudMode?: boolean }) {
@@ -38,6 +39,9 @@ export function CloudLoginPanel({ cloudMode }: { cloudMode?: boolean }) {
   const [checkingDiff, setCheckingDiff] = useState(false);
   const [diffResult, setDiffResult] = useState<CloudDiffResult | null>(null);
   const [diffError, setDiffError] = useState("");
+  const [reconciling, setReconciling] = useState(false);
+  const [reconcileResult, setReconcileResult] = useState("");
+  const [reconcileError, setReconcileError] = useState("");
 
   const refresh = async () => {
     setLoading(true);
@@ -137,6 +141,34 @@ export function CloudLoginPanel({ cloudMode }: { cloudMode?: boolean }) {
       setDiffError(err instanceof Error ? `检查差异失败：${err.message}` : "检查差异失败");
     } finally {
       setCheckingDiff(false);
+    }
+  };
+
+  const handleReconcile = async () => {
+    if (!auth?.familyId) return;
+    setReconciling(true);
+    setReconcileResult("");
+    setReconcileError("");
+    try {
+      const preview = await previewLocalOccurrenceCleanup(auth.familyId);
+      const skippedNote = preview.skippedRecent > 0 ? `另有 ${preview.skippedRecent} 条最近 10 分钟内更新过（可能尚未同步），已跳过。` : "";
+      if (preview.deletableIds.length === 0) {
+        setReconcileResult(`本地无多余单次状态（本地 ${preview.localTotal} 条 / 云端 ${preview.cloudTotal} 条）。${skippedNote}`);
+        return;
+      }
+      const ok = window.confirm(
+        `将删除 ${preview.deletableIds.length} 条本地多余的单次状态（云端已不存在）。${skippedNote}只清理本地缓存，不改云端数据。确定继续？`
+      );
+      if (!ok) {
+        setReconcileResult("已取消，未做任何改动。");
+        return;
+      }
+      const deleted = await deleteLocalOccurrences(preview.deletableIds);
+      setReconcileResult(`已删除 ${deleted} 条本地多余单次状态。${skippedNote}`);
+    } catch (err) {
+      setReconcileError(err instanceof Error ? `对账清理失败：${err.message}` : "对账清理失败");
+    } finally {
+      setReconciling(false);
     }
   };
 
@@ -317,10 +349,11 @@ export function CloudLoginPanel({ cloudMode }: { cloudMode?: boolean }) {
                     <p>单次状态：{uploadResult.occurrenceStatuses} 条</p>
                     <p>假期阶段：{uploadResult.planPeriods} 条</p>
                     <p>操作日志：本阶段暂不上传</p>
-                    {(uploadResult.skippedTasks > 0 || uploadResult.skippedOccurrenceStatuses > 0 || uploadResult.skippedPlanPeriods > 0) && (
+                    {(uploadResult.skippedTasks > 0 || uploadResult.skippedOccurrenceStatuses > 0 || uploadResult.skippedDirtyOccurrences > 0 || uploadResult.skippedPlanPeriods > 0) && (
                       <div className="mt-2 pt-2 border-t border-green-200/50 text-amber-600">
                         {uploadResult.skippedTasks > 0 && <p>跳过无效日期任务：{uploadResult.skippedTasks} 条</p>}
                         {uploadResult.skippedOccurrenceStatuses > 0 && <p>跳过无效单次状态：{uploadResult.skippedOccurrenceStatuses} 条</p>}
+                        {uploadResult.skippedDirtyOccurrences > 0 && <p>跳过违规单次状态（非 occurrence 类 / 已删任务名下）：{uploadResult.skippedDirtyOccurrences} 条</p>}
                         {uploadResult.skippedPlanPeriods > 0 && <p>跳过无效假期阶段：{uploadResult.skippedPlanPeriods} 条</p>}
                       </div>
                     )}
@@ -449,6 +482,25 @@ export function CloudLoginPanel({ cloudMode }: { cloudMode?: boolean }) {
                   </div>
                 )}
                 {diffError && <ErrorBox message={diffError} />}
+              </div>
+
+              {/* 对账清理本地缓存 */}
+              <div className="space-y-2">
+                <button
+                  onClick={handleReconcile}
+                  disabled={reading || downloading || checkingDiff || reconciling || loading}
+                  className="flex items-center gap-1.5 rounded-lg border border-stone-200 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50 transition-colors"
+                >
+                  <RefreshCw className={`h-4 w-4 ${reconciling ? "animate-spin" : ""}`} />
+                  {reconciling ? "对账中…" : "对账清理本地缓存"}
+                </button>
+                <p className="text-xs text-stone-400">
+                  按云端单次状态对账，删除本地多出的残留行（只动本地，不改云端；最近 10 分钟内更新的行自动跳过防误删）。
+                </p>
+                {reconcileResult && (
+                  <div className="rounded-lg bg-green-50 p-3 text-xs text-green-800">{reconcileResult}</div>
+                )}
+                {reconcileError && <ErrorBox message={reconcileError} />}
               </div>
             </div>
           )}

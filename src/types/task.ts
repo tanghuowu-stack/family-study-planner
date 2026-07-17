@@ -139,6 +139,7 @@ export interface Task {
   sessionIndex?: number;
   allocationWeekStart?: string;
   enableTimer?: boolean;
+  enableStreak?: boolean;
   checklistItems?: ChecklistItem[];
   completedAt?: string;
   deletedAt?: string;
@@ -164,6 +165,8 @@ export interface TaskOccurrenceStatus {
   overrideDate?: string;
   overrideTitle?: string;
   overrideNote?: string;
+  /** 单日完成的实际时间戳（status=done 时写入），统计完成日归因用；历史行可能缺失 */
+  completedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

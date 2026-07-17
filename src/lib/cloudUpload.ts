@@ -88,6 +88,8 @@ function taskToRow(task: Task, familyId: string): Record<string, unknown> {
     deleted_at: toTimestampOrNull(task.deletedAt),
     deleted_by_device: task.deletedByDevice ?? null,
     deleted_by_actor: task.deletedByActor ?? null,
+    // enableStreak 独立列；undefined 被 stripUndefined 剔除，云端未迁移前不会触碰该列
+    enable_streak: task.enableStreak,
     // 低频字段打包进 metadata jsonb
     metadata: buildMetadata(task),
     created_at: toTimestampOrNull(task.createdAt) ?? new Date().toISOString(),
@@ -207,7 +209,7 @@ export async function uploadLocalDataToCloud(familyId: string): Promise<UploadRe
       override_date: toDateOrNull(s.overrideDate),
       override_title: s.overrideTitle ?? null,
       override_note: s.overrideNote ?? null,
-      completed_at: null,
+      completed_at: toTimestampOrNull(s.completedAt),
       created_at: toTimestampOrNull(s.createdAt) ?? new Date().toISOString(),
       updated_at: toTimestampOrNull(s.updatedAt) ?? new Date().toISOString(),
     }));

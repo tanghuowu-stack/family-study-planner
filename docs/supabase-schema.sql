@@ -123,6 +123,7 @@ create table if not exists public.tasks (
   session_index          integer,
   allocation_week_start  date,
   completed_at           timestamptz,
+  enable_streak          boolean not null default false,  -- TASK_08：该任务计入连续打卡
   deleted_at             timestamptz,
   deleted_by_device      text,
   deleted_by_actor       text,

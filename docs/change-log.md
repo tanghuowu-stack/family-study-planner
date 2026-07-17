@@ -2,6 +2,16 @@
 
 此文件只记录简短变更摘要。以后每次完成项目修改后，在顶部日期下追加一条记录，不需要复制完整需求或实现细节。
 
+## 2026-07-18
+
+- TASK_08 统计功能数据层（本轮不做 UI）：
+  1. 新建 `statsRepository.ts`：getStreakData（连续打卡/历史最长/日历数据）、getWeekCompletionRate、getSubjectComparison、applyReviveCard、getRestDays/toggleRestDay。严守 R1 权威源直读（不用 getTasksForDate 展示口径），join 前过 isActiveTask，日期归因全走 toLocalDateKey。
+  2. Task 新增 `enableStreak` 字段（独立云端列 enable_streak，见 `docs/supabase-migration-stats.sql`；迁移前前端不写该列，同步安全）。
+  3. occurrence 行新增 `completedAt`：setOccurrence/toggleChecklistItem 转 done 写入、退出 done 清除，云端上传/下载/拉取三条链路补齐 completed_at 映射（该列 schema 本就存在，此前恒写 null）。
+  4. 休息日（stats_rest_days）与复活卡（stats_revive_cards）存 app_settings，appSettingsRepository 抽出通用 loadJsonSetting/saveJsonSetting。
+  5. 新增测试 13 例（编号 19-31）：跨月连续、休息日跳过、复活卡（时限内/外/余额/重复/休息日/已打卡）、UTC+8 午夜归因（本体+occurrence 双路径）、cancelled 双层剔除、软删不计、rate=null 语义、学科聚合、occurrence completedAt 写入路径、休息日切换。npm test 32 例全绿。
+  - 表单勾选项、复活卡审批流、发卡逻辑列入 PROJECT_GUIDE 第 13 节下一轮 UI 清单。
+
 ## 2026-07-17
 
 - 清洗②类脏数据（status=done 但 completedAt 空）9 条，通过页面运行中的真实 `getRepository()`（云端模式，逐条 `update()`）写入，不绕过 R1/sanitizeTaskWrite/LWW 防线：

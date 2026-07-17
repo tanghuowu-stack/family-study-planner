@@ -135,7 +135,7 @@ const isCalendarPlanTask = (task: Task) =>
   || (task.mainCategory === "interestClass" && task.subCategory !== "pianoPractice")
   || task.mainCategory === "temporary";
 
-const scheduleOccursOn = (task: Task, date: string) => {
+export const scheduleOccursOn = (task: Task, date: string) => {
   if (task.timeType === "singleDate") return task.date === date;
   if (task.timeType === "dateRange") return !!task.startDate && !!task.endDate && isDateInRange(date, task.startDate, task.endDate);
   if (task.timeType !== "recurring") return false;
@@ -729,8 +729,9 @@ export const taskRepository = {
           const id = `${taskId}:${occurrenceDate}`;
           const existing = await db.taskOccurrenceStatuses.get(id);
           const status: OccurrenceStatus = allDone ? "done" : existing?.status === "done" ? "todo" : existing?.status ?? "todo";
-          // R2：patch 语义，保留 override 字段
-          await db.taskOccurrenceStatuses.put({ ...existing, id, taskId, occurrenceDate, status, createdAt: existing?.createdAt ?? now, updatedAt: now });
+          // R2：patch 语义，保留 override 字段；completedAt 随 done 状态维护（统计完成日归因依赖）
+          const completedAt = status === "done" ? (existing?.status === "done" ? existing.completedAt : now) : undefined;
+          await db.taskOccurrenceStatuses.put({ ...existing, id, taskId, occurrenceDate, status, completedAt, createdAt: existing?.createdAt ?? now, updatedAt: now });
           if (status !== (existing?.status ?? "todo")) await writeLog(status === "done" ? "complete" : "uncomplete", "taskOccurrence", { entityId: id, entityTitle: task.title, beforeSnapshot: existing, afterSnapshot: { status, checklistItems: items } });
         }
       });
@@ -751,7 +752,9 @@ export const taskRepository = {
     const task = await db.tasks.get(taskId);
     await db.transaction("rw", db.taskOccurrenceStatuses, db.activityLogs, async () => {
       // R2：patch 语义——未显式传入的 override 字段保留原值，完成/取消一个已延期的任务不会抹掉延期记录
-      const after = { ...existing, id, taskId, occurrenceDate, status, overrideDate: overrideDate ?? existing?.overrideDate, overrideNote: overrideNote ?? existing?.overrideNote, createdAt: existing?.createdAt ?? now, updatedAt: now };
+      // completedAt 随 done 状态维护：转为 done 记 now，保持 done 保留原值，退出 done 清除（统计完成日归因依赖）
+      const completedAt = status === "done" ? (existing?.status === "done" ? existing.completedAt ?? now : now) : undefined;
+      const after = { ...existing, id, taskId, occurrenceDate, status, completedAt, overrideDate: overrideDate ?? existing?.overrideDate, overrideNote: overrideNote ?? existing?.overrideNote, createdAt: existing?.createdAt ?? now, updatedAt: now };
       await db.taskOccurrenceStatuses.put(after);
       const action = status === "cancelled" ? "cancelOccurrence" : status === "postponed" ? "postponeOccurrence" : status === "done" ? "complete" : "uncomplete";
       await writeLog(action, "taskOccurrence", { entityId: id, entityTitle: task?.title, beforeSnapshot: existing, afterSnapshot: after });

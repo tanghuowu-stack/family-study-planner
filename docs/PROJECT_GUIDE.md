@@ -200,3 +200,9 @@ App.tsx                 正式任务动作汇聚点（增删改查、勾选、�
 - **P1** 手动「从云端下载」（`cloudDownload.ts:86-97`）是无条件 bulkPut 强覆盖，但代码注释自称"安全合并"，且按钮无警示 → 本地未同步修改会被静默回滚。修法：改注释、按钮加确认框说明会覆盖本地。
 - **P2** exportBackup（`taskRepository.ts:791`）不含 courses 表，恢复备份后任务 courseId 悬空。
 - **P2** remove 级联软删子任务但 restore（`taskRepository.ts:660`）只恢复本体不级联恢复子任务，行为不对称。
+
+TASK_08 统计——下一轮 UI 清单（2026-07-18 记，数据层已就位于 `statsRepository.ts`）：
+
+- 任务表单加「计入连续打卡」勾选项（写 `enableStreak`）。**上线前必须先在 Supabase 执行 `docs/supabase-migration-stats.sql`**（tasks 加 enable_streak 列；迁移前前端不会向该列写值，同步不受影响）。
+- 复活卡"申请 → 家长确认"交互流程；发卡逻辑（连续满 7 天得 1 张、持有上限 2 张）数据层本轮未实现，UI 轮一并做。
+- 休息日标记入口（数据层 `toggleRestDay` 已就位）。

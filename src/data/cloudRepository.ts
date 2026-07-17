@@ -129,6 +129,8 @@ function taskToRow(task: Task, familyId: string): Record<string, unknown> {
     deleted_at: toTimestampOrNull(task.deletedAt),
     deleted_by_device: task.deletedByDevice ?? null,
     deleted_by_actor: task.deletedByActor ?? null,
+    // enableStreak 走独立列；undefined 时被 stripUndefined 剔除，云端未跑迁移前不会触碰该列
+    enable_streak: task.enableStreak,
     metadata: buildMetadata(task),
     created_at: toTimestampOrNull(task.createdAt) ?? new Date().toISOString(),
     updated_at: toTimestampOrNull(task.updatedAt) ?? new Date().toISOString(),
@@ -202,7 +204,7 @@ async function upsertOccurrence(
     override_date: toDateOrNull(occ.overrideDate),
     override_title: occ.overrideTitle ?? null,
     override_note: occ.overrideNote ?? null,
-    completed_at: null,
+    completed_at: toTimestampOrNull(occ.completedAt),
     created_at: toTimestampOrNull(occ.createdAt) ?? new Date().toISOString(),
     updated_at: toTimestampOrNull(occ.updatedAt) ?? new Date().toISOString(),
   });
@@ -334,6 +336,7 @@ async function fetchOccurrences(familyId: string): Promise<TaskOccurrenceStatus[
     overrideDate: row.override_date ?? undefined,
     overrideTitle: row.override_title ?? undefined,
     overrideNote: row.override_note ?? undefined,
+    completedAt: row.completed_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }));

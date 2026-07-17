@@ -4,11 +4,12 @@ import { cloudRepository, notifySyncError } from "./cloudRepository";
 import type { TaskSubjectGroup } from "../utils/taskGrouping";
 
 const SETTINGS_KEY = "group_sort_order";
-const LOCAL_CACHE_KEY = "app_settings:group_sort_order";
 
-export async function loadGroupSortOrder(): Promise<TaskSubjectGroup[] | null> {
-  const cached = localStorage.getItem(LOCAL_CACHE_KEY);
-  const cachedValue: TaskSubjectGroup[] | null = cached ? JSON.parse(cached) : null;
+/** 通用 jsonb 设置读取：本地 localStorage 缓存 + 云端 app_settings（family_id+key 唯一） */
+async function loadJsonSetting<T>(key: string): Promise<T | null> {
+  const cacheKey = `app_settings:${key}`;
+  const cached = localStorage.getItem(cacheKey);
+  const cachedValue: T | null = cached ? JSON.parse(cached) : null;
 
   if (!isCloudMode() || !supabase) return cachedValue;
 
@@ -18,33 +19,69 @@ export async function loadGroupSortOrder(): Promise<TaskSubjectGroup[] | null> {
       .from("app_settings")
       .select("value")
       .eq("family_id", familyId)
-      .eq("key", SETTINGS_KEY)
+      .eq("key", key)
       .maybeSingle();
     if (error) throw error;
-    if (data?.value) {
-      const order = data.value as TaskSubjectGroup[];
-      localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(order));
-      return order;
+    if (data?.value != null) {
+      const value = data.value as T;
+      localStorage.setItem(cacheKey, JSON.stringify(value));
+      return value;
     }
     return cachedValue;
   } catch (e) {
-    console.error("[appSettings] loadGroupSortOrder", e);
+    console.error(`[appSettings] load ${key}`, e);
     return cachedValue;
   }
 }
 
-export async function saveGroupSortOrder(order: TaskSubjectGroup[]): Promise<void> {
-  localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(order));
+/** 通用 jsonb 设置写入：先写本地缓存，云端失败走 notifySyncError（不静默） */
+async function saveJsonSetting<T>(key: string, value: T, errLabel: string): Promise<void> {
+  localStorage.setItem(`app_settings:${key}`, JSON.stringify(value));
   if (!isCloudMode() || !supabase) return;
   try {
     const familyId = cloudRepository.getFamilyId();
     const { error } = await supabase.from("app_settings").upsert(
-      { family_id: familyId, key: SETTINGS_KEY, value: order, updated_at: new Date().toISOString() },
+      { family_id: familyId, key, value, updated_at: new Date().toISOString() },
       { onConflict: "family_id,key" }
     );
     if (error) throw error;
   } catch (e) {
-    console.error("[appSettings] saveGroupSortOrder", e);
-    notifySyncError("分组排序云端同步失败", e);
+    console.error(`[appSettings] save ${key}`, e);
+    notifySyncError(errLabel, e);
   }
+}
+
+export async function loadGroupSortOrder(): Promise<TaskSubjectGroup[] | null> {
+  return loadJsonSetting<TaskSubjectGroup[]>(SETTINGS_KEY);
+}
+
+export async function saveGroupSortOrder(order: TaskSubjectGroup[]): Promise<void> {
+  return saveJsonSetting(SETTINGS_KEY, order, "分组排序云端同步失败");
+}
+
+// ── 统计设置（TASK_08）────────────────────────────────────────────────────────
+
+const REST_DAYS_KEY = "stats_rest_days";
+const REVIVE_CARDS_KEY = "stats_revive_cards";
+
+export interface ReviveCards {
+  balance: number;
+  usedDates: string[];
+}
+
+/** 休息日列表（YYYY-MM-DD），该天打卡跳过不断卡 */
+export async function loadRestDays(): Promise<string[]> {
+  return (await loadJsonSetting<string[]>(REST_DAYS_KEY)) ?? [];
+}
+
+export async function saveRestDays(days: string[]): Promise<void> {
+  return saveJsonSetting(REST_DAYS_KEY, [...new Set(days)].sort(), "休息日设置云端同步失败");
+}
+
+export async function loadReviveCards(): Promise<ReviveCards> {
+  return (await loadJsonSetting<ReviveCards>(REVIVE_CARDS_KEY)) ?? { balance: 0, usedDates: [] };
+}
+
+export async function saveReviveCards(cards: ReviveCards): Promise<void> {
+  return saveJsonSetting(REVIVE_CARDS_KEY, cards, "复活卡数据云端同步失败");
 }

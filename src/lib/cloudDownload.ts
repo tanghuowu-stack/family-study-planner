@@ -66,6 +66,7 @@ export async function downloadCloudDataToLocal(familyId: string): Promise<Downlo
     overrideDate: row.override_date ?? undefined,
     overrideTitle: row.override_title ?? undefined,
     overrideNote: row.override_note ?? undefined,
+    completedAt: row.completed_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }));

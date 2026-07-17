@@ -2,6 +2,29 @@
 
 此文件只记录简短变更摘要。以后每次完成项目修改后，在顶部日期下追加一条记录，不需要复制完整需求或实现细节。
 
+## 2026-07-17
+
+- 月历修复：dateRange 任务完成后，月历仍显示完整日期区间（今日页保持"完成日之后不再出现"）。修复"泰国旅游在月计划只显示一天"。`taskRepository.ts` 的 getTasksForDate 对 forCalendar 放开 completedAt 截断。
+- A 类脏数据清洗（云端 Supabase + 本地 IndexedDB 同步执行，扫描确认归零）：
+  1. 奥数作业（9d1cf897）、大增课后作业 6/20-6/26（ee333bde）：本体置 done（completedAt 取最后一次完成时间），删除名下共 13 条违规 occurrence。
+  2. 二轮扫描再清 18 条：已软删任务（FCE精讲、FCE听力单词听写等）的孤儿 occurrence 10 条；dateRange/singleDate 任务名下违规 occurrence 8 条。其中大增课后作业 6/27-7/3（b284c860）有 7/3 完成记录且周期已过，本体一并置 done。
+  3. 清洗后扫描结果：云端与本地均为 tasks 95 / occurrences 108，A1（非 occurrence 类任务名下的 occurrence）= 0，A2（occurrence 类任务本体状态违规）= 0。
+
+## 2026-07-05
+
+- （补记）完成状态数据层三处根因修复：写入端 R1/R2/R3 防线（sanitizeTaskWrite 白名单清洗、occurrence patch 语义、展示字段不落库）。
+- （补记）云端拉取加 LWW 保护（R5）：`cloudRepository.ts` 新增 lwwMerge，自动同步路径按 updatedAt 比较，防止本地未同步的完成状态被云端旧值回滚；手动"从云端下载"仍为强制覆盖。
+- （补记）allocateTask 重排子任务改为软删除（R5）：`taskRepository.ts` 写 deletedAt 代替物理删除，云端同步软删标记，防止旧子任务复活。
+- （补记）checklist 保存后重算任务完成状态。
+- （补记）对齐 dateRange 整体任务语义（R6）："一件事，在这段日期内做完"，状态在本体，不产生 occurrence。
+
+## 2026-07-04
+
+- （补记）取消周计划，打印/备份页改造为统计页。
+- （补记）子任务全部完成时父任务自动完成；事项/上课任务默认在月计划中显示。
+- （补记）完成状态写入加即时重试与持续可见的未同步标记；重复类任务接上 rolloverMode 的 carryOver 顺延逻辑。
+- （补记）恢复偏好时让 recurrence 频率跟随 schedulePattern。
+
 ## 2026-07-03
 
 - Fable 5代码审查修复：按代码审查清单修复 8 项已知问题。

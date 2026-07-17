@@ -233,7 +233,8 @@ export const taskRepository = {
 
     for (const task of tasks) {
       if (task.mainCategory === "readingPlan" || !task.childVisible || (options?.forCalendar && (task.calendarVisibility === "hide" || task.status === "cancelled" || !isCalendarPlanTask(task))) || task.timeType === "weekGoal" || task.timeType === "monthGoal" || task.timeType === "assignmentWindow") continue;
-      if (task.status === "done" && task.timeType === "dateRange" && task.completedAt && date > task.completedAt.slice(0, 10)) continue;
+      // 今日页：dateRange 任务完成后，完成日之后不再出现；月历例外——旅游等跨天安排要显示完整区间
+      if (!options?.forCalendar && task.status === "done" && task.timeType === "dateRange" && task.completedAt && date > task.completedAt.slice(0, 10)) continue;
       if (isOccurrenceSchedule(task)) {
         const pendingDate = findPendingOccurrenceDate(task, date, byTaskAndDate);
         if (pendingDate) {

@@ -131,6 +131,44 @@ describe("applyReviveCard", () => {
   });
 });
 
+describe("复活卡自动发卡（连续满 7 天 +1，上限 2）", () => {
+  const seedDays = (n: number, from = "2026-07-01") => {
+    const dates: string[] = [];
+    let d = from;
+    for (let i = 0; i < n; i++) { dates.push(d); d = `2026-07-${String(Number(d.slice(8)) + 1).padStart(2, "0")}`; }
+    return db.tasks.bulkAdd(dates.map((day) => doneSingle(`seed-${day}`, day)));
+  };
+
+  it("32. 连续 7 天发 1 张，14 天发 2 张，21 天封顶 2 张", async () => {
+    await seedDays(7);
+    let data = await getStreakData("2026-07-07");
+    expect(data.reviveBalance).toBe(1);
+    await seedDays(7, "2026-07-08");
+    data = await getStreakData("2026-07-14");
+    expect(data.reviveBalance).toBe(2);
+    await seedDays(7, "2026-07-15");
+    data = await getStreakData("2026-07-21");
+    expect(data.reviveBalance).toBe(2); // 持有上限
+  });
+
+  it("33. 发卡幂等：重复计算不重复发", async () => {
+    await seedDays(7);
+    await getStreakData("2026-07-07");
+    const data = await getStreakData("2026-07-07");
+    expect(data.reviveBalance).toBe(1);
+  });
+
+  it("34. 复活卡补的日期参与凑满 7 天", async () => {
+    await seedDays(6); // 07-01 ~ 07-06
+    await db.tasks.add(doneSingle("d8", "2026-07-08"));
+    await saveReviveCards({ balance: 1, usedDates: [] });
+    await applyReviveCard("2026-07-07", "2026-07-08"); // 补 07-07，连成 8 天
+    const data = await getStreakData("2026-07-08");
+    expect(data.currentStreak).toBe(8);
+    expect(data.reviveBalance).toBe(1); // 用掉 1 张后，满 7 天又发 1 张
+  });
+});
+
 describe("getWeekCompletionRate（2026-07-13 周一 ~ 07-19 周日）", () => {
   it("26. occurrence 类按排期展开、cancelled 当天剔出分母", async () => {
     await db.tasks.add(makeTask("daily", { timeType: "recurring", schedulePattern: "dailyRecurring", date: undefined, startDate: "2026-07-13", endDate: "2026-07-19", recurrence: { frequency: "daily", startDate: "2026-07-13", endDate: "2026-07-19" } }));

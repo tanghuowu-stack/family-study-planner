@@ -233,6 +233,13 @@ describe("completedAt 一致性（2026-07-17 审查修复）", () => {
     expect(body?.completedAt).toBeUndefined();
   });
 
+  it("17b. create 直接以 done 状态新建时补齐 completedAt", async () => {
+    const task = await taskRepository.create(baseDraft({ status: "done" }));
+    const body = await db.tasks.get(task.id);
+    expect(body?.status).toBe("done");
+    expect(body?.completedAt).toBeTruthy();
+  });
+
   it("17. copyToDate 复制已完成任务：副本无 completedAt/actualMinutes（含小项级）", async () => {
     const task = await taskRepository.create(baseDraft({
       checklistItems: [{ id: "i1", title: "小项", done: true, sortOrder: 0, actualMinutes: 15 }],

@@ -4,6 +4,14 @@
 
 ## 2026-07-18
 
+- TASK_08 统计功能 UI 层：
+  1. 统计页新增 `StreakPanel`（打卡卡片+鼓励语分档、打卡月历三色标记可切月、本周完成率进度条、学科对比条形图复用 MAIN_CATEGORY_META 色板、六档坚持徽章），数据全部来自 statsRepository，UI 不做聚合。
+  2. 复活卡流程：断卡且 3 天内有可补日期时出现申请入口，确认框显示补卡日期与余额，家长长按 2 秒确认后调 applyReviveCard，错误 message 直接 toast。
+  3. 发卡逻辑加在 statsRepository（非 UI）：连续每满 7 天自动 +1 张、持有上限 2，grantedMilestones 里程碑记账保证幂等（测试 32-34）。
+  4. 任务表单"更多设置"新增"计入打卡"勾选（enableStreak）。
+  5. 完成音效：`lib/completionSound.ts` Web Audio 合成双音，在用户手势内（await 前）触发以适配 iPad Safari 自动播放限制；统计页更多设置加开关，默认开。
+  6. 顺手补数据层缺口：create 直接以 done 新建时补齐 completedAt（与 update 同规则，测试 17b）。
+  - npm test 36 例全绿；浏览器真实验证：造打卡任务验证连续数/月历、休息日跳过、复活卡长按补卡全流程、手机/桌面双尺寸布局，测试数据已清理并恢复设置原值。
 - TASK_08 统计功能数据层（本轮不做 UI）：
   1. 新建 `statsRepository.ts`：getStreakData（连续打卡/历史最长/日历数据）、getWeekCompletionRate、getSubjectComparison、applyReviveCard、getRestDays/toggleRestDay。严守 R1 权威源直读（不用 getTasksForDate 展示口径），join 前过 isActiveTask，日期归因全走 toLocalDateKey。
   2. Task 新增 `enableStreak` 字段（独立云端列 enable_streak，见 `docs/supabase-migration-stats.sql`；迁移前前端不写该列，同步安全）。

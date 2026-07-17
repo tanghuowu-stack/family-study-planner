@@ -67,6 +67,8 @@ const REVIVE_CARDS_KEY = "stats_revive_cards";
 export interface ReviveCards {
   balance: number;
   usedDates: string[];
+  /** 已发过卡的里程碑日期（连续第 7/14/21… 天的那一天），保证发卡幂等 */
+  grantedMilestones?: string[];
 }
 
 /** 休息日列表（YYYY-MM-DD），该天打卡跳过不断卡 */

@@ -527,7 +527,10 @@ export const taskRepository = {
 
   async create(draft: TaskDraft) {
     const now = new Date().toISOString();
-    const task: Task = sanitizeTaskWrite({ ...normalizeDraft(draft), id: makeId(), createdAt: now, updatedAt: now });
+    const normalized = normalizeDraft(draft);
+    // 表单可直接以 done 状态新建：与 update 同规则联动 completedAt，避免 done 无 completedAt 的脏数据
+    if (normalized.status === "done" && !normalized.completedAt) normalized.completedAt = now;
+    const task: Task = sanitizeTaskWrite({ ...normalized, id: makeId(), createdAt: now, updatedAt: now });
     await db.transaction("rw", db.tasks, db.activityLogs, async () => {
       await db.tasks.add(task);
       await writeLog("create", "task", { entityId: task.id, entityTitle: task.title, afterSnapshot: task });

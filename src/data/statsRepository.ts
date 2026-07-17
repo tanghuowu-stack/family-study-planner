@@ -107,9 +107,51 @@ export function computeStreaks(
   return { currentStreak, longestStreak };
 }
 
+/** 复活卡持有上限 */
+const REVIVE_CAP = 2;
+/** 每连续满多少天发 1 张复活卡 */
+const STREAK_PER_CARD = 7;
+
+/**
+ * 发卡：连续每满 7 天自动 +1 张（持有上限 2）。里程碑日期记账保证幂等；
+ * 达到里程碑时若已满持有上限，该里程碑仍记为已发（不补发）。
+ */
+async function accrueReviveCards(
+  checkins: Set<string>,
+  rests: Set<string>,
+  cards: ReviveCards,
+  today: string
+): Promise<ReviveCards> {
+  const revived = new Set(cards.usedDates);
+  const success = (d: string) => checkins.has(d) || revived.has(d);
+  const allDates = [...checkins, ...revived];
+  if (allDates.length === 0) return cards;
+  const earliest = allDates.reduce((a, b) => (a < b ? a : b));
+  const granted = new Set(cards.grantedMilestones ?? []);
+  let balance = cards.balance;
+  let changed = false;
+  let run = 0;
+  for (const day of listDays(earliest, today)) {
+    if (rests.has(day)) continue;
+    if (success(day)) {
+      run++;
+      if (run % STREAK_PER_CARD === 0 && !granted.has(day)) {
+        granted.add(day);
+        if (balance < REVIVE_CAP) balance++;
+        changed = true;
+      }
+    } else if (day !== today) run = 0;
+  }
+  if (!changed) return cards;
+  const updated: ReviveCards = { balance, usedDates: cards.usedDates, grantedMilestones: [...granted].sort() };
+  await saveReviveCards(updated);
+  return updated;
+}
+
 export async function getStreakData(today: string = todayKey()): Promise<StreakData> {
-  const [checkins, restDays, cards] = await Promise.all([collectCheckinDates(), loadRestDays(), loadReviveCards()]);
+  const [checkins, restDays, cards0] = await Promise.all([collectCheckinDates(), loadRestDays(), loadReviveCards()]);
   const rests = new Set(restDays);
+  const cards = await accrueReviveCards(checkins, rests, cards0, today);
   const revived = new Set(cards.usedDates);
   const { currentStreak, longestStreak } = computeStreaks(checkins, rests, revived, today);
   return {

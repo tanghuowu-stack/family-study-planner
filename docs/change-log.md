@@ -4,6 +4,12 @@
 
 ## 2026-07-18
 
+- 打卡判定改为三态"应做全清"制（数据层）：
+  1. 打卡日 = 当天所有应做打卡项全部完成。应做项 = 当天排期到的 enableStreak 任务（occurrence 类 scheduleOccursOn、非 occurrence 类日期字段落当天；单日/整体 cancelled 剔除）；应做为 0 = "无需打卡"，与休息日同等被连续性跳过。完成归因沿用 toLocalDateKey（非 occurrence 类完成日 ≤ 当天视为满足；occurrence 类看当天行 status=done）。
+  2. 新增每日打卡项手动覆盖：app_settings `stats_daily_overrides`（整包 jsonb，{日期: {added, removed}}，无键即走默认；选整包因覆盖低频、整存整取复用现有泛型、免范围查询）。新函数 `getDailyCheckItems(date)`（应做项+完成状态+source，UI 勾选数据源）、`setDailyCheckOverride(date, {added, removed})`（去重、added/removed 交集互抵、两空删键）。
+  3. `applyReviveCard` 补卡对象收紧为真实漏卡日（已打卡/无需打卡均拒绝不耗卡）；StreakData 新增 missedDays 供补卡候选；顺手修复上轮 bug——applyReviveCard 保存时丢失 grantedMilestones 会导致重复发卡。
+  4. 取消勾选完成音效：移除 App 调用与设置开关，删除 `lib/completionSound.ts`。
+  5. 测试 40 例全绿。旧用例调整 3 处并注明理由：21（打卡日语义从"完成归因日"改"应做全清"，排期与归因对齐，UTC+8 边界保护不变）、23/34（无排期日不再可补卡，补卡对象改为造出的真实漏卡日）；新增 35-38（部分完成不打卡/全清打卡、空日穿透、覆盖 removed/added 双向、空日+休息日混合且休息日优先于漏卡）。
 - TASK_08 统计功能 UI 层：
   1. 统计页新增 `StreakPanel`（打卡卡片+鼓励语分档、打卡月历三色标记可切月、本周完成率进度条、学科对比条形图复用 MAIN_CATEGORY_META 色板、六档坚持徽章），数据全部来自 statsRepository，UI 不做聚合。
   2. 复活卡流程：断卡且 3 天内有可补日期时出现申请入口，确认框显示补卡日期与余额，家长长按 2 秒确认后调 applyReviveCard，错误 message 直接 toast。

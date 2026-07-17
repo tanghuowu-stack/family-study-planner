@@ -204,5 +204,6 @@ App.tsx                 正式任务动作汇聚点（增删改查、勾选、�
 TASK_08 统计——下一轮 UI 清单（2026-07-18 记，数据层已就位于 `statsRepository.ts`）：
 
 - 任务表单加「计入连续打卡」勾选项（写 `enableStreak`）。**上线前必须先在 Supabase 执行 `docs/supabase-migration-stats.sql`**（tasks 加 enable_streak 列；迁移前前端不会向该列写值，同步不受影响）。
-- 复活卡"申请 → 家长确认"交互流程；发卡逻辑（连续满 7 天得 1 张、持有上限 2 张）数据层本轮未实现，UI 轮一并做。
+- ~~复活卡"申请 → 家长确认"交互流程；发卡逻辑~~（2026-07-18 已完成）。
 - 休息日标记入口（数据层 `toggleRestDay` 已就位）。
+- 每日打卡项手动增减的勾选界面（数据层 `getDailyCheckItems` / `setDailyCheckOverride` 已就位，2026-07-18）。

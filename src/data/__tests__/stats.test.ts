@@ -18,7 +18,7 @@ const memStore = new Map<string, string>();
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "../db";
 import { taskRepository } from "../taskRepository";
-import { getStreakData, getWeekCompletionRate, getSubjectComparison, applyReviveCard, toggleRestDay } from "../statsRepository";
+import { getStreakData, getWeekCompletionRate, getSubjectComparison, applyReviveCard, toggleRestDay, getDailyCheckItems, setDailyCheckOverride } from "../statsRepository";
 import { saveRestDays, saveReviveCards } from "../appSettingsRepository";
 import type { Task, TaskOccurrenceStatus } from "../../types/task";
 
@@ -75,15 +75,19 @@ describe("getStreakData", () => {
     expect(data.restDays).toEqual(["2026-07-02"]);
   });
 
-  it("21. UTC+8 午夜边界：completedAt 为 UTC 前一日 16:30（本地 0:30）归本地当天", async () => {
+  // 语义调整（2026-07-18）：打卡日从"完成归因日集合"改为"当天应做项全清"。
+  // 用例改为把排期日与完成归因对齐：若 completedAt 被按 UTC 截断，会归到 07-16，
+  // 07-17 的应做项就判未完成 → 漏卡，断言即失败，UTC+8 边界保护不变。
+  it("21. UTC+8 午夜边界：排期 07-17 的任务在本地 0:30（UTC 前一日 16:30）完成，07-17 算打卡", async () => {
     await db.tasks.bulkAdd([
-      makeTask("m1", { enableStreak: true, status: "done", completedAt: "2026-07-16T16:30:00.000Z" }),
-      makeTask("rec", { enableStreak: true, timeType: "recurring", schedulePattern: "dailyRecurring", date: undefined, startDate: "2026-07-01" }),
+      makeTask("m1", { enableStreak: true, date: "2026-07-17", status: "done", completedAt: "2026-07-16T16:30:00.000Z" }),
+      makeTask("rec", { enableStreak: true, timeType: "recurring", schedulePattern: "dailyRecurring", date: undefined, startDate: "2026-07-18", recurrence: { frequency: "daily", startDate: "2026-07-18" } }),
     ]);
     await db.taskOccurrenceStatuses.add(occRow("rec", "2026-07-18", "done", "2026-07-17T16:30:00.000Z"));
     const data = await getStreakData("2026-07-18");
-    expect(data.checkinDates).toContain("2026-07-17"); // 本体：UTC 07-16 → 本地 07-17
-    expect(data.checkinDates).toContain("2026-07-18"); // occurrence 行：UTC 07-17 → 本地 07-18
+    expect(data.checkinDates).toContain("2026-07-17"); // UTC 截断会把完成日算成 07-16 → 此断言失败
+    expect(data.checkinDates).toContain("2026-07-18");
+    expect(data.missedDays).toEqual([]);
     expect(data.currentStreak).toBe(2);
   });
 
@@ -102,8 +106,10 @@ describe("getStreakData", () => {
 });
 
 describe("applyReviveCard", () => {
+  // 语义调整（2026-07-18）：无排期日现在是"无需打卡"（不可补也不会断卡），
+  // 补卡对象必须是真实漏卡日 → 给 07-02 加一个未完成的应做项使其成为漏卡日。
   it("23. 3 天内补卡成功：扣余额、记日期、连续天数接上", async () => {
-    await db.tasks.bulkAdd([doneSingle("a", "2026-07-01"), doneSingle("b", "2026-07-03"), doneSingle("c", "2026-07-04")]);
+    await db.tasks.bulkAdd([doneSingle("a", "2026-07-01"), doneSingle("b", "2026-07-03"), doneSingle("c", "2026-07-04"), makeTask("gap", { enableStreak: true, date: "2026-07-02" })]);
     await saveReviveCards({ balance: 2, usedDates: [] });
     const cards = await applyReviveCard("2026-07-02", "2026-07-04");
     expect(cards.balance).toBe(1);
@@ -158,9 +164,11 @@ describe("复活卡自动发卡（连续满 7 天 +1，上限 2）", () => {
     expect(data.reviveBalance).toBe(1);
   });
 
+  // 语义调整（2026-07-18）：同用例 23——07-07 需要有未完成应做项才是可补的漏卡日。
   it("34. 复活卡补的日期参与凑满 7 天", async () => {
     await seedDays(6); // 07-01 ~ 07-06
     await db.tasks.add(doneSingle("d8", "2026-07-08"));
+    await db.tasks.add(makeTask("gap7", { enableStreak: true, date: "2026-07-07" }));
     await saveReviveCards({ balance: 1, usedDates: [] });
     await applyReviveCard("2026-07-07", "2026-07-08"); // 补 07-07，连成 8 天
     const data = await getStreakData("2026-07-08");
@@ -217,6 +225,70 @@ describe("getSubjectComparison", () => {
     const extra = items.find((i) => i.mainCategory === "extraHomework");
     expect(school).toMatchObject({ total: 2, done: 1 });
     expect(extra).toMatchObject({ total: 1, done: 1, rate: 1 });
+  });
+});
+
+describe("三态打卡判定（2026-07-18 新规则）", () => {
+  it("35. 当天 3 个应做项完成 2 个 → 未打卡；全完成 → 打卡", async () => {
+    await db.tasks.bulkAdd([
+      doneSingle("d1", "2026-07-01"),
+      doneSingle("a", "2026-07-02"),
+      doneSingle("b", "2026-07-02"),
+      makeTask("c", { enableStreak: true, date: "2026-07-02" }),
+    ]);
+    let data = await getStreakData("2026-07-02");
+    expect(data.missedDays).toContain("2026-07-02");
+    expect(data.checkinDates).toEqual(["2026-07-01"]);
+    expect(data.currentStreak).toBe(1); // 今天未清不算断，从昨天起算
+    await db.tasks.update("c", { status: "done", completedAt: noonOf("2026-07-02") });
+    data = await getStreakData("2026-07-02");
+    expect(data.checkinDates).toEqual(["2026-07-01", "2026-07-02"]);
+    expect(data.currentStreak).toBe(2);
+  });
+
+  it("36. 打卡-空日-打卡：无应做项的日子既不打卡也不断卡，连续性穿过", async () => {
+    await db.tasks.bulkAdd([doneSingle("a", "2026-07-01"), doneSingle("b", "2026-07-03")]);
+    const data = await getStreakData("2026-07-03");
+    expect(data.checkinDates).toEqual(["2026-07-01", "2026-07-03"]);
+    expect(data.missedDays).toEqual([]); // 07-02 是"无需打卡"，不算漏卡
+    expect(data.currentStreak).toBe(2);
+    expect(data.longestStreak).toBe(2);
+  });
+
+  it("37. 手动覆盖：removed 去掉未完成默认项后当天转打卡；added 加入未完成项后转未打卡", async () => {
+    await db.tasks.bulkAdd([
+      doneSingle("t1", "2026-07-05"),
+      makeTask("t2", { enableStreak: true, date: "2026-07-05" }),
+      makeTask("t3", { date: "2026-07-05" }), // 非 enableStreak，靠 added 引入
+    ]);
+    let items = await getDailyCheckItems("2026-07-05");
+    expect(items.map((i) => [i.task.id, i.source, i.done])).toEqual([["t1", "default", true], ["t2", "default", false]]);
+    expect((await getStreakData("2026-07-05")).missedDays).toContain("2026-07-05");
+
+    await setDailyCheckOverride("2026-07-05", { removed: ["t2"] });
+    expect((await getDailyCheckItems("2026-07-05")).map((i) => i.task.id)).toEqual(["t1"]);
+    expect((await getStreakData("2026-07-05")).currentStreak).toBe(1); // 剩余全完成 → 打卡
+
+    await setDailyCheckOverride("2026-07-05", { removed: ["t2"], added: ["t3"] });
+    items = await getDailyCheckItems("2026-07-05");
+    expect(items.find((i) => i.task.id === "t3")?.source).toBe("added");
+    expect((await getStreakData("2026-07-05")).currentStreak).toBe(0); // added 未完成 → 未打卡（今天不断，昨日无卡可数）
+    await db.tasks.update("t3", { status: "done", completedAt: noonOf("2026-07-05") });
+    expect((await getStreakData("2026-07-05")).currentStreak).toBe(1);
+  });
+
+  it("38. 空日与休息日混合：均被连续性跳过；休息日优先于漏卡判定", async () => {
+    await db.tasks.bulkAdd([
+      doneSingle("a", "2026-07-01"),
+      makeTask("r", { enableStreak: true, date: "2026-07-03" }), // 07-03 有未完成应做项
+      doneSingle("b", "2026-07-04"),
+    ]);
+    await saveRestDays(["2026-07-03"]); // 但 07-03 标了休息日 → 跳过不断卡
+    const data = await getStreakData("2026-07-04");
+    // 07-01 打卡、07-02 空日跳过、07-03 休息日跳过（虽有未完成项）、07-04 打卡 → 连续 2
+    expect(data.currentStreak).toBe(2);
+    expect(data.longestStreak).toBe(2);
+    expect(data.missedDays).toEqual([]); // 休息日不进漏卡列表
   });
 });
 

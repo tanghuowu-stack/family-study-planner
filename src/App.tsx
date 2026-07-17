@@ -7,7 +7,6 @@ import { getRepository, isCloudMode, setCloudMode } from "./data/repositoryProvi
 import { cloudRepository, setCloudSyncErrorHandler } from "./data/cloudRepository";
 import { loadAuthState } from "./lib/cloudAuth";
 import { startRealtimeSync, stopRealtimeSync } from "./lib/realtimeSync";
-import { playCompletionSound } from "./lib/completionSound";
 import { StatsPage } from "./pages/StatsPage";
 import { DayPage } from "./pages/DayPage";
 import { MonthPage } from "./pages/MonthPage";
@@ -81,8 +80,6 @@ export default function App() {
   };
   const changeStatus = async (task: TaskDisplay, status: TaskStatus) => {
     const key = taskSyncKey(task);
-    // 音效必须在 await 之前、仍处于用户手势上下文时触发（iPad Safari 自动播放限制）
-    if (status === "done") playCompletionSound();
     try {
       const result = await repo().setDisplayStatus(task, status);
       refresh();

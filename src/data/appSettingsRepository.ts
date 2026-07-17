@@ -87,3 +87,27 @@ export async function loadReviveCards(): Promise<ReviveCards> {
 export async function saveReviveCards(cards: ReviveCards): Promise<void> {
   return saveJsonSetting(REVIVE_CARDS_KEY, cards, "复活卡数据云端同步失败");
 }
+
+const DAILY_OVERRIDES_KEY = "stats_daily_overrides";
+
+export interface DailyCheckOverride {
+  added: string[];
+  removed: string[];
+}
+
+/**
+ * 每日打卡项手动覆盖，按日期键整包存一个 jsonb：
+ * { "YYYY-MM-DD": { added: taskId[], removed: taskId[] } }。
+ * 选整包而非每日一行：覆盖是低频例外操作、数据量小（一年几十个键），
+ * 整存整取直接复用 loadJsonSetting 泛型与 (family_id,key) 唯一约束，
+ * 免去按日期范围查询和逐行清理；无该日键 = 该日完全走默认口径。
+ */
+export type DailyOverrides = Record<string, DailyCheckOverride>;
+
+export async function loadDailyOverrides(): Promise<DailyOverrides> {
+  return (await loadJsonSetting<DailyOverrides>(DAILY_OVERRIDES_KEY)) ?? {};
+}
+
+export async function saveDailyOverrides(overrides: DailyOverrides): Promise<void> {
+  return saveJsonSetting(DAILY_OVERRIDES_KEY, overrides, "打卡项设置云端同步失败");
+}

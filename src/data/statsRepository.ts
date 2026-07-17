@@ -16,7 +16,7 @@ import { db } from "./db";
 import { scheduleOccursOn } from "./taskRepository";
 import { isOccurrenceSchedule } from "../utils/taskMeta";
 import { getWeekStartKey, getWeekEndKey, todayKey, toDateKey, toLocalDateKey } from "../utils/date";
-import { loadRestDays, saveRestDays, loadReviveCards, saveReviveCards, type ReviveCards } from "./appSettingsRepository";
+import { loadRestDays, saveRestDays, loadReviveCards, saveReviveCards, loadDailyOverrides, saveDailyOverrides, type ReviveCards, type DailyOverrides } from "./appSettingsRepository";
 import type { MainCategory, Task, TaskOccurrenceStatus } from "../types/task";
 
 /** 口径开关：childVisible=false 的任务是否计入统计（2026-07 拍板：全计入） */
@@ -43,8 +43,10 @@ const listDays = (start: string, end: string): string[] => {
 export interface StreakData {
   currentStreak: number;
   longestStreak: number;
-  /** 打卡成功的本地日期（升序，去重），UI 日历数据源 */
+  /** 打卡成功日 =「当天所有应做打卡项全部完成」的本地日期（升序），UI 日历数据源 */
   checkinDates: string[];
+  /** 有应做项但未全部完成的日期（升序，不含休息日/已补卡日），补卡候选来源 */
+  missedDays: string[];
   /** 休息日（跳过不断卡） */
   restDays: string[];
   /** 复活卡已补的日期（视同打卡成功） */
@@ -53,56 +55,129 @@ export interface StreakData {
   reviveBalance: number;
 }
 
-/**
- * 打卡日集合：某天完成过至少一件 enableStreak 任务即打卡成功。
- * 非 occurrence 类看本体 completedAt；occurrence 类看 occurrence 行 completedAt
- * （历史行无 completedAt 时回退 occurrenceDate 作为完成日代理）。
- */
-async function collectCheckinDates(): Promise<Set<string>> {
-  const [tasks, occurrences] = await Promise.all([db.tasks.toArray(), db.taskOccurrenceStatuses.toArray()]);
-  const streakTasks = new Map(tasks.filter((t) => statsEligible(t) && t.enableStreak === true).map((t) => [t.id, t]));
-  const dates = new Set<string>();
-  for (const task of streakTasks.values()) {
-    if (!isOccurrenceSchedule(task) && task.status === "done" && task.completedAt) {
-      dates.add(toLocalDateKey(task.completedAt));
-    }
-  }
-  for (const occ of occurrences) {
-    const owner = streakTasks.get(occ.taskId);
-    if (!owner || !isOccurrenceSchedule(owner) || occ.status !== "done") continue;
-    dates.add(occ.completedAt ? toLocalDateKey(occ.completedAt) : occ.occurrenceDate);
-  }
-  return dates;
+export interface DailyCheckItem {
+  task: Task;
+  /** default = 当天排期到的 enableStreak 任务；added = 手动加入 */
+  source: "default" | "added";
+  done: boolean;
 }
 
-/** 纯计算：连续天数。休息日跳过（不断卡也不加一）；复活日视同打卡；today 未打卡不算断（当天未结束） */
+/** 逐日状态上限回看天数（防止极旧任务让全量扫描无界） */
+const DAY_SCAN_CAP = 400;
+
+/** 三态日状态：done 全部完成 / missed 有应做未完成；不在 map 里 = 无需打卡（none） */
+type DayStatusMap = Map<string, "done" | "missed">;
+
+interface DayContext {
+  defaults: Task[];
+  taskById: Map<string, Task>;
+  occByKey: Map<string, TaskOccurrenceStatus>;
+  overrides: DailyOverrides;
+}
+
+async function loadDayContext(): Promise<DayContext> {
+  const [tasks, occurrences, overrides] = await Promise.all([
+    db.tasks.toArray(),
+    db.taskOccurrenceStatuses.toArray(),
+    loadDailyOverrides(),
+  ]);
+  return {
+    defaults: tasks.filter((t) => statsEligible(t) && t.enableStreak === true && t.status !== "cancelled"),
+    taskById: new Map(tasks.map((t) => [t.id, t])),
+    occByKey: new Map(occurrences.map((o) => [`${o.taskId}:${o.occurrenceDate}`, o])),
+    overrides,
+  };
+}
+
+/** 当天应做打卡项 =（默认集：当天排期到的 enableStreak 任务，剔除单日 cancelled）− removed + added */
+function requiredItemsFor(date: string, ctx: DayContext): { task: Task; source: "default" | "added" }[] {
+  const items = new Map<string, { task: Task; source: "default" | "added" }>();
+  for (const task of ctx.defaults) {
+    if (!scheduleOccursOn(task, date)) continue;
+    if (isOccurrenceSchedule(task) && ctx.occByKey.get(`${task.id}:${date}`)?.status === "cancelled") continue;
+    items.set(task.id, { task, source: "default" });
+  }
+  const override = ctx.overrides[date];
+  if (override) {
+    for (const id of override.removed) items.delete(id);
+    for (const id of override.added) {
+      if (items.has(id)) continue; // 已是默认项
+      const task = ctx.taskById.get(id);
+      if (!task || !isActiveTask(task) || task.status === "cancelled") continue;
+      if (isOccurrenceSchedule(task) && ctx.occByKey.get(`${task.id}:${date}`)?.status === "cancelled") continue;
+      items.set(id, { task, source: "added" });
+    }
+  }
+  return [...items.values()];
+}
+
+/**
+ * 单项完成判定（沿用完成日归因）：
+ * - occurrence 类：当天 occurrence 行 status=done（行本身就挂在这一天）；
+ * - 非 occurrence 类：本体 done 且 completedAt 按 toLocalDateKey 归因的完成日 ≤ 当天
+ *   （完成日当天及其后的排期日视为已满足；完成日之前的排期日算漏卡）。
+ */
+function itemSatisfied(task: Task, date: string, ctx: DayContext): boolean {
+  if (isOccurrenceSchedule(task)) return ctx.occByKey.get(`${task.id}:${date}`)?.status === "done";
+  return task.status === "done" && !!task.completedAt && toLocalDateKey(task.completedAt) <= date;
+}
+
+/**
+ * 逐日三态：应做项为 0 → 不进 map（"无需打卡"，连续性穿过）；
+ * 全部完成 → done；有未完成 → missed。
+ */
+async function computeDayStatuses(today: string, ctx?: DayContext): Promise<DayStatusMap> {
+  const dayCtx = ctx ?? (await loadDayContext());
+  const startCandidates: string[] = Object.keys(dayCtx.overrides);
+  for (const t of dayCtx.defaults) {
+    const s = t.date ?? t.recurrence?.startDate ?? t.startDate ?? (t.specificDates?.length ? [...t.specificDates].sort()[0] : undefined);
+    if (s) startCandidates.push(s);
+  }
+  const statuses: DayStatusMap = new Map();
+  if (startCandidates.length === 0) return statuses;
+  const cap = toDateKey(addDays(parseISO(today), -DAY_SCAN_CAP));
+  let earliest = startCandidates.reduce((a, b) => (a < b ? a : b));
+  if (earliest < cap) earliest = cap;
+  if (earliest > today) return statuses;
+  for (const day of listDays(earliest, today)) {
+    const required = requiredItemsFor(day, dayCtx);
+    if (required.length === 0) continue;
+    statuses.set(day, required.every(({ task }) => itemSatisfied(task, day, dayCtx)) ? "done" : "missed");
+  }
+  return statuses;
+}
+
+/**
+ * 纯计算：连续天数。休息日与"无需打卡"日跳过（不断卡也不加一）；
+ * 复活日视同打卡；today 漏卡不算断（当天未结束）。
+ */
 export function computeStreaks(
-  checkins: Set<string>,
+  statuses: DayStatusMap,
   rests: Set<string>,
   revived: Set<string>,
   today: string
 ): { currentStreak: number; longestStreak: number } {
-  const success = (d: string) => checkins.has(d) || revived.has(d);
-  const allDates = [...checkins, ...revived];
+  const success = (d: string) => revived.has(d) || statuses.get(d) === "done";
+  const skip = (d: string) => rests.has(d) || (!statuses.has(d) && !revived.has(d));
+  const allDates = [...statuses.keys(), ...revived];
   if (allDates.length === 0) return { currentStreak: 0, longestStreak: 0 };
   const earliest = allDates.reduce((a, b) => (a < b ? a : b));
 
   let currentStreak = 0;
   let cursor = today;
-  if (!success(cursor) && !rests.has(cursor)) cursor = prevDayKey(cursor);
+  if (!success(cursor) && !skip(cursor)) cursor = prevDayKey(cursor); // today 漏卡：从昨天起算
   while (cursor >= earliest) {
-    if (rests.has(cursor)) { cursor = prevDayKey(cursor); continue; }
-    if (!success(cursor)) break;
-    currentStreak++;
-    cursor = prevDayKey(cursor);
+    if (success(cursor)) { currentStreak++; cursor = prevDayKey(cursor); continue; }
+    if (skip(cursor)) { cursor = prevDayKey(cursor); continue; }
+    break; // missed
   }
 
   let longestStreak = 0;
   let run = 0;
   for (const day of listDays(earliest, today)) {
-    if (rests.has(day)) continue;
-    if (success(day)) { run++; if (run > longestStreak) longestStreak = run; }
-    else if (day !== today) run = 0; // today 未打卡不清零，与 currentStreak 口径一致
+    if (success(day)) { run++; if (run > longestStreak) longestStreak = run; continue; }
+    if (skip(day)) continue;
+    if (day !== today) run = 0; // today 漏卡不清零，与 currentStreak 口径一致
   }
   return { currentStreak, longestStreak };
 }
@@ -117,14 +192,15 @@ const STREAK_PER_CARD = 7;
  * 达到里程碑时若已满持有上限，该里程碑仍记为已发（不补发）。
  */
 async function accrueReviveCards(
-  checkins: Set<string>,
+  statuses: DayStatusMap,
   rests: Set<string>,
   cards: ReviveCards,
   today: string
 ): Promise<ReviveCards> {
   const revived = new Set(cards.usedDates);
-  const success = (d: string) => checkins.has(d) || revived.has(d);
-  const allDates = [...checkins, ...revived];
+  const success = (d: string) => revived.has(d) || statuses.get(d) === "done";
+  const skip = (d: string) => rests.has(d) || (!statuses.has(d) && !revived.has(d));
+  const allDates = [...statuses.keys(), ...revived];
   if (allDates.length === 0) return cards;
   const earliest = allDates.reduce((a, b) => (a < b ? a : b));
   const granted = new Set(cards.grantedMilestones ?? []);
@@ -132,7 +208,6 @@ async function accrueReviveCards(
   let changed = false;
   let run = 0;
   for (const day of listDays(earliest, today)) {
-    if (rests.has(day)) continue;
     if (success(day)) {
       run++;
       if (run % STREAK_PER_CARD === 0 && !granted.has(day)) {
@@ -140,35 +215,72 @@ async function accrueReviveCards(
         if (balance < REVIVE_CAP) balance++;
         changed = true;
       }
-    } else if (day !== today) run = 0;
+      continue;
+    }
+    if (skip(day)) continue;
+    if (day !== today) run = 0;
   }
   if (!changed) return cards;
-  const updated: ReviveCards = { balance, usedDates: cards.usedDates, grantedMilestones: [...granted].sort() };
+  const updated: ReviveCards = { ...cards, balance, grantedMilestones: [...granted].sort() };
   await saveReviveCards(updated);
   return updated;
 }
 
 export async function getStreakData(today: string = todayKey()): Promise<StreakData> {
-  const [checkins, restDays, cards0] = await Promise.all([collectCheckinDates(), loadRestDays(), loadReviveCards()]);
+  const [statuses, restDays, cards0] = await Promise.all([computeDayStatuses(today), loadRestDays(), loadReviveCards()]);
   const rests = new Set(restDays);
-  const cards = await accrueReviveCards(checkins, rests, cards0, today);
+  const cards = await accrueReviveCards(statuses, rests, cards0, today);
   const revived = new Set(cards.usedDates);
-  const { currentStreak, longestStreak } = computeStreaks(checkins, rests, revived, today);
+  const { currentStreak, longestStreak } = computeStreaks(statuses, rests, revived, today);
+  const checkinDates: string[] = [];
+  const missedDays: string[] = [];
+  for (const [day, status] of statuses) {
+    if (status === "done") checkinDates.push(day);
+    else if (!rests.has(day) && !revived.has(day)) missedDays.push(day);
+  }
   return {
     currentStreak,
     longestStreak,
-    checkinDates: [...checkins].sort(),
+    checkinDates: checkinDates.sort(),
+    missedDays: missedDays.sort(),
     restDays: [...rests].sort(),
     revivedDates: [...revived].sort(),
     reviveBalance: cards.balance,
   };
 }
 
+// ── 每日打卡项（UI 勾选数据源）──────────────────────────────────────────────
+
+/** 当天应做打卡项及各自完成状态。空数组 = 该日"无需打卡" */
+export async function getDailyCheckItems(date: string): Promise<DailyCheckItem[]> {
+  const ctx = await loadDayContext();
+  return requiredItemsFor(date, ctx).map(({ task, source }) => ({ task, source, done: itemSatisfied(task, date, ctx) }));
+}
+
+/**
+ * 设置某天的打卡项手动覆盖：应做集 =（默认集 − removed）+ added。
+ * added/removed 去重；同时出现在两边的 id 视为无效（互相抵消剔除）；
+ * 两边均空时删除该日键，完全回到默认口径。返回最新完整 overrides。
+ */
+export async function setDailyCheckOverride(
+  date: string,
+  override: { added?: string[]; removed?: string[] }
+): Promise<DailyOverrides> {
+  const overrides = await loadDailyOverrides();
+  const addedSet = new Set(override.added ?? []);
+  const removedSet = new Set(override.removed ?? []);
+  for (const id of [...addedSet]) if (removedSet.has(id)) { addedSet.delete(id); removedSet.delete(id); }
+  if (addedSet.size === 0 && removedSet.size === 0) delete overrides[date];
+  else overrides[date] = { added: [...addedSet].sort(), removed: [...removedSet].sort() };
+  await saveDailyOverrides(overrides);
+  return overrides;
+}
+
 // ── 复活卡 ───────────────────────────────────────────────────────────────────
 
 /**
- * 用 1 张复活卡补 date 一天。校验：余额、3 天时限、只能补过去、
- * 非休息日、未打卡、未重复补。发卡（连续满 7 天得 1 张、上限 2）与家长确认留给后续轮。
+ * 用 1 张复活卡补 date 一天。校验：余额、3 天时限、只能补过去、未重复补、
+ * 非休息日、且该日必须是"漏卡"（已打卡或无需打卡都不消耗卡）。
  */
 export async function applyReviveCard(date: string, today: string = todayKey()): Promise<ReviveCards> {
   const cards = await loadReviveCards();
@@ -179,9 +291,11 @@ export async function applyReviveCard(date: string, today: string = todayKey()):
   if (cards.usedDates.includes(date)) throw new Error("该日已用复活卡补过");
   const rests = new Set(await loadRestDays());
   if (rests.has(date)) throw new Error("休息日不断卡，无需补卡");
-  const checkins = await collectCheckinDates();
-  if (checkins.has(date)) throw new Error("该日已打卡，无需补卡");
-  const updated: ReviveCards = { balance: cards.balance - 1, usedDates: [...cards.usedDates, date].sort() };
+  const statuses = await computeDayStatuses(today);
+  const status = statuses.get(date);
+  if (status === "done") throw new Error("该日已打卡，无需补卡");
+  if (status === undefined) throw new Error("该日没有打卡任务，无需补卡");
+  const updated: ReviveCards = { ...cards, balance: cards.balance - 1, usedDates: [...cards.usedDates, date].sort() };
   await saveReviveCards(updated);
   return updated;
 }

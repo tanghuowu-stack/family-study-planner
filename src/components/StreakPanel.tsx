@@ -53,13 +53,14 @@ export function StreakPanel({ refreshKey = 0 }: { refreshKey?: number }) {
   const checkins = new Set(streak?.checkinDates ?? []);
   const rests = new Set(streak?.restDays ?? []);
   const revived = new Set(streak?.revivedDates ?? []);
+  const missed = new Set(streak?.missedDays ?? []);
 
-  // 断卡后 3 天内可补的日期：昨天起往前 3 天里的"漏卡日"，取最近的一天
+  // 断卡后 3 天内可补的日期：昨天起往前 3 天里的"漏卡日"（有应做未完成），取最近的一天
   const reviveCandidate = (() => {
     if (!streak) return null;
     for (let back = 1; back <= 3; back++) {
       const d = toDateKey(addDays(parseISO(today), -back));
-      if (!checkins.has(d) && !rests.has(d) && !revived.has(d)) return d;
+      if (missed.has(d)) return d;
     }
     return null;
   })();

@@ -259,7 +259,7 @@ function courseToRow(course: Course, familyId: string): Record<string, unknown> 
  */
 // table 传入的是 Dexie 表实例；其 bulkGet/bulkPut 重载类型与结构化约束难以对齐，
 // 故放宽为 any，类型安全由泛型 incoming: T[] 保证（写入项与目标表同源）。
-async function lwwMerge<T extends { id: string; updatedAt: string }>(table: { bulkGet(keys: string[]): Promise<(T | undefined)[]>; bulkPut(items: T[]): Promise<unknown> } | any, incoming: T[]): Promise<void> {
+export async function lwwMerge<T extends { id: string; updatedAt: string }>(table: { bulkGet(keys: string[]): Promise<(T | undefined)[]>; bulkPut(items: T[]): Promise<unknown> } | any, incoming: T[]): Promise<void> {
   if (incoming.length === 0) return;
   const locals: (T | undefined)[] = await table.bulkGet(incoming.map((r) => r.id));
   const localUpdatedAt = new Map<string, string | undefined>();

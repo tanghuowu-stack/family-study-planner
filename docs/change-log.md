@@ -4,6 +4,10 @@
 
 ## 2026-07-17
 
+- 建立数据层回归测试（Vitest + fake-indexeddb，云端交互全 mock，不碰真实 Supabase）：
+  1. 15 个用例锁住 6.5 节铁律：R1 权威源三例、R2 occurrence patch、R3 展示字段白名单清洗、R4 overdue 派生态、R5 LWW 合并两例 + remove 软删级联 + allocateTask 重排软删、R6 dateRange 整体语义、checklist 联动两例、父子任务联动，以及 cloudUpload occurrence 上传过滤（A 类违规行不上传，变异验证：注释过滤逻辑测试即红）。
+  2. `cloudRepository.ts` 导出 lwwMerge 供测试；`package.json` 新增 `npm test`（vitest run）。
+  3. PROJECT_GUIDE 开工必读新增硬性门槛：提交前必须 `npm test` 通过，不允许删用例放行。
 - 物理删除遗留问题处置（occurrence 表无 deleted_at 列，物理删除不跨设备传播）：
   1. 上传防线：`cloudUpload.ts` 上传 occurrence 行时跳过 A 类违规行（挂在非 occurrence 类任务或已软删任务名下），防止本地脏残留复活到云端，跳过条数在上传结果中展示。
   2. 维护面板新增「对账清理本地缓存」（`cloudCleanup.ts` + `CloudLoginPanel.tsx`）：按云端 occurrence 全量 id 对账，删除本地多出的行；只动本地，执行前弹确认框显示条数；最近 10 分钟内更新的行跳过防误删（可能是尚未同步的新写入）。

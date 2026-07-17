@@ -4,6 +4,11 @@
 
 ## 2026-07-17
 
+- 清洗②类脏数据（status=done 但 completedAt 空）9 条，通过页面运行中的真实 `getRepository()`（云端模式，逐条 `update()`）写入，不绕过 R1/sanitizeTaskWrite/LWW 防线：
+  1. 6 条活跃 + 1 条软删（e8aafc23）singleDate 任务：因 updatedAt 已被一次无关批量操作污染成 96/97 条相同时间戳、不可作为完成时间代理，改用各自 `date` 字段（本地正午）补 completedAt。
+  2. fa839e8c「FCE精讲」（recurring/occurrence 类，已软删）：body status=done 本身违反 R1，未套用通用补 completedAt 规则，改为按 R1 把 status 修回 todo，completedAt 保持空。
+  3. e86f8615（已软删，①类：status=todo 但 completedAt 有值）：超出原计划的②类范围，一并清空 completedAt 使其与 status 一致。
+  - 复查：本地 IndexedDB 和云端 Supabase 双扫，①②两类均归零（云端 97 条任务，本地/云端一致）。
 - 代码审查修复 4 项（P0-1/P0-2/P1-7/P1-8）：
   1. `taskRepository.update` 联动维护 completedAt：status 改 done 补 completedAt=now，从 done 退出清除，堵住"done 无 completedAt / todo 带残留 completedAt"两类脏数据源。
   2. `copyToDate` 重置名单补全 completedAt、actualMinutes（含小项级），并改为过 sanitizeTaskWrite 落库，消除裸写入口。

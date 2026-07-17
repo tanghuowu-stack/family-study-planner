@@ -4,6 +4,13 @@
 
 ## 2026-07-17
 
+- 代码审查修复 4 项（P0-1/P0-2/P1-7/P1-8）：
+  1. `taskRepository.update` 联动维护 completedAt：status 改 done 补 completedAt=now，从 done 退出清除，堵住"done 无 completedAt / todo 带残留 completedAt"两类脏数据源。
+  2. `copyToDate` 重置名单补全 completedAt、actualMinutes（含小项级），并改为过 sanitizeTaskWrite 落库，消除裸写入口。
+  3. 新增 `toLocalDateKey`（utils/date.ts）：timestamp→本地日期键统一入口；替换 2 处 UTC 截断（taskRepository dateRange 完成日截断、StatsPage 备份文件名）。cloudUpload/cloudRepository 的 toDateOrNull 是 date 字段防御清洗，不属 timestamp 截断，未动。
+  4. `syncParentCompletion` 开头加 isOccurrenceSchedule(parent) 早退（R1 防线）。
+  - 新增回归用例 16-18（update completedAt 双向、copyToDate 重置、toLocalDateKey UTC+8 边界），npm test 19 例全绿。
+  - 其余审查遗留 P1×4、P2×2 已记入 PROJECT_GUIDE 第 13 节待办（含文件行号）。
 - 建立数据层回归测试（Vitest + fake-indexeddb，云端交互全 mock，不碰真实 Supabase）：
   1. 15 个用例锁住 6.5 节铁律：R1 权威源三例、R2 occurrence patch、R3 展示字段白名单清洗、R4 overdue 派生态、R5 LWW 合并两例 + remove 软删级联 + allocateTask 重排软删、R6 dateRange 整体语义、checklist 联动两例、父子任务联动，以及 cloudUpload occurrence 上传过滤（A 类违规行不上传，变异验证：注释过滤逻辑测试即红）。
   2. `cloudRepository.ts` 导出 lwwMerge 供测试；`package.json` 新增 `npm test`（vitest run）。

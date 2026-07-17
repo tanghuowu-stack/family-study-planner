@@ -220,6 +220,35 @@ describe("checklist 联动", () => {
   });
 });
 
+describe("completedAt 一致性（2026-07-17 审查修复）", () => {
+  it("16. update 状态改 done 补 completedAt，从 done 改回 todo 清除 completedAt", async () => {
+    const task = await taskRepository.create(baseDraft());
+    await taskRepository.update(task.id, { status: "done" });
+    let body = await db.tasks.get(task.id);
+    expect(body?.status).toBe("done");
+    expect(body?.completedAt).toBeTruthy();
+    await taskRepository.update(task.id, { status: "todo" });
+    body = await db.tasks.get(task.id);
+    expect(body?.status).toBe("todo");
+    expect(body?.completedAt).toBeUndefined();
+  });
+
+  it("17. copyToDate 复制已完成任务：副本无 completedAt/actualMinutes（含小项级）", async () => {
+    const task = await taskRepository.create(baseDraft({
+      checklistItems: [{ id: "i1", title: "小项", done: true, sortOrder: 0, actualMinutes: 15 }],
+    }));
+    await taskRepository.setDisplayStatus(task as TaskDisplay, "done");
+    await db.tasks.update(task.id, { actualMinutes: 30 });
+    const copy = await taskRepository.copyToDate(task.id, dayOffset(1));
+    const body = await db.tasks.get(copy.id);
+    expect(body?.status).toBe("todo");
+    expect(body?.completedAt).toBeUndefined();
+    expect(body?.actualMinutes).toBeUndefined();
+    expect(body?.checklistItems?.[0].done).toBe(false);
+    expect(body?.checklistItems?.[0].actualMinutes).toBeUndefined();
+  });
+});
+
 describe("父子任务联动", () => {
   it("14. 子任务全部完成父任务自动 done，一个退回父任务回 todo", async () => {
     const parent = await taskRepository.create(baseDraft({ title: "父任务" }));

@@ -14,6 +14,8 @@ export const DATE_FORMAT = "yyyy-MM-dd";
 export const toDateKey = (date: Date) => format(date, DATE_FORMAT);
 export const fromDateKey = (value: string) => parseISO(value);
 export const todayKey = () => toDateKey(new Date());
+/** UTC/ISO 时间戳 → 本地日期键。timestamp 转日期一律走这里，禁止 slice(0,10)（UTC 截断在本地 0-8 点会差一天） */
+export const toLocalDateKey = (isoTimestamp: string) => toDateKey(new Date(isoTimestamp));
 
 export const formatLongDate = (value: string) =>
   format(fromDateKey(value), "M月d日 EEEE", { locale: zhCN });

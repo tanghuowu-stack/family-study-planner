@@ -191,3 +191,12 @@ App.tsx                 正式任务动作汇聚点（增删改查、勾选、�
 ## 13. 待办清单（技术债）
 
 - `task_occurrence_statuses` 表缺 `deleted_at` 列，跨设备删除 occurrence 目前无墓碑机制（pull 只增改不删，物理删除不会同步到其他设备的本地缓存）。中期如需此能力再做 schema 迁移；当前靠维护面板「对账清理本地缓存」手动对齐（2026-07-17 记）。
+
+2026-07-17 代码审查遗留（P1/P2，文件位置为审查时行号）：
+
+- **P1** removePlanPeriod/removeCourse 的任务解绑（`taskRepository.ts:596/629` 的 `.modify`）不刷新 updatedAt，且 `cloudRepository.ts:735/772` 不把被解绑任务 upsert 上云 → 下次 pull 被 LWW（相等即覆盖）回滚，任务重新指向已删除的假期/课程。修法：modify 时带 updatedAt=now，云端包装层补 upsert 受影响任务。
+- **P1** importBackup（`taskRepository.ts:797-815`）无 R1 清洗：任务 status/completedAt 原样导入、occurrence 行原样 bulkPut，旧备份会把 A 类脏数据灌回本地。修法：导入时按 isOccurrenceSchedule 清洗本体状态、过滤违规 occurrence 行。
+- **P1** 云端模式下 importBackup（`cloudRepository.ts:801`）只写本地不上传，导入结果会被下次 pull 按 LWW 覆盖回云端状态。修法：导入完成后提示/强制执行一次全量上传。
+- **P1** 手动「从云端下载」（`cloudDownload.ts:86-97`）是无条件 bulkPut 强覆盖，但代码注释自称"安全合并"，且按钮无警示 → 本地未同步修改会被静默回滚。修法：改注释、按钮加确认框说明会覆盖本地。
+- **P2** exportBackup（`taskRepository.ts:791`）不含 courses 表，恢复备份后任务 courseId 悬空。
+- **P2** remove 级联软删子任务但 restore（`taskRepository.ts:660`）只恢复本体不级联恢复子任务，行为不对称。

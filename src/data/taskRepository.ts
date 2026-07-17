@@ -4,7 +4,7 @@ import type {
   ActivityActionType, ActivityLog, BackupData, Course, MainCategory, OccurrenceStatus, PlanOverviewItem, PlanPeriod, PlanPeriodType, ReadingLog, RolloverMode, SyncResult, Task, TaskDisplay,
   TaskDraft, TaskOccurrenceStatus, TaskStatus,
 } from "../types/task";
-import { getMonthBounds, getMonthKey, getWeekEndKey, getWeekStartKey, isDateInRange, todayKey, toDateKey } from "../utils/date";
+import { getMonthBounds, getMonthKey, getWeekEndKey, getWeekStartKey, isDateInRange, todayKey, toDateKey, toLocalDateKey } from "../utils/date";
 import { taskOccursOn } from "../utils/recurrence";
 import { defaultSortOrder, isCourseTask, isOccurrenceSchedule, subCategoryLabel } from "../utils/taskMeta";
 import { taskSubjectGroup } from "../utils/taskGrouping";
@@ -196,7 +196,8 @@ async function syncParentCompletion(childTaskId: string): Promise<string | undef
   const child = await db.tasks.get(childTaskId);
   if (!child?.parentTaskId) return undefined;
   const parent = await db.tasks.get(child.parentTaskId);
-  if (!parent || parent.deletedAt) return undefined;
+  // R1：occurrence 类任务本体不写完成状态，即使未来它有子任务也不能在这里联动置 done
+  if (!parent || parent.deletedAt || isOccurrenceSchedule(parent)) return undefined;
   const siblings = (await db.tasks.where("parentTaskId").equals(parent.id).toArray()).filter(isActiveTask);
   if (!siblings.length) return undefined;
   const allDone = siblings.every((sibling) => sibling.status === "done");
@@ -234,7 +235,7 @@ export const taskRepository = {
     for (const task of tasks) {
       if (task.mainCategory === "readingPlan" || !task.childVisible || (options?.forCalendar && (task.calendarVisibility === "hide" || task.status === "cancelled" || !isCalendarPlanTask(task))) || task.timeType === "weekGoal" || task.timeType === "monthGoal" || task.timeType === "assignmentWindow") continue;
       // 今日页：dateRange 任务完成后，完成日之后不再出现；月历例外——旅游等跨天安排要显示完整区间
-      if (!options?.forCalendar && task.status === "done" && task.timeType === "dateRange" && task.completedAt && date > task.completedAt.slice(0, 10)) continue;
+      if (!options?.forCalendar && task.status === "done" && task.timeType === "dateRange" && task.completedAt && date > toLocalDateKey(task.completedAt)) continue;
       if (isOccurrenceSchedule(task)) {
         const pendingDate = findPendingOccurrenceDate(task, date, byTaskAndDate);
         if (pendingDate) {
@@ -537,7 +538,15 @@ export const taskRepository = {
   async update(id: string, changes: Partial<TaskDraft>) {
     const existing = await db.tasks.get(id);
     if (!existing) throw new Error("找不到要更新的任务");
-    const task = sanitizeTaskWrite({ ...existing, ...changes, id, updatedAt: new Date().toISOString() }, existing.status);
+    const now = new Date().toISOString();
+    const merged = { ...existing, ...changes, id, updatedAt: now };
+    // R1 一致性：status 变化时联动 completedAt——变 done 补齐、从 done 退出清除，
+    // 否则表单改状态会产出 done 无 completedAt / todo 带残留 completedAt 的脏数据
+    if (changes.status && changes.status !== existing.status) {
+      if (changes.status === "done") merged.completedAt = now;
+      else if (existing.status === "done") merged.completedAt = undefined;
+    }
+    const task = sanitizeTaskWrite(merged, existing.status);
     const checklistChanged = Object.prototype.hasOwnProperty.call(changes, "checklistItems");
     let result = task;
     await db.transaction("rw", db.tasks, db.activityLogs, async () => {
@@ -552,14 +561,15 @@ export const taskRepository = {
     const source = await db.tasks.get(id);
     if (!source) throw new Error("找不到要复制的任务");
     const now = new Date().toISOString();
-    const copy: Task = {
+    const copy: Task = sanitizeTaskWrite({
       ...source, id: makeId(), timeType: "singleDate", schedulePattern: "singleDate", date,
       startDate: undefined, endDate: undefined, weekStart: undefined, month: undefined, recurrence: undefined,
       specificDates: undefined, rangeWeekdays: undefined, assignmentWindow: undefined, weeklyQuota: undefined,
       parentTaskId: undefined, allocationWeekStart: undefined, sessionIndex: undefined, status: "todo",
-      checklistItems: source.checklistItems?.map((item, index) => ({ ...item, id: makeId(), done: false, sortOrder: index })),
+      completedAt: undefined, actualMinutes: undefined,
+      checklistItems: source.checklistItems?.map((item, index) => ({ ...item, id: makeId(), done: false, sortOrder: index, actualMinutes: undefined })),
       createdAt: now, updatedAt: now,
-    };
+    });
     await db.transaction("rw", db.tasks, db.activityLogs, async () => {
       await db.tasks.add(copy);
       await writeLog("create", "task", { entityId: copy.id, entityTitle: copy.title, afterSnapshot: copy });

@@ -5,7 +5,7 @@ import { CloudLoginPanel } from "../components/CloudLoginPanel";
 import { getCalendarDisplaySettings, saveCalendarDisplaySettings, type CalendarDisplaySettings } from "../data/calendarAnnotations";
 import { taskRepository } from "../data/taskRepository";
 import type { ActivityLog, TaskDisplay } from "../types/task";
-import { formatLongDate, todayKey } from "../utils/date";
+import { formatLongDate, todayKey, toLocalDateKey } from "../utils/date";
 
 type PrintData = { includeDone: boolean; day: { date: string; tasks: TaskDisplay[] }; overdue: TaskDisplay[] };
 type CourseStats = Awaited<ReturnType<typeof taskRepository.getCourseStatistics>>;
@@ -28,7 +28,7 @@ export function StatsPage({ onImported, cloudMode }: { onImported: () => void; c
   const loadLogs = () => taskRepository.listActivityLogs(100).then(setLogs);
   useEffect(() => { void loadLogs(); }, []);
   const updateCalendarSetting = (key: keyof CalendarDisplaySettings, value: boolean) => { const next = { ...calendarSettings, [key]: value }; setCalendarSettings(next); saveCalendarDisplaySettings(next); setMessage("日历显示设置已保存"); };
-  const exportData = async () => { const backup = await taskRepository.exportBackup(); const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `小步计划备份-${backup.exportedAt.slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 500); setMessage("备份已导出"); void loadLogs(); };
+  const exportData = async () => { const backup = await taskRepository.exportBackup(); const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `小步计划备份-${toLocalDateKey(backup.exportedAt)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 500); setMessage("备份已导出"); void loadLogs(); };
   const importData = async (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; event.target.value = ""; if (!file || !confirm("导入将覆盖当前数据，确定继续吗？")) return; try { await taskRepository.importBackup(JSON.parse(await file.text())); setMessage("导入成功"); onImported(); void loadLogs(); } catch (reason) { setMessage(reason instanceof Error ? reason.message : "导入失败"); } };
   const printToday = async () => { const today = todayKey(); const [overdue, tasks] = await Promise.all([taskRepository.getOverdueTasks(today), taskRepository.getTasksForDate(today)]); setPrintData({ includeDone, overdue, day: { date: today, tasks } }); setTimeout(() => window.print(), 80); };
   const countCourses = async () => {

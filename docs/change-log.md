@@ -4,6 +4,12 @@
 
 ## 2026-07-18
 
+- 跨设备同步健壮性修复（根因：Realtime 断连不重连 + 无定时兜底 + create 上传失败静默）：
+  1. Realtime 断连自动重订阅（`realtimeSync.ts`）：CHANNEL_ERROR/TIMED_OUT/CLOSED 不再只 console.warn，改为指数退避重订阅（2/4/8/16→30s 封顶，持续重试）；重订阅前刷新 JWT、拆除旧频道防泄漏，用频道世代（epoch）作废陈旧回调避免 CLOSED 触发重连风暴；重订阅成功照旧补一次全量拉取。
+  2. 定时兜底拉取：每 3 分钟触发一次 refreshFromCloud（共用现有 10 秒节流器，与 Realtime/前台事件不叠加），页面不可见时跳过、恢复可见由 visibilitychange 即时拉。
+  3. create/update 上传失败纳入黄标：`create`/`update` 改为返回 `{ task, synced }`（本地模式恒 true），App.saveTask 检查 synced——成功才提示"已添加/已更新"，失败则 markUnsynced 挂黄标（复用打钩失败的重试入口），不再无条件误报"已添加"。
+  - 数据层返回签名变更连带：taskRepository/cloudRepository 的 create/update 返回 TaskWriteResult；测试中捕获返回值处做纯解构适配（`const t =` → `const { task: t } =`），断言零改动，45 例全绿。
+  - 真实验证：① 拦截 tasks 上传制造失败 → 新建任务挂黄标+失败提示，恢复网络点重试 → 清标且云端确认收到；② 强制断开 realtime socket 期间往云端插任务 → 退避重订阅后自动补拉恢复（日志见"订阅异常…安排重订阅"），重连后新插入经 realtime 即时送达证稳态干净；③ 页面前台不动、远端插入 → 经 realtime/兜底拉取自动出现，无需手动刷新。tsc 通过。
 - 打卡"历史欠账"修复——新增打卡生效起点：
   1. Task 新增 `streakStartDate`（本地日 YYYY-MM-DD）：update/create 里 enableStreak 从关到开自动写当天、从开到关自动清除，用户不手填、表单不暴露。
   2. 应做日判定统一在 requiredItemsFor 入口截断：早于该任务 streakStartDate 的日期一律非应做（off 穿过，不算漏卡不算打卡），总打卡/单项连续/每日打卡项/补卡校验全部生效；无起点的存量任务暂不截断，待确认后修复。

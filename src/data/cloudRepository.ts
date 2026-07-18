@@ -19,6 +19,7 @@ import type {
   Course,
   BackupData,
   SyncResult,
+  TaskWriteResult,
 } from "../types/task";
 import { taskRepository } from "./taskRepository";
 import { getWeekStartKey, getWeekEndKey, getMonthKey, getMonthBounds, todayKey, toDateKey } from "../utils/date";
@@ -453,33 +454,38 @@ export const cloudRepository = {
 
   // ── Write methods ─────────────────────────────────────────────────────────
 
-  async create(draft: TaskDraft) {
-    const task = await taskRepository.create(draft);
+  async create(draft: TaskDraft): Promise<TaskWriteResult> {
+    const { task } = await taskRepository.create(draft);
+    let synced = true;
     if (_familyId) {
-      await upsertTask(task, _familyId).catch((e) =>
-        notifySyncError("任务云端同步失败", e)
-      );
+      await upsertTask(task, _familyId).catch((e) => {
+        notifySyncError("任务云端同步失败", e);
+        synced = false;
+      });
     }
-    return task;
+    return { task, synced };
   },
 
-  async update(id: string, changes: Partial<TaskDraft>) {
+  async update(id: string, changes: Partial<TaskDraft>): Promise<TaskWriteResult> {
     const checklistChanged = Object.prototype.hasOwnProperty.call(changes, "checklistItems");
-    const task = await taskRepository.update(id, changes);
+    const { task } = await taskRepository.update(id, changes);
+    let synced = true;
     if (_familyId) {
-      await upsertTask(task, _familyId).catch((e) =>
-        notifySyncError("任务云端同步失败", e)
-      );
+      await upsertTask(task, _familyId).catch((e) => {
+        notifySyncError("任务云端同步失败", e);
+        synced = false;
+      });
       if (checklistChanged && task.parentTaskId) {
         const parent = await db.tasks.get(task.parentTaskId);
         if (parent) {
-          await upsertTask(parent, _familyId).catch((e) =>
-            notifySyncError("父任务云端同步失败", e)
-          );
+          await upsertTask(parent, _familyId).catch((e) => {
+            notifySyncError("父任务云端同步失败", e);
+            synced = false;
+          });
         }
       }
     }
-    return task;
+    return { task, synced };
   },
 
   async remove(id: string) {

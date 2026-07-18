@@ -2,7 +2,7 @@ import { addDays, eachDayOfInterval, getDay, parseISO } from "date-fns";
 import { db } from "./db";
 import type {
   ActivityActionType, ActivityLog, BackupData, Course, MainCategory, OccurrenceStatus, PlanOverviewItem, PlanPeriod, PlanPeriodType, ReadingLog, RolloverMode, SyncResult, Task, TaskDisplay,
-  TaskDraft, TaskOccurrenceStatus, TaskStatus,
+  TaskDraft, TaskOccurrenceStatus, TaskStatus, TaskWriteResult,
 } from "../types/task";
 import { getMonthBounds, getMonthKey, getWeekEndKey, getWeekStartKey, isDateInRange, todayKey, toDateKey, toLocalDateKey } from "../utils/date";
 import { taskOccursOn } from "../utils/recurrence";
@@ -525,7 +525,7 @@ export const taskRepository = {
     return remaining;
   },
 
-  async create(draft: TaskDraft) {
+  async create(draft: TaskDraft): Promise<TaskWriteResult> {
     const now = new Date().toISOString();
     const normalized = normalizeDraft(draft);
     // 表单可直接以 done 状态新建：与 update 同规则联动 completedAt，避免 done 无 completedAt 的脏数据
@@ -537,10 +537,11 @@ export const taskRepository = {
       await db.tasks.add(task);
       await writeLog("create", "task", { entityId: task.id, entityTitle: task.title, afterSnapshot: task });
     });
-    return task;
+    // 本地写入即视为已同步（本地模式无云端概念）；云端模式由 cloudRepository 覆盖 synced
+    return { task, synced: true };
   },
 
-  async update(id: string, changes: Partial<TaskDraft>) {
+  async update(id: string, changes: Partial<TaskDraft>): Promise<TaskWriteResult> {
     const existing = await db.tasks.get(id);
     if (!existing) throw new Error("找不到要更新的任务");
     const now = new Date().toISOString();
@@ -563,7 +564,7 @@ export const taskRepository = {
       await writeLog("edit", "task", { entityId: id, entityTitle: task.title, beforeSnapshot: existing, afterSnapshot: task });
       if (checklistChanged) result = (await recomputeStatusFromChecklist(id, existing)).task ?? task;
     });
-    return result;
+    return { task: result, synced: true };
   },
 
   async copyToDate(id: string, date: string) {

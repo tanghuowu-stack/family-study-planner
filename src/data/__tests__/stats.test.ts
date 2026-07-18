@@ -366,7 +366,7 @@ describe("streakStartDate 打卡生效起点（历史欠账保护）", () => {
   });
 
   it("46. 勾选写起点、取消清除、重勾更新起点", async () => {
-    const created = await taskRepository.create(baseStreakDraft(false));
+    const { task: created } = await taskRepository.create(baseStreakDraft(false));
     expect((await db.tasks.get(created.id))?.streakStartDate).toBeUndefined();
 
     await taskRepository.update(created.id, { enableStreak: true });
@@ -382,7 +382,7 @@ describe("streakStartDate 打卡生效起点（历史欠账保护）", () => {
     body = await db.tasks.get(created.id);
     expect(body?.streakStartDate).toBe(todayLocal()); // 重勾起点更新为当天
 
-    const direct = await taskRepository.create(baseStreakDraft(true));
+    const { task: direct } = await taskRepository.create(baseStreakDraft(true));
     expect((await db.tasks.get(direct.id))?.streakStartDate).toBe(todayLocal()); // 新建即勾选也记起点
   });
 });
@@ -399,7 +399,7 @@ const baseStreakDraft = (enable: boolean) => ({
 
 describe("occurrence completedAt 写入路径 + 休息日切换", () => {
   it("30. setOccurrence 转 done 写 completedAt，退出 done 清除（R2 override 仍保留）", async () => {
-    const task = await taskRepository.create({
+    const { task } = await taskRepository.create({
       title: "每日打卡", mainCategory: "school", subCategory: "math", timeType: "recurring",
       schedulePattern: "dailyRecurring", startDate: "2026-07-01", status: "todo",
       rolloverMode: "keepOverdue", allowRollover: false, childVisible: true, enableStreak: true,

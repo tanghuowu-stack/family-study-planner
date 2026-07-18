@@ -75,8 +75,13 @@ export default function App() {
   const saveTask = async (draft: TaskDraft, force = false) => {
     const conflicts = force ? [] : await repo().findTimeConflicts(draft, form.task?.id);
     if (conflicts.length) throw new Error(`TIME_CONFLICT:${conflicts[0].title}`);
-    if (form.task) await repo().update(form.task.id, draft); else await repo().create(draft);
-    refresh(); notify(form.task ? "任务已更新" : "任务已添加");
+    const isEdit = !!form.task;
+    const { task, synced } = isEdit ? await repo().update(form.task!.id, draft) : await repo().create(draft);
+    refresh();
+    // 本地写入必成功，云端同步据实反馈：失败则挂黄标（复用打钩失败的重试入口），不再误报"已添加"
+    const key = taskSyncKey(task);
+    if (synced) { clearUnsynced(setUnsyncedTasks, key); notify(isEdit ? "任务已更新" : "任务已添加"); }
+    else { markUnsynced(setUnsyncedTasks, key); notifyFailure("⚠️ 已保存到本地，未同步云端，点任务旁的标记可重试"); }
   };
   const changeStatus = async (task: TaskDisplay, status: TaskStatus) => {
     const key = taskSyncKey(task);

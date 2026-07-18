@@ -179,6 +179,12 @@ export interface SyncResult {
   synced: boolean;
 }
 
+/** 新建/编辑任务的结果：task 落库后的任务，synced 是否已确认同步到云端（本地模式恒为 true） */
+export interface TaskWriteResult {
+  task: Task;
+  synced: boolean;
+}
+
 export interface ReadingLog {
   id: string;
   taskId: string;

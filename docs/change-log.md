@@ -4,6 +4,13 @@
 
 ## 2026-07-18
 
+- 统计页打卡重构（规划内 · 第 1 步数据层）：目标形态冻结为「打卡 = 若干项目各自一张月历」。
+  1. 新增 `getHabitCandidates()`（活跃重复类任务 + 是否已勾选）、`setHabitEnabled(taskId, enabled)`（走 getRepository().update 同步云端）、`getHabitCalendars(month)`（各勾选项目该月逐日 done/missed/off + 单项 currentStreak）。
+  2. 物理删除废弃功能：getStreakData、复活卡全套（applyReviveCard/发卡/accrueReviveCards）、每日覆盖（getDailyCheckItems/setDailyCheckOverride）、getWeekCompletionRate、getSubjectComparison、getPerItemStreaks 及其专用辅助；appSettingsRepository 的复活卡/覆盖读写与类型一并删除（app_settings 云端历史数据不清理、代码不再读写）。保留 getRestDays/toggleRestDay。
+  3. `taskRepository.update` 调整：取消勾选"计入打卡"时保留 streakStartDate（历史月历可回看），仅勾选/重勾时写为当天。
+  4. 统计页 UI 由下一轮整体重写；本轮 StreakPanel 降为占位、WeekStatsPanel 空组件，仅保编译与页面不崩。
+  5. 测试重写：删除废弃功能用例，新增 getHabitCandidates/setHabitEnabled/getHabitCalendars（起点前 off、漏卡 missed、休息日 off、未来 off、跨月切换、单项连续、隔日排期穿过），保留 occurrence completedAt 写入与 toggleRestDay。用例总数 45→29（下降为预期），tsc 通过。
+  - 存量待确认（本轮未执行）：① 2 条已勾 enableStreak 但无 streakStartDate 的任务待回填起点；② 空标题游泳课任务 6e02cf39 待定处置。详见本次会话报告。
 - 跨设备同步健壮性修复（根因：Realtime 断连不重连 + 无定时兜底 + create 上传失败静默）：
   1. Realtime 断连自动重订阅（`realtimeSync.ts`）：CHANNEL_ERROR/TIMED_OUT/CLOSED 不再只 console.warn，改为指数退避重订阅（2/4/8/16→30s 封顶，持续重试）；重订阅前刷新 JWT、拆除旧频道防泄漏，用频道世代（epoch）作废陈旧回调避免 CLOSED 触发重连风暴；重订阅成功照旧补一次全量拉取。
   2. 定时兜底拉取：每 3 分钟触发一次 refreshFromCloud（共用现有 10 秒节流器，与 Realtime/前台事件不叠加），页面不可见时跳过、恢复可见由 visibilitychange 即时拉。

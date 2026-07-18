@@ -62,14 +62,8 @@ export async function saveGroupSortOrder(order: TaskSubjectGroup[]): Promise<voi
 // ── 统计设置（TASK_08）────────────────────────────────────────────────────────
 
 const REST_DAYS_KEY = "stats_rest_days";
-const REVIVE_CARDS_KEY = "stats_revive_cards";
-
-export interface ReviveCards {
-  balance: number;
-  usedDates: string[];
-  /** 已发过卡的里程碑日期（连续第 7/14/21… 天的那一天），保证发卡幂等 */
-  grantedMilestones?: string[];
-}
+// 注：stats_revive_cards / stats_daily_overrides 为 2026-07-18 重构前的历史键，
+// 代码不再读写（云端旧数据不清理，任其保留）。
 
 /** 休息日列表（YYYY-MM-DD），该天打卡跳过不断卡 */
 export async function loadRestDays(): Promise<string[]> {
@@ -78,36 +72,4 @@ export async function loadRestDays(): Promise<string[]> {
 
 export async function saveRestDays(days: string[]): Promise<void> {
   return saveJsonSetting(REST_DAYS_KEY, [...new Set(days)].sort(), "休息日设置云端同步失败");
-}
-
-export async function loadReviveCards(): Promise<ReviveCards> {
-  return (await loadJsonSetting<ReviveCards>(REVIVE_CARDS_KEY)) ?? { balance: 0, usedDates: [] };
-}
-
-export async function saveReviveCards(cards: ReviveCards): Promise<void> {
-  return saveJsonSetting(REVIVE_CARDS_KEY, cards, "复活卡数据云端同步失败");
-}
-
-const DAILY_OVERRIDES_KEY = "stats_daily_overrides";
-
-export interface DailyCheckOverride {
-  added: string[];
-  removed: string[];
-}
-
-/**
- * 每日打卡项手动覆盖，按日期键整包存一个 jsonb：
- * { "YYYY-MM-DD": { added: taskId[], removed: taskId[] } }。
- * 选整包而非每日一行：覆盖是低频例外操作、数据量小（一年几十个键），
- * 整存整取直接复用 loadJsonSetting 泛型与 (family_id,key) 唯一约束，
- * 免去按日期范围查询和逐行清理；无该日键 = 该日完全走默认口径。
- */
-export type DailyOverrides = Record<string, DailyCheckOverride>;
-
-export async function loadDailyOverrides(): Promise<DailyOverrides> {
-  return (await loadJsonSetting<DailyOverrides>(DAILY_OVERRIDES_KEY)) ?? {};
-}
-
-export async function saveDailyOverrides(overrides: DailyOverrides): Promise<void> {
-  return saveJsonSetting(DAILY_OVERRIDES_KEY, overrides, "打卡项设置云端同步失败");
 }

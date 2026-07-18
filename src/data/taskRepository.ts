@@ -552,9 +552,10 @@ export const taskRepository = {
       if (changes.status === "done") merged.completedAt = now;
       else if (existing.status === "done") merged.completedAt = undefined;
     }
-    // 打卡生效起点：勾上"计入打卡"记当天（本地日），取消时清除；用户不手填、表单不暴露
-    if (Object.prototype.hasOwnProperty.call(changes, "enableStreak") && changes.enableStreak !== existing.enableStreak) {
-      merged.streakStartDate = changes.enableStreak === true ? todayKey() : undefined;
+    // 打卡生效起点：勾上"计入打卡"记当天（本地日），重勾更新为新起点；
+    // 取消时保留起点（历史月历可回看，2026-07-18 重构）。用户不手填、表单不暴露。
+    if (Object.prototype.hasOwnProperty.call(changes, "enableStreak") && changes.enableStreak === true && existing.enableStreak !== true) {
+      merged.streakStartDate = todayKey();
     }
     const task = sanitizeTaskWrite(merged, existing.status);
     const checklistChanged = Object.prototype.hasOwnProperty.call(changes, "checklistItems");

@@ -4,6 +4,11 @@
 
 ## 2026-07-18
 
+- 统计页打卡重构（规划内 · 第 2 步 UI 整体重写）：统计页三块——打卡区 / 课程节数统计 / 更多设置。
+  1. 新增 `HabitSection.tsx`：顶部「打卡」+「管理打卡项目」「休息日」两入口；每个打卡项目一张月历卡（分类兜底显示名 + 🔥当前连续 + 月份切换 + 周一起始月历网格，绿=完成/红=漏卡/灰=off，图例三种）；所有卡片共享同一当前月份，切月同步。空状态提示"还没有打卡项目，勾选几个每天要做的任务吧"。管理弹窗用 getHabitCandidates + setHabitEnabled 即时生效；休息日弹窗用 getRestDays + toggleRestDay，休息日在月历显示为灰。
+  2. `statsRepository` 的 getHabitCandidates/getHabitCalendars 标题改用 taskShortName（分类兜底显示名），顺带修好空标题任务（如游泳课）显示为"(无标题)"的问题。
+  3. 物理删除：StreakPanel.tsx（含旧总连续/复活卡/徽章/总月历/7天格子/调整今日打卡项/周完成率/学科对比占位）。任务表单移除"计入打卡"勾选框（打卡项目入口只在统计页）。
+  4. 真实验证：勾选钢琴练习→月历卡即时出现；切月三卡同步到 6 月；标记 07-15 休息日→该日月历转灰（missed→off）且连续穿过；取消钢琴练习→卡消失。手机 375px / 平板 768px 布局完好。测试用生产数据已复原（回到原 2 项、休息日清空）。npm test 29 例全绿，tsc 通过。
 - 统计页打卡重构（规划内 · 第 1 步数据层）：目标形态冻结为「打卡 = 若干项目各自一张月历」。
   1. 新增 `getHabitCandidates()`（活跃重复类任务 + 是否已勾选）、`setHabitEnabled(taskId, enabled)`（走 getRepository().update 同步云端）、`getHabitCalendars(month)`（各勾选项目该月逐日 done/missed/off + 单项 currentStreak）。
   2. 物理删除废弃功能：getStreakData、复活卡全套（applyReviveCard/发卡/accrueReviveCards）、每日覆盖（getDailyCheckItems/setDailyCheckOverride）、getWeekCompletionRate、getSubjectComparison、getPerItemStreaks 及其专用辅助；appSettingsRepository 的复活卡/覆盖读写与类型一并删除（app_settings 云端历史数据不清理、代码不再读写）。保留 getRestDays/toggleRestDay。

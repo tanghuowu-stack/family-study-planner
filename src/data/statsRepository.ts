@@ -14,7 +14,7 @@ import { addDays, endOfMonth, parseISO, startOfMonth } from "date-fns";
 import { db } from "./db";
 import { scheduleOccursOn } from "./taskRepository";
 import { getRepository } from "./repositoryProvider";
-import { isOccurrenceSchedule } from "../utils/taskMeta";
+import { isOccurrenceSchedule, taskShortName } from "../utils/taskMeta";
 import { todayKey, toDateKey, toLocalDateKey } from "../utils/date";
 import { loadRestDays, saveRestDays } from "./appSettingsRepository";
 import type { Task, TaskOccurrenceStatus } from "../types/task";
@@ -103,7 +103,7 @@ export async function getHabitCandidates(): Promise<HabitCandidate[]> {
   return tasks
     .filter((t) => statsEligible(t) && isOccurrenceSchedule(t) && t.status !== "cancelled")
     .sort(sortTasks)
-    .map((t) => ({ taskId: t.id, title: t.title || "（无标题）", enabled: t.enableStreak === true }));
+    .map((t) => ({ taskId: t.id, title: taskShortName(t), enabled: t.enableStreak === true }));
 }
 
 /**
@@ -156,7 +156,7 @@ export async function getHabitCalendars(month: string, today: string = todayKey(
     });
     return {
       taskId: task.id,
-      title: task.title || "（无标题）",
+      title: taskShortName(task),
       currentStreak: computeItemStreak(task, today, occByKey, rests),
       days,
     };

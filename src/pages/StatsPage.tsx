@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { TaskItem } from "../components/TaskItem";
 import { CloudLoginPanel } from "../components/CloudLoginPanel";
 import { getCalendarDisplaySettings, saveCalendarDisplaySettings, type CalendarDisplaySettings } from "../data/calendarAnnotations";
-import { StreakPanel } from "../components/StreakPanel";
+import { StreakPanel, WeekStatsPanel } from "../components/StreakPanel";
 import { taskRepository } from "../data/taskRepository";
 import type { ActivityLog, TaskDisplay } from "../types/task";
 import { formatLongDate, todayKey, toLocalDateKey } from "../utils/date";
@@ -39,6 +39,8 @@ export function StatsPage({ onImported, cloudMode }: { onImported: () => void; c
   };
   return <><main className="screen-only mx-auto w-full max-w-4xl px-4 pb-28 pt-6 sm:px-6"><p className="text-xs font-semibold tracking-widest text-sage-700">STATS</p><h1 className="mt-1 text-2xl font-semibold">统计</h1>
     <StreakPanel />
+    <h2 className="mt-6 text-base font-bold text-ink">任务统计</h2>
+    <div className="mt-2"><WeekStatsPanel /></div>
     <section className="mt-4 rounded-2xl border border-stone-100 bg-white p-4 shadow-sm"><h3 className="text-sm font-semibold">课程节数统计</h3><div className="mt-2 flex flex-wrap items-end gap-2"><label className="text-xs text-stone-500">开始日期<input type="date" value={courseStart} onChange={(event) => setCourseStart(event.target.value)} className="mt-1 block rounded-lg border px-2.5 py-1.5 text-sm text-stone-700" /></label><label className="text-xs text-stone-500">结束日期<input type="date" value={courseEnd} onChange={(event) => setCourseEnd(event.target.value)} className="mt-1 block rounded-lg border px-2.5 py-1.5 text-sm text-stone-700" /></label><button onClick={countCourses} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white">统计</button></div>{courseStats && <CourseStatistics data={courseStats} />}</section>
     {message && <p className="mt-4 rounded-xl bg-sage-50 px-4 py-3 text-sm text-sage-700">{message}</p>}
     <section className="mt-6 rounded-2xl border border-stone-100 bg-white p-4 shadow-sm"><button onClick={() => setMoreSettingsOpen(!moreSettingsOpen)} className="flex w-full items-center justify-between text-left"><span className="font-semibold">更多设置</span><span className="inline-flex items-center gap-1 text-xs text-stone-500">{moreSettingsOpen ? "收起" : "展开"}<ChevronDown className={`h-4 w-4 transition ${moreSettingsOpen ? "rotate-180" : ""}`} /></span></button>

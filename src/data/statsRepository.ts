@@ -276,6 +276,67 @@ export async function setDailyCheckOverride(
   return overrides;
 }
 
+// ── 单项连续 ─────────────────────────────────────────────────────────────────
+
+export type PerItemDayStatus = "done" | "missed" | "off";
+
+export interface PerItemStreak {
+  taskId: string;
+  title: string;
+  /** 该项目自己的当前连续天数 */
+  currentStreak: number;
+  /** 最近 7 个自然日（升序，含今天）：done 完成 / missed 应做未完成 / off 非应做日或休息日 */
+  recentDays: { date: string; status: PerItemDayStatus }[];
+}
+
+/**
+ * 每个 enableStreak 活跃任务的单项连续：
+ * - 应做日与总打卡同源（requiredItemsFor，含当日手动覆盖与单日 cancelled 剔除）；
+ * - 休息日跳过；总打卡的复活卡补卡日对所有项目视同完成；
+ * - 应做日完成 +1、应做日未完成断、非应做日穿过；今天未完成不算断（当天未结束）。
+ */
+export async function getPerItemStreaks(today: string = todayKey()): Promise<PerItemStreak[]> {
+  const ctx = await loadDayContext();
+  const [restDays, cards] = await Promise.all([loadRestDays(), loadReviveCards()]);
+  const rests = new Set(restDays);
+  const revived = new Set(cards.usedDates);
+  const requiredCache = new Map<string, Set<string>>();
+  const requiredIds = (d: string): Set<string> => {
+    let cached = requiredCache.get(d);
+    if (!cached) {
+      cached = new Set(requiredItemsFor(d, ctx).map((i) => i.task.id));
+      requiredCache.set(d, cached);
+    }
+    return cached;
+  };
+  const capDate = toDateKey(addDays(parseISO(today), -DAY_SCAN_CAP));
+
+  const items = [...ctx.defaults].sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || a.createdAt.localeCompare(b.createdAt));
+  return items.map((task) => {
+    const isRequired = (d: string) => requiredIds(d).has(task.id);
+    const ok = (d: string) => revived.has(d) || itemSatisfied(task, d, ctx);
+    // 该项排期起点之前无需回看
+    const itemStart = task.date ?? task.recurrence?.startDate ?? task.startDate ?? (task.specificDates?.length ? [...task.specificDates].sort()[0] : capDate);
+    const floor = itemStart > capDate ? itemStart : capDate;
+
+    let currentStreak = 0;
+    let cursor = today;
+    if (isRequired(cursor) && !rests.has(cursor) && !ok(cursor)) cursor = prevDayKey(cursor); // 今天未完成不算断
+    while (cursor >= floor) {
+      if (rests.has(cursor) || !isRequired(cursor)) { cursor = prevDayKey(cursor); continue; }
+      if (!ok(cursor)) break;
+      currentStreak++;
+      cursor = prevDayKey(cursor);
+    }
+
+    const recentDays = listDays(toDateKey(addDays(parseISO(today), -6)), today).map((d) => ({
+      date: d,
+      status: (rests.has(d) || !isRequired(d) ? "off" : ok(d) ? "done" : "missed") as PerItemDayStatus,
+    }));
+    return { taskId: task.id, title: task.title || "（无标题）", currentStreak, recentDays };
+  });
+}
+
 // ── 复活卡 ───────────────────────────────────────────────────────────────────
 
 /**

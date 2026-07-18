@@ -4,6 +4,12 @@
 
 ## 2026-07-18
 
+- 统计页打卡体验重构：
+  1. 数据层新增 `getPerItemStreaks()`：每个 enableStreak 活跃任务的单项连续天数 + 最近 7 个自然日状态（done/missed/off）。应做日与总打卡同源（requiredItemsFor，含当日手动覆盖），休息日跳过、总打卡复活卡补卡日对所有项视同完成、非应做日穿过不断、今天未完成不算断。测试 42-44（单项正确、断卡互不影响、隔日排期穿过），现有 40 例未改动，共 43 例全绿。
+  2. 统计页重组为两个区：打卡区（分组容器 border-mint bg-mint/40：总连续卡片 + 我的打卡项目七日格子列表 + 打卡月历 + 徽章）与"任务统计"区（周完成率、学科对比、课程节数统计，样式不变）。
+  3. 总卡片文案修正：无打卡项目显示"还没有打卡项目，去任务里勾选「计入打卡」"；有项目按三态显示（今日打卡完成 / 还差 N 项 / 今日无需打卡）。
+  4. 月历漏卡日红色标出（missedDays，rose 系，style.md §功能色已补规则）；新增「调整今日打卡项」弹窗（getDailyCheckItems/setDailyCheckOverride，可临时增减今天的打卡项）。
+  5. 真实验证：造计算/听写/钢琴三个每日打卡任务，完成 2 个 → 单项各 🔥1/钢琴 0、总打卡"还差 N 项"、月历今日红圈；经调整弹窗移出其他项后完成第 3 个 → 总打卡 +1、"今日打卡完成"、今日转绿；被移出项的当天格子正确转灰。手机/平板双尺寸无破版，测试数据已清理复原。
 - 打卡判定改为三态"应做全清"制（数据层）：
   1. 打卡日 = 当天所有应做打卡项全部完成。应做项 = 当天排期到的 enableStreak 任务（occurrence 类 scheduleOccursOn、非 occurrence 类日期字段落当天；单日/整体 cancelled 剔除）；应做为 0 = "无需打卡"，与休息日同等被连续性跳过。完成归因沿用 toLocalDateKey（非 occurrence 类完成日 ≤ 当天视为满足；occurrence 类看当天行 status=done）。
   2. 新增每日打卡项手动覆盖：app_settings `stats_daily_overrides`（整包 jsonb，{日期: {added, removed}}，无键即走默认；选整包因覆盖低频、整存整取复用现有泛型、免范围查询）。新函数 `getDailyCheckItems(date)`（应做项+完成状态+source，UI 勾选数据源）、`setDailyCheckOverride(date, {added, removed})`（去重、added/removed 交集互抵、两空删键）。

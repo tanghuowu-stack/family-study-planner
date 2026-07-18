@@ -18,7 +18,7 @@ const memStore = new Map<string, string>();
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "../db";
 import { taskRepository } from "../taskRepository";
-import { getStreakData, getWeekCompletionRate, getSubjectComparison, applyReviveCard, toggleRestDay, getDailyCheckItems, setDailyCheckOverride } from "../statsRepository";
+import { getStreakData, getWeekCompletionRate, getSubjectComparison, applyReviveCard, toggleRestDay, getDailyCheckItems, setDailyCheckOverride, getPerItemStreaks } from "../statsRepository";
 import { saveRestDays, saveReviveCards } from "../appSettingsRepository";
 import type { Task, TaskOccurrenceStatus } from "../../types/task";
 
@@ -289,6 +289,56 @@ describe("三态打卡判定（2026-07-18 新规则）", () => {
     expect(data.currentStreak).toBe(2);
     expect(data.longestStreak).toBe(2);
     expect(data.missedDays).toEqual([]); // 休息日不进漏卡列表
+  });
+});
+
+describe("getPerItemStreaks 单项连续", () => {
+  const dailyTask = (id: string, startDate: string, overrides: Partial<Task> = {}) =>
+    makeTask(id, { enableStreak: true, timeType: "recurring", schedulePattern: "dailyRecurring", date: undefined, startDate, recurrence: { frequency: "daily", startDate }, ...overrides });
+
+  it("42. 单项连续正确：每日任务连做 3 天，recentDays 状态齐全", async () => {
+    await db.tasks.add(dailyTask("p1", "2026-07-01"));
+    for (const d of ["2026-07-02", "2026-07-03", "2026-07-04"]) {
+      await db.taskOccurrenceStatuses.add(occRow("p1", d, "done", noonOf(d)));
+    }
+    const items = await getPerItemStreaks("2026-07-04");
+    expect(items).toHaveLength(1);
+    expect(items[0].taskId).toBe("p1");
+    expect(items[0].currentStreak).toBe(3); // 07-01 漏卡在前，02-04 连续 3 天
+    const statusByDate = Object.fromEntries(items[0].recentDays.map((r) => [r.date, r.status]));
+    expect(statusByDate["2026-07-01"]).toBe("missed");
+    expect(statusByDate["2026-07-04"]).toBe("done");
+    expect(statusByDate["2026-06-28"]).toBe("off"); // 排期开始前是非应做日
+  });
+
+  it("43. 某项断卡不影响另一项", async () => {
+    await db.tasks.bulkAdd([dailyTask("a", "2026-07-01"), dailyTask("b", "2026-07-01")]);
+    for (const d of ["2026-07-01", "2026-07-02", "2026-07-03"]) {
+      await db.taskOccurrenceStatuses.add(occRow("a", d, "done", noonOf(d)));
+    }
+    await db.taskOccurrenceStatuses.bulkAdd([
+      occRow("b", "2026-07-01", "done", noonOf("2026-07-01")),
+      occRow("b", "2026-07-03", "done", noonOf("2026-07-03")), // b 在 07-02 断了
+    ]);
+    const items = await getPerItemStreaks("2026-07-03");
+    const a = items.find((i) => i.taskId === "a");
+    const b = items.find((i) => i.taskId === "b");
+    expect(a?.currentStreak).toBe(3);
+    expect(b?.currentStreak).toBe(1); // 07-02 漏卡截断，只剩 07-03
+  });
+
+  it("44. 非应做日穿过不断：隔日排期的任务连续按应做日计", async () => {
+    // specificDates 隔日排期：1、3、5 号；2、4 号非应做日
+    await db.tasks.add(makeTask("sp", { enableStreak: true, timeType: "recurring", schedulePattern: "specificDates", date: undefined, specificDates: ["2026-07-01", "2026-07-03", "2026-07-05"] }));
+    for (const d of ["2026-07-01", "2026-07-03", "2026-07-05"]) {
+      await db.taskOccurrenceStatuses.add(occRow("sp", d, "done", noonOf(d)));
+    }
+    const items = await getPerItemStreaks("2026-07-05");
+    expect(items[0].currentStreak).toBe(3); // 三个应做日全完成，中间空日穿过
+    const statusByDate = Object.fromEntries(items[0].recentDays.map((r) => [r.date, r.status]));
+    expect(statusByDate["2026-07-02"]).toBe("off");
+    expect(statusByDate["2026-07-04"]).toBe("off");
+    expect(statusByDate["2026-07-05"]).toBe("done");
   });
 });
 

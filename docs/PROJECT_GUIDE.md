@@ -45,6 +45,8 @@
 ```
 taskRepository.ts       原 IndexedDB 本地数据层（保留，勿删）
 cloudRepository.ts      云端优先数据层，Supabase 读写 + 本地缓存
+statsRepository.ts      习惯打卡数据层（getHabitCandidates / setHabitEnabled /
+                        getHabitCalendars / getRestDays / toggleRestDay），规格见 TASK_08_stats.md
 repositoryProvider.ts   按登录状态选择本地 / 云端 repository
 cloudAuth.ts            邮箱密码登录、family/profile 初始化
 cloudUpload/Read/Download.ts  维护工具：上传/预览/下载
@@ -164,7 +166,7 @@ App.tsx                 正式任务动作汇聚点（增删改查、勾选、�
 **第三层 · 增值**
 - `TASK_06_multi_child.md` — 多孩子档案（先单账号多档案）
 - `TASK_07_voice_input.md` — 语音输入 + AI 解析任务
-- `TASK_08_stats.md` — 统计趋势 + 家长周报
+- `TASK_08_stats.md` — 习惯打卡月历（已上线；原"统计趋势+家长周报"构想缩窄为按项目打卡，卡内有最终规格）
 
 **每张任务卡里都会标注：建议用哪个模型（省 Token）、是否依赖前置任务、验收标准。**
 
@@ -201,9 +203,9 @@ App.tsx                 正式任务动作汇聚点（增删改查、勾选、�
 - **P2** exportBackup（`taskRepository.ts:791`）不含 courses 表，恢复备份后任务 courseId 悬空。
 - **P2** remove 级联软删子任务但 restore（`taskRepository.ts:660`）只恢复本体不级联恢复子任务，行为不对称。
 
-TASK_08 统计——下一轮 UI 清单（2026-07-18 记，数据层已就位于 `statsRepository.ts`）：
+TASK_08 习惯打卡（2026-07-18 三步重构完成：数据层 → UI → 文档，最终规格见 `TASK_08_stats.md`）：
 
-- 任务表单加「计入连续打卡」勾选项（写 `enableStreak`）。**上线前必须先在 Supabase 执行 `docs/supabase-migration-stats.sql`**（tasks 加 enable_streak 列；迁移前前端不会向该列写值，同步不受影响）。
-- ~~复活卡"申请 → 家长确认"交互流程；发卡逻辑~~（2026-07-18 已完成）。
-- 休息日标记入口（数据层 `toggleRestDay` 已就位）。
-- 每日打卡项手动增减的勾选界面（数据层 `getDailyCheckItems` / `setDailyCheckOverride` 已就位，2026-07-18）。
+- ~~任务表单加「计入连续打卡」勾选项~~（已按最终形态改为**只在统计页「管理打卡项目」设置**，表单勾选框已移除；`supabase-migration-stats.sql` 与 `supabase-migration-streak-start.sql` 均已执行）。
+- ~~复活卡、每日打卡项覆盖、休息日入口~~（复活卡与每日覆盖已随重构**废弃删除**；休息日入口已在统计页上线）。
+- **待确认后执行**：2 条存量任务缺 `streakStartDate`（16baeb12"阅读"建议回填 2026-06-26、58054fec"五年级课内课外背诵"建议回填 2026-07-02，取各自首次完成日）。回填前这两条按"无起点不截断"处理，历史排期日全部计入应做（月历里会显示早期漏卡）。
+- **P2** 管理弹窗候选只列重复类任务，但 `getHabitCalendars` 不限任务类型——若存量出现非重复类任务带 `enableStreak=true`，会"月历有卡但管理弹窗无法取消"。当前库中无此数据；收口方案：getHabitCalendars 同样限 `isOccurrenceSchedule`（2026-07-18 记）。

@@ -342,6 +342,61 @@ describe("getPerItemStreaks 单项连续", () => {
   });
 });
 
+describe("streakStartDate 打卡生效起点（历史欠账保护）", () => {
+  it("45. 7/1 创建的任务 7/18 才勾打卡：7/1-7/17 全部 off 不算漏卡，7/18 起正常判定", async () => {
+    await db.tasks.add(makeTask("old", {
+      enableStreak: true, streakStartDate: "2026-07-18",
+      timeType: "recurring", schedulePattern: "dailyRecurring", date: undefined,
+      startDate: "2026-07-01", recurrence: { frequency: "daily", startDate: "2026-07-01" },
+    }));
+    await db.taskOccurrenceStatuses.bulkAdd([
+      occRow("old", "2026-07-18", "done", noonOf("2026-07-18")),
+      occRow("old", "2026-07-19", "done", noonOf("2026-07-19")),
+    ]);
+    const [items, data] = await Promise.all([getPerItemStreaks("2026-07-19"), getStreakData("2026-07-19")]);
+    expect(items[0].currentStreak).toBe(2); // 起点前的 17 个"漏卡日"不再截断
+    const statusByDate = Object.fromEntries(items[0].recentDays.map((r) => [r.date, r.status]));
+    for (const d of ["2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17"]) {
+      expect(statusByDate[d], `${d} 应为 off`).toBe("off");
+    }
+    expect(statusByDate["2026-07-18"]).toBe("done");
+    expect(data.missedDays).toEqual([]); // 总打卡同样不再有历史漏卡
+    expect(data.checkinDates).toEqual(["2026-07-18", "2026-07-19"]);
+    expect(data.currentStreak).toBe(2);
+  });
+
+  it("46. 勾选写起点、取消清除、重勾更新起点", async () => {
+    const created = await taskRepository.create(baseStreakDraft(false));
+    expect((await db.tasks.get(created.id))?.streakStartDate).toBeUndefined();
+
+    await taskRepository.update(created.id, { enableStreak: true });
+    let body = await db.tasks.get(created.id);
+    expect(body?.streakStartDate).toBe(todayLocal()); // 勾选当天（本地日）
+
+    await db.tasks.update(created.id, { streakStartDate: "2026-01-01" }); // 模拟旧起点
+    await taskRepository.update(created.id, { enableStreak: false });
+    body = await db.tasks.get(created.id);
+    expect(body?.streakStartDate).toBeUndefined(); // 取消清除
+
+    await taskRepository.update(created.id, { enableStreak: true });
+    body = await db.tasks.get(created.id);
+    expect(body?.streakStartDate).toBe(todayLocal()); // 重勾起点更新为当天
+
+    const direct = await taskRepository.create(baseStreakDraft(true));
+    expect((await db.tasks.get(direct.id))?.streakStartDate).toBe(todayLocal()); // 新建即勾选也记起点
+  });
+});
+
+const todayLocal = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const baseStreakDraft = (enable: boolean) => ({
+  title: "起点测试", mainCategory: "school", subCategory: "math", timeType: "singleDate",
+  date: "2026-07-20", status: "todo", rolloverMode: "keepOverdue", allowRollover: false,
+  childVisible: true, ...(enable ? { enableStreak: true } : {}),
+}) as never;
+
 describe("occurrence completedAt 写入路径 + 休息日切换", () => {
   it("30. setOccurrence 转 done 写 completedAt，退出 done 清除（R2 override 仍保留）", async () => {
     const task = await taskRepository.create({

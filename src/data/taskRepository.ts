@@ -530,6 +530,8 @@ export const taskRepository = {
     const normalized = normalizeDraft(draft);
     // 表单可直接以 done 状态新建：与 update 同规则联动 completedAt，避免 done 无 completedAt 的脏数据
     if (normalized.status === "done" && !normalized.completedAt) normalized.completedAt = now;
+    // 打卡生效起点：新建即勾选"计入打卡"时记当天（本地日），历史欠账保护
+    if (normalized.enableStreak === true && !normalized.streakStartDate) normalized.streakStartDate = todayKey();
     const task: Task = sanitizeTaskWrite({ ...normalized, id: makeId(), createdAt: now, updatedAt: now });
     await db.transaction("rw", db.tasks, db.activityLogs, async () => {
       await db.tasks.add(task);
@@ -548,6 +550,10 @@ export const taskRepository = {
     if (changes.status && changes.status !== existing.status) {
       if (changes.status === "done") merged.completedAt = now;
       else if (existing.status === "done") merged.completedAt = undefined;
+    }
+    // 打卡生效起点：勾上"计入打卡"记当天（本地日），取消时清除；用户不手填、表单不暴露
+    if (Object.prototype.hasOwnProperty.call(changes, "enableStreak") && changes.enableStreak !== existing.enableStreak) {
+      merged.streakStartDate = changes.enableStreak === true ? todayKey() : undefined;
     }
     const task = sanitizeTaskWrite(merged, existing.status);
     const checklistChanged = Object.prototype.hasOwnProperty.call(changes, "checklistItems");

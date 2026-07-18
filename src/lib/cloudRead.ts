@@ -59,6 +59,7 @@ export function rowToTask(row: any): Task {
     allocationWeekStart: row.allocation_week_start ?? undefined,
     completedAt: row.completed_at ?? undefined,
     enableStreak: row.enable_streak ?? undefined,
+    streakStartDate: row.streak_start_date ?? undefined,
     deletedAt: row.deleted_at ?? undefined,
     deletedByDevice: row.deleted_by_device ?? undefined,
     deletedByActor: row.deleted_by_actor ?? undefined,

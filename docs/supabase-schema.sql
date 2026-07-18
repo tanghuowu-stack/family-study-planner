@@ -124,6 +124,7 @@ create table if not exists public.tasks (
   allocation_week_start  date,
   completed_at           timestamptz,
   enable_streak          boolean not null default false,  -- TASK_08：该任务计入连续打卡
+  streak_start_date      date,                            -- 打卡生效起点：早于此日的排期不算应做
   deleted_at             timestamptz,
   deleted_by_device      text,
   deleted_by_actor       text,

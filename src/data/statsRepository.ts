@@ -89,10 +89,14 @@ async function loadDayContext(): Promise<DayContext> {
   };
 }
 
-/** 当天应做打卡项 =（默认集：当天排期到的 enableStreak 任务，剔除单日 cancelled）− removed + added */
+/** 打卡生效起点保护：勾选"计入打卡"之前的排期日一律非应做（历史欠账不算漏卡）。无起点的存量任务暂不截断 */
+const beforeStreakStart = (task: Task, date: string) => !!task.streakStartDate && date < task.streakStartDate;
+
+/** 当天应做打卡项 =（默认集：当天排期到的 enableStreak 任务，剔除单日 cancelled 与生效起点前）− removed + added */
 function requiredItemsFor(date: string, ctx: DayContext): { task: Task; source: "default" | "added" }[] {
   const items = new Map<string, { task: Task; source: "default" | "added" }>();
   for (const task of ctx.defaults) {
+    if (beforeStreakStart(task, date)) continue;
     if (!scheduleOccursOn(task, date)) continue;
     if (isOccurrenceSchedule(task) && ctx.occByKey.get(`${task.id}:${date}`)?.status === "cancelled") continue;
     items.set(task.id, { task, source: "default" });
@@ -104,6 +108,7 @@ function requiredItemsFor(date: string, ctx: DayContext): { task: Task; source: 
       if (items.has(id)) continue; // 已是默认项
       const task = ctx.taskById.get(id);
       if (!task || !isActiveTask(task) || task.status === "cancelled") continue;
+      if (beforeStreakStart(task, date)) continue;
       if (isOccurrenceSchedule(task) && ctx.occByKey.get(`${task.id}:${date}`)?.status === "cancelled") continue;
       items.set(id, { task, source: "added" });
     }
@@ -315,9 +320,9 @@ export async function getPerItemStreaks(today: string = todayKey()): Promise<Per
   return items.map((task) => {
     const isRequired = (d: string) => requiredIds(d).has(task.id);
     const ok = (d: string) => revived.has(d) || itemSatisfied(task, d, ctx);
-    // 该项排期起点之前无需回看
+    // 该项排期起点 / 打卡生效起点之前无需回看
     const itemStart = task.date ?? task.recurrence?.startDate ?? task.startDate ?? (task.specificDates?.length ? [...task.specificDates].sort()[0] : capDate);
-    const floor = itemStart > capDate ? itemStart : capDate;
+    const floor = [itemStart, task.streakStartDate ?? capDate, capDate].reduce((a, b) => (a > b ? a : b));
 
     let currentStreak = 0;
     let cursor = today;

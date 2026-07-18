@@ -140,6 +140,8 @@ export interface Task {
   allocationWeekStart?: string;
   enableTimer?: boolean;
   enableStreak?: boolean;
+  /** 打卡生效起点（本地日 YYYY-MM-DD）：勾选"计入打卡"时自动写入，取消时清除；早于此日的排期日不算应做（历史欠账保护）。表单不暴露 */
+  streakStartDate?: string;
   checklistItems?: ChecklistItem[];
   completedAt?: string;
   deletedAt?: string;

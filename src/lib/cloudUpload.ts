@@ -88,8 +88,9 @@ function taskToRow(task: Task, familyId: string): Record<string, unknown> {
     deleted_at: toTimestampOrNull(task.deletedAt),
     deleted_by_device: task.deletedByDevice ?? null,
     deleted_by_actor: task.deletedByActor ?? null,
-    // enableStreak 独立列；undefined 被 stripUndefined 剔除，云端未迁移前不会触碰该列
+    // enableStreak/streakStartDate 独立列；enableStreak 为 undefined 时两列均被剔除，云端未迁移前不会触碰
     enable_streak: task.enableStreak,
+    streak_start_date: task.enableStreak === undefined ? undefined : task.streakStartDate ?? null,
     // 低频字段打包进 metadata jsonb
     metadata: buildMetadata(task),
     created_at: toTimestampOrNull(task.createdAt) ?? new Date().toISOString(),

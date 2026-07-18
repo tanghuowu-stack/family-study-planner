@@ -129,8 +129,10 @@ function taskToRow(task: Task, familyId: string): Record<string, unknown> {
     deleted_at: toTimestampOrNull(task.deletedAt),
     deleted_by_device: task.deletedByDevice ?? null,
     deleted_by_actor: task.deletedByActor ?? null,
-    // enableStreak 走独立列；undefined 时被 stripUndefined 剔除，云端未跑迁移前不会触碰该列
+    // enableStreak/streakStartDate 走独立列；enableStreak 为 undefined 时两列均被剔除，
+    // 云端未跑迁移前不会触碰；streak_start_date 在取消勾选时需写 null 清除
     enable_streak: task.enableStreak,
+    streak_start_date: task.enableStreak === undefined ? undefined : task.streakStartDate ?? null,
     metadata: buildMetadata(task),
     created_at: toTimestampOrNull(task.createdAt) ?? new Date().toISOString(),
     updated_at: toTimestampOrNull(task.updatedAt) ?? new Date().toISOString(),

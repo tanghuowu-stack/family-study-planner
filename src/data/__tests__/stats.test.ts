@@ -18,7 +18,7 @@ const memStore = new Map<string, string>();
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "../db";
 import { taskRepository } from "../taskRepository";
-import { getHabitCandidates, setHabitEnabled, getHabitCalendars, toggleRestDay } from "../statsRepository";
+import { getHabitCandidates, setHabitEnabled, setHabitStartDate, getHabitCalendars, toggleRestDay } from "../statsRepository";
 import { saveRestDays } from "../appSettingsRepository";
 import type { Task, TaskOccurrenceStatus } from "../../types/task";
 
@@ -82,6 +82,41 @@ describe("getHabitCandidates", () => {
     expect(list.map((c) => c.taskId).sort()).toEqual(["rec-off", "rec-on"]);
     expect(list.find((c) => c.taskId === "rec-on")?.enabled).toBe(true);
     expect(list.find((c) => c.taskId === "rec-off")?.enabled).toBe(false);
+  });
+
+  it("1b. 已勾选项目带 streakStartDate，未勾选项目该字段为 undefined", async () => {
+    await db.tasks.bulkAdd([
+      dailyHabit("on", "2026-07-10"),
+      makeTask("off", { timeType: "recurring", schedulePattern: "dailyRecurring", date: undefined, startDate: "2026-07-01", recurrence: { frequency: "daily", startDate: "2026-07-01" } }),
+    ]);
+    const list = await getHabitCandidates();
+    expect(list.find((c) => c.taskId === "on")?.streakStartDate).toBe("2026-07-10");
+    expect(list.find((c) => c.taskId === "off")?.streakStartDate).toBeUndefined();
+  });
+});
+
+describe("setHabitStartDate", () => {
+  it("10. 手动改早/改晚起点，月历随之变化", async () => {
+    await db.tasks.add(dailyHabit("h", "2026-07-10"));
+    await db.taskOccurrenceStatuses.add(occRow("h", "2026-07-05", "done", noonOf("2026-07-05")));
+    let cal = (await getHabitCalendars("2026-07", "2026-07-13"))[0];
+    expect(statusMap(cal)["2026-07-05"]).toBe("off"); // 起点 07-10 之前
+
+    await setHabitStartDate("h", "2026-07-01", "2026-07-13");
+    expect((await db.tasks.get("h"))?.streakStartDate).toBe("2026-07-01");
+    cal = (await getHabitCalendars("2026-07", "2026-07-13"))[0];
+    expect(statusMap(cal)["2026-07-05"]).toBe("done"); // 起点改早后，07-05 变为应做且已完成
+
+    await setHabitStartDate("h", "2026-07-12", "2026-07-13");
+    cal = (await getHabitCalendars("2026-07", "2026-07-13"))[0];
+    expect(statusMap(cal)["2026-07-05"]).toBe("off"); // 起点改晚后，07-05 又变回非应做
+  });
+
+  it("11. 不允许晚于今天；不允许修改未勾选任务", async () => {
+    await db.tasks.add(dailyHabit("h", "2026-07-10"));
+    await expect(setHabitStartDate("h", "2026-07-14", "2026-07-13")).rejects.toThrow("不能晚于今天");
+    await db.tasks.add(makeTask("off", { timeType: "recurring", schedulePattern: "dailyRecurring", date: undefined, startDate: "2026-07-01", recurrence: { frequency: "daily", startDate: "2026-07-01" } }));
+    await expect(setHabitStartDate("off", "2026-07-01", "2026-07-13")).rejects.toThrow("不是已勾选的打卡项目");
   });
 });
 

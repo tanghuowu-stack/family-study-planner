@@ -12,6 +12,7 @@ import {
   getHabitCandidates,
   getRestDays,
   setHabitEnabled,
+  setHabitStartDate,
   toggleRestDay,
   type HabitCalendar,
   type HabitCandidate,
@@ -124,6 +125,7 @@ function MonthGrid({ days }: { days: { date: string; status: HabitDayStatus }[] 
 function ManageDialog({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
   const [candidates, setCandidates] = useState<HabitCandidate[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const load = useCallback(() => { getHabitCandidates().then(setCandidates).catch(() => setCandidates([])); }, []);
   useEffect(load, [load]);
 
@@ -131,6 +133,19 @@ function ManageDialog({ onClose, onChanged }: { onClose: () => void; onChanged: 
     setBusy(c.taskId);
     try {
       await setHabitEnabled(c.taskId, !c.enabled);
+      load();
+      onChanged();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const changeStart = async (taskId: string, date: string) => {
+    setEditingId(null);
+    if (!date) return;
+    setBusy(taskId);
+    try {
+      await setHabitStartDate(taskId, date);
       load();
       onChanged();
     } finally {
@@ -147,10 +162,33 @@ function ManageDialog({ onClose, onChanged }: { onClose: () => void; onChanged: 
       ) : (
         <div className="mt-3 max-h-72 space-y-1 overflow-y-auto">
           {candidates.map((c) => (
-            <label key={c.taskId} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-mint/40">
-              <input type="checkbox" checked={c.enabled} disabled={busy === c.taskId} onChange={() => toggle(c)} className="h-4 w-4 rounded" />
-              <span className="min-w-0 flex-1 truncate text-ink">{c.title}</span>
-            </label>
+            <div key={c.taskId} className="rounded-lg px-2 py-2 hover:bg-mint/40">
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <input type="checkbox" checked={c.enabled} disabled={busy === c.taskId} onChange={() => toggle(c)} className="h-4 w-4 rounded" />
+                <span className="min-w-0 flex-1 truncate text-ink">{c.title}</span>
+              </label>
+              {c.enabled && c.streakStartDate && (
+                editingId === c.taskId ? (
+                  <input
+                    type="date"
+                    autoFocus
+                    defaultValue={c.streakStartDate}
+                    max={todayKey()}
+                    onBlur={(e) => changeStart(c.taskId, e.target.value)}
+                    onChange={(e) => changeStart(c.taskId, e.target.value)}
+                    className="ml-6 mt-1 rounded-lg border px-2 py-1 text-xs text-stone-700"
+                  />
+                ) : (
+                  <button
+                    onClick={() => setEditingId(c.taskId)}
+                    disabled={busy === c.taskId}
+                    className="ml-6 mt-0.5 text-xs text-muted hover:text-primary hover:underline"
+                  >
+                    打卡起点 {c.streakStartDate}
+                  </button>
+                )
+              )}
+            </div>
           ))}
         </div>
       )}

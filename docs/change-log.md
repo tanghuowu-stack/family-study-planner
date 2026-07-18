@@ -4,6 +4,9 @@
 
 ## 2026-07-18
 
+- 打卡起点可编辑：「管理打卡项目」弹窗里，已勾选项目旁显示「打卡起点 YYYY-MM-DD」，点击弹出日期选择器可手动改早/改晚，不允许晚于今天，改动即时生效并刷新月历。新增 `setHabitStartDate(taskId, date, today?)`，`HabitCandidate` 补充 `streakStartDate` 字段（仅已勾选项目非空）。TASK_08 文档 §3/§7 同步。测试新增 4 例（候选字段、改早/改晚生效、未来日拒绝、未勾选任务拒绝），33 例全绿。真实验证：改起点后本地+云端同步确认，手机/平板双尺寸弹窗滚动正常。
+- 只读排查同名重复任务「暑假作业-趣味练习题1页」：库中实际是 **3 条活跃 + 1 条已软删**（非预期的"两条"）。①`4b8110e8`（created 07-02，recurring/dailyRecurring，**recurrence.endDate=07-04 但 task.endDate=08-20，排期规则与任务字段不一致**，17 条 occurrence、4 条完成）——有真实历史数据但因排期规则过期实际已停止生成新排期；②`62bf9f02`（created 07-17，timeType=dateRange 却带 schedulePattern=singleDate，当天创建当天标记完成，无 occurrence 行）；③`774aa7b3`（created 07-18 今天，recurring/dateRangeDaily，1 条 occurrence 已完成，配置最规范）；④`b5a5ddbb`（created 07-17，1 分钟后即被软删，已是历史，无需处理）。诊断：用户可能因①的排期规则过期导致任务在"今日"视图消失，误以为任务丢失而重建，重建时 timeType 选择不一致（dateRange vs recurring）又再次重建。处置建议见本次会话报告，未执行删除，等待确认。
+
 - 打卡收尾三件事：
   1. 存量起点回填（走 repository.update 同步云端，本地+云端双核对）：16baeb12"阅读"→ 2026-06-26、58054fec"五年级课内课外背诵"→ 2026-07-02。效果：阅读 6/26 前、背诵 7/1 全部转灰（历史欠账豁免）；阅读 7/1 的红点保留——它在起点之后、当天排期未完成，属真实漏卡非欠账。
   2. 休息日语义改为"免罚而非不计"：完成判定优先于休息日——休息日做完了判 done 并计入连续，没做才是 off（不算漏卡、连续穿过）。改 getHabitCalendars 判定顺序与 computeItemStreak，TASK_08 文档 §4/§6 与数据层注释同步，新增测试 4b（休息日完成→done+连续 4；休息日未完成→off 穿过），30 例全绿。

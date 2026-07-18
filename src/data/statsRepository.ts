@@ -96,6 +96,8 @@ export interface HabitCandidate {
   title: string;
   /** 当前是否已勾选为打卡项目 */
   enabled: boolean;
+  /** 已勾选项目的打卡起点（本地日）；未勾选恒为 undefined */
+  streakStartDate?: string;
 }
 
 /** 可成为打卡项目的活跃重复类任务（供「管理打卡项目」选择器） */
@@ -104,7 +106,12 @@ export async function getHabitCandidates(): Promise<HabitCandidate[]> {
   return tasks
     .filter((t) => statsEligible(t) && isOccurrenceSchedule(t) && t.status !== "cancelled")
     .sort(sortTasks)
-    .map((t) => ({ taskId: t.id, title: taskShortName(t), enabled: t.enableStreak === true }));
+    .map((t) => ({
+      taskId: t.id,
+      title: taskShortName(t),
+      enabled: t.enableStreak === true,
+      streakStartDate: t.enableStreak === true ? t.streakStartDate : undefined,
+    }));
 }
 
 /**
@@ -114,6 +121,17 @@ export async function getHabitCandidates(): Promise<HabitCandidate[]> {
  */
 export async function setHabitEnabled(taskId: string, enabled: boolean): Promise<void> {
   await getRepository().update(taskId, { enableStreak: enabled });
+}
+
+/**
+ * 手动修改已勾选项目的打卡起点（管理弹窗直接编辑，默认值仍是勾选当天，此为手动调整）。
+ * 只允许改动已勾选项目；不允许晚于今天（避免"起点在未来"这种无意义状态）。
+ */
+export async function setHabitStartDate(taskId: string, date: string, today: string = todayKey()): Promise<void> {
+  if (date > today) throw new Error("打卡起点不能晚于今天");
+  const task = await db.tasks.get(taskId);
+  if (!task || task.enableStreak !== true) throw new Error("该任务不是已勾选的打卡项目");
+  await getRepository().update(taskId, { streakStartDate: date });
 }
 
 // ── 打卡月历 ─────────────────────────────────────────────────────────────────

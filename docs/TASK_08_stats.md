@@ -25,10 +25,14 @@
 ## 3. 起点规则（streakStartDate）
 
 - 勾选当天（本地日）自动写入 `streakStartDate`（云端列 `streak_start_date`），
-  用户不手填、任何表单不暴露。
+  默认不需要手填、任务表单不暴露。
 - **起点前的日子一律 off**，不计漏卡（解决"老任务后来才勾打卡，历史全判漏卡"的欠账问题）。
 - 取消勾选：`enableStreak=false`，**起点保留**（历史月历可回看）。
 - 重新勾选：起点**更新为重勾当天**。
+- **手动可调**（2026-07-18 补）：「管理打卡项目」弹窗里，每个已勾选项目旁显示
+  「打卡起点 YYYY-MM-DD」，点击弹出日期选择器可手动改早或改晚；未勾选项目不显示。
+  约束：**不允许晚于今天**（不允许"起点在未来"这种无意义状态）。改动即时生效并刷新月历。
+  函数：`setHabitStartDate(taskId, date)`。
 
 ## 4. 月历口径（getHabitCalendars，三态判定）
 
@@ -70,8 +74,9 @@
 
 | 函数 | 职责 |
 |---|---|
-| `getHabitCandidates()` | 候选任务列表（含 enabled 标记），供管理弹窗 |
+| `getHabitCandidates()` | 候选任务列表（含 enabled 标记、已勾选项目的 streakStartDate），供管理弹窗 |
 | `setHabitEnabled(taskId, enabled)` | 勾选/取消，走 `getRepository().update` 同步云端 |
+| `setHabitStartDate(taskId, date, today?)` | 手动修改已勾选项目的打卡起点，不允许晚于今天 |
 | `getHabitCalendars(month, today?)` | 全部勾选项目该月逐日三态 + currentStreak |
 | `getRestDays()` / `toggleRestDay(date)` | 休息日读取/切换 |
 

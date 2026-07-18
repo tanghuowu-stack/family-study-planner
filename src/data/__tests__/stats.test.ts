@@ -129,7 +129,7 @@ describe("getHabitCalendars", () => {
     expect(cals[0].currentStreak).toBe(1); // 07-13 done，07-12 漏卡截断
   });
 
-  it("4. 休息日 = off 且连续穿过", async () => {
+  it("4. 休息日未完成 = off 且连续免罚穿过", async () => {
     await db.tasks.add(dailyHabit("h", "2026-07-10"));
     for (const d of ["2026-07-10", "2026-07-11", "2026-07-13"]) {
       await db.taskOccurrenceStatuses.add(occRow("h", d, "done", noonOf(d)));
@@ -139,6 +139,18 @@ describe("getHabitCalendars", () => {
     const m = statusMap(cals[0]);
     expect(m["2026-07-12"]).toBe("off");
     expect(cals[0].currentStreak).toBe(3); // 07-13、07-11、07-10，休息日穿过
+  });
+
+  it("4b. 休息日实际完成 = done 且计入连续（免罚而非不计）", async () => {
+    await db.tasks.add(dailyHabit("h", "2026-07-10"));
+    for (const d of ["2026-07-10", "2026-07-11", "2026-07-12", "2026-07-13"]) {
+      await db.taskOccurrenceStatuses.add(occRow("h", d, "done", noonOf(d)));
+    }
+    await saveRestDays(["2026-07-12"]); // 休息日但当天做完了
+    const cals = await getHabitCalendars("2026-07", "2026-07-13");
+    const m = statusMap(cals[0]);
+    expect(m["2026-07-12"]).toBe("done"); // 完成优先于休息日
+    expect(cals[0].currentStreak).toBe(4); // 4 天全计入
   });
 
   it("5. 跨月切换：同一项目不同 month 参数返回对应月，currentStreak 恒从今天算", async () => {

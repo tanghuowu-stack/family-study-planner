@@ -66,8 +66,9 @@ function itemFloor(task: Task, today: string): string {
 }
 
 /**
- * 单项当前连续天数：从今天往回，应做日完成 +1、应做日未完成断，
- * 休息日与非应做日穿过；今天应做但未完成不算断（当天未结束）。
+ * 单项当前连续天数：从今天往回，应做日完成 +1（休息日完成同样计入）、
+ * 应做日未完成断——但休息日"免罚"穿过；非应做日穿过；
+ * 今天应做但未完成不算断（当天未结束）。
  */
 function computeItemStreak(task: Task, today: string, occByKey: OccMap, rests: Set<string>): number {
   const floor = itemFloor(task, today);
@@ -75,12 +76,12 @@ function computeItemStreak(task: Task, today: string, occByKey: OccMap, rests: S
   const ok = (d: string) => itemSatisfied(task, d, occByKey);
   let streak = 0;
   let cursor = today;
-  if (applicable(cursor) && !rests.has(cursor) && !ok(cursor)) cursor = prevDayKey(cursor); // 今天未完成不算断
+  if (applicable(cursor) && !ok(cursor)) cursor = prevDayKey(cursor); // 今天未完成不算断
   while (cursor >= floor) {
-    if (rests.has(cursor) || !applicable(cursor)) { cursor = prevDayKey(cursor); continue; }
-    if (!ok(cursor)) break;
-    streak++;
-    cursor = prevDayKey(cursor);
+    if (!applicable(cursor)) { cursor = prevDayKey(cursor); continue; }
+    if (ok(cursor)) { streak++; cursor = prevDayKey(cursor); continue; }
+    if (rests.has(cursor)) { cursor = prevDayKey(cursor); continue; } // 休息日未完成：免罚穿过
+    break;
   }
   return streak;
 }
@@ -124,7 +125,10 @@ export interface HabitCalendar {
   title: string;
   /** 该项目自身的当前连续天数（与展示月份无关，恒从今天往回算） */
   currentStreak: number;
-  /** 该月逐日状态：done 完成 / missed 应做未完成 / off 非应做日（起点前、未排期、休息日、未来） */
+  /**
+   * 该月逐日状态：done 完成（休息日完成同样算 done）/ missed 应做未完成 /
+   * off 非应做日（起点前、未排期、未来）或"休息日且未完成"（免罚不算漏卡）
+   */
   days: { date: string; status: HabitDayStatus }[];
 }
 
@@ -149,9 +153,10 @@ export async function getHabitCalendars(month: string, today: string = todayKey(
     const days = monthDays.map((date) => {
       let status: HabitDayStatus;
       if (date > today) status = "off";                                    // 未来日
-      else if (rests.has(date)) status = "off";                           // 休息日
       else if (!isApplicable(task, date, occByKey)) status = "off";       // 起点前 / 未排期 / 单日取消
-      else status = itemSatisfied(task, date, occByKey) ? "done" : "missed";
+      else if (itemSatisfied(task, date, occByKey)) status = "done";      // 完成（休息日完成同样算 done）
+      else if (rests.has(date)) status = "off";                           // 休息日未完成：免罚不算漏卡
+      else status = "missed";
       return { date, status };
     });
     return {

@@ -4,6 +4,12 @@
 
 ## 2026-07-19
 
+- 任务管理页子分组内拖拽排序，与今日页共用 sortOrder：
+  1. **排序语义收口**：`taskSort` 改两级——跨分类按分类默认序（`defaultSortOrder` 现算，不依赖存量字段），同分类内按 `sortOrder`（拖拽写 0..n-1），createdAt 兜底。sortOrder 从此只承担组内手动顺序，不再兼任跨分类排序（否则拖拽写小值会把整组提前）。存量数据行为零变化。
+  2. 数据层新增 `reorderTasks(ids)`（taskRepository + cloudRepository 包装）：按数组序写 sortOrder 并刷新 updatedAt（R5 防 LWW 回滚），云端逐条 upsert、失败 notifySyncError。
+  3. 任务管理页 UI：待办区每个二级分类子分组内任务行可拖拽（HTML5 DnD，同今日页分组拖拽机制，GripVertical 手柄），仅同子分组内互拖，子分组显示顺序与今日页组内规则一致；单任务子分组与已完成区不可拖。拖完走 `getRepository().reorderTasks` 即时同步云端并刷新今日页。
+  4. 今日页组内顺序跟随（无时间任务）；带具体时间的任务仍按时间优先排列，不受拖拽影响。
+  5. 测试 +5：reorder 写值与 updatedAt 刷新、今日页顺序跟随、跨分类默认序不受拖拽影响（regression 20-22）；云端 upsert 行集合与未登录不上传（cloudReorder.test，Supabase mock）。40 例全绿，tsc 通过。真实验证：预览环境拖拽「公文计算」到组首 → 本地 sortOrder/云端 upsert/今日页顺序三处确认；手机 375 / 平板 768 布局与手柄正常。iPad 真机触屏手感待家里实测（与今日页分组拖拽同一机制，系统级长按拖动）。
 - 收尾「阅读」16baeb12 不一致 + endDate 镜像联动落地：
   1. `sanitizeTaskWrite` 新增写入联动：`timeType=recurring` 且 `schedulePattern` 为 dailyRecurring/weeklyRecurring 时，`task.endDate` 强制镜像 `recurrence.endDate`（含清空）——该模式下排期只读 recurrence，本体 endDate 无独立消费者，是纯死数据。create/update 单点覆盖（cloudRepository 是包装层自动继承）。回归测试新增 2 例（18 镜像含清空、19 dateRangeDaily 不受影响），35 例全绿，tsc 通过。PROJECT_GUIDE §13 该项记为已实现。
   2. 16baeb12"阅读"`task.endDate` 06-25→07-31：通过今日页编辑保存走真实 update 路径，由新镜像逻辑自动对齐，云端同步确认。到期（07-31）后会真的停止排期，属预期行为，需继续时手动延长。

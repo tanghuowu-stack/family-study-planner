@@ -279,6 +279,38 @@ describe("endDate 镜像 recurrence.endDate（2026-07-19 收口）", () => {
   });
 });
 
+describe("拖拽排序 reorderTasks（2026-07-19）", () => {
+  it("20. 按数组顺序写 sortOrder=0..n-1 并刷新 updatedAt（R5 防 LWW 回滚）", async () => {
+    const { task: a } = await taskRepository.create(baseDraft({ title: "A" }));
+    const { task: b } = await taskRepository.create(baseDraft({ title: "B" }));
+    const before = (await db.tasks.get(a.id))!.updatedAt;
+    await new Promise((r) => setTimeout(r, 5));
+    await taskRepository.reorderTasks([b.id, a.id]);
+    const [ra, rb] = await Promise.all([db.tasks.get(a.id), db.tasks.get(b.id)]);
+    expect(rb?.sortOrder).toBe(0);
+    expect(ra?.sortOrder).toBe(1);
+    expect(ra!.updatedAt > before).toBe(true);
+  });
+
+  it("21. 今日页顺序跟随：reorder 后 getTasksForDate 同分组内按新顺序返回", async () => {
+    const { task: a } = await taskRepository.create(baseDraft({ title: "先建" }));
+    const { task: b } = await taskRepository.create(baseDraft({ title: "后建" }));
+    const { task: c } = await taskRepository.create(baseDraft({ title: "最后建" }));
+    await taskRepository.reorderTasks([c.id, a.id, b.id]);
+    const titles = (await taskRepository.getTasksForDate(today)).map((t) => t.title);
+    expect(titles).toEqual(["最后建", "先建", "后建"]);
+  });
+
+  it("22. 跨分类默认序不受拖拽影响：课外数学 sortOrder=0 仍排在学校数学之后", async () => {
+    const { task: extra } = await taskRepository.create(baseDraft({ title: "课外数学", mainCategory: "extraHomework", extraContentType: "homework" }));
+    await taskRepository.create(baseDraft({ title: "学校数学" }));
+    await taskRepository.reorderTasks([extra.id]);
+    expect((await db.tasks.get(extra.id))?.sortOrder).toBe(0);
+    const titles = (await taskRepository.getTasksForDate(today)).map((t) => t.title);
+    expect(titles).toEqual(["学校数学", "课外数学"]);
+  });
+});
+
 describe("父子任务联动", () => {
   it("14. 子任务全部完成父任务自动 done，一个退回父任务回 todo", async () => {
     const { task: parent } = await taskRepository.create(baseDraft({ title: "父任务" }));

@@ -528,6 +528,18 @@ export const cloudRepository = {
     return count;
   },
 
+  async reorderTasks(ids: string[]): Promise<Task[]> {
+    const tasks = await taskRepository.reorderTasks(ids);
+    if (_familyId) {
+      for (const task of tasks) {
+        await upsertTask(task, _familyId).catch((e) =>
+          notifySyncError("排序云端同步失败", e)
+        );
+      }
+    }
+    return tasks;
+  },
+
   async restore(id: string) {
     await taskRepository.restore(id);
     if (_familyId) {

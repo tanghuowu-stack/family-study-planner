@@ -12,13 +12,18 @@ import { taskSubjectGroup } from "../utils/taskGrouping";
 const makeId = () => crypto.randomUUID();
 const isActiveTask = (task: Task) => !task.deletedAt;
 const unfinished = (status: TaskStatus | OccurrenceStatus) => !["done", "cancelled"].includes(status);
+// 无时间任务两级排序：跨分类按分类默认序（现算，不依赖存量 sortOrder），
+// 同分类内按 sortOrder（管理页拖拽写 0..n-1）——sortOrder 只承担组内手动顺序，
+// 不再兼任跨分类排序，否则拖拽写小值会把整组提到其他分类前面
 const taskSort = (a: Task, b: Task) => {
   const aTime = a.startTime ?? a.time;
   const bTime = b.startTime ?? b.time;
   if (aTime && bTime) return aTime.localeCompare(bTime);
   if (aTime) return -1;
   if (bTime) return 1;
-  return (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || a.createdAt.localeCompare(b.createdAt);
+  return defaultSortOrder(a.mainCategory, a.subCategory) - defaultSortOrder(b.mainCategory, b.subCategory)
+    || (a.sortOrder ?? 999) - (b.sortOrder ?? 999)
+    || a.createdAt.localeCompare(b.createdAt);
 };
 const overlaps = (aStart: string, aEnd: string, bStart: string, bEnd: string) => aStart <= bEnd && aEnd >= bStart;
 
@@ -681,6 +686,19 @@ export const taskRepository = {
       await writeLog("batchDelete", "task", { entityTitle: `批量删除 ${tasks.length} 项`, beforeSnapshot: tasks, afterSnapshot: { taskIds: tasks.map((task) => task.id), deletedAt: now } });
     });
     return tasks.length;
+  },
+
+  // 管理页拖拽排序：按数组顺序写 sortOrder=0..n-1。必须刷新 updatedAt（R5：
+  // 不刷新会被下次 pull 按 LWW 相等覆盖回滚），云端上传由 cloudRepository 包装层负责
+  async reorderTasks(ids: string[]): Promise<Task[]> {
+    const existing = (await db.tasks.bulkGet(ids)).filter((task): task is Task => !!task && !task.deletedAt);
+    if (!existing.length) return [];
+    const now = new Date().toISOString();
+    await db.transaction("rw", db.tasks, db.activityLogs, async () => {
+      await Promise.all(ids.map((id, index) => db.tasks.update(id, { sortOrder: index, updatedAt: now })));
+      await writeLog("edit", "task", { entityTitle: `拖拽排序 ${existing.length} 项`, beforeSnapshot: existing.map(({ id, sortOrder }) => ({ id, sortOrder })), afterSnapshot: { taskIds: ids } });
+    });
+    return (await db.tasks.bulkGet(ids)).filter((task): task is Task => !!task);
   },
 
   async restore(id: string) {

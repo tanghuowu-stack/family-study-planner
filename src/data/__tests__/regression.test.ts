@@ -256,6 +256,29 @@ describe("completedAt 一致性（2026-07-17 审查修复）", () => {
   });
 });
 
+describe("endDate 镜像 recurrence.endDate（2026-07-19 收口）", () => {
+  it("18. dailyRecurring 创建/更新时本体 endDate 强制跟随 recurrence.endDate（含清空）", async () => {
+    const end = dayOffset(30);
+    const { task } = await taskRepository.create(recurringDraft({
+      endDate: yesterday,
+      recurrence: { frequency: "daily", startDate: dayOffset(-3), endDate: end },
+    }));
+    expect((await db.tasks.get(task.id))?.endDate).toBe(end);
+    // recurrence.endDate 清空（长期）时本体 endDate 一并清空
+    await taskRepository.update(task.id, { recurrence: { frequency: "daily", startDate: dayOffset(-3) } });
+    expect((await db.tasks.get(task.id))?.endDate).toBeUndefined();
+  });
+
+  it("19. dateRangeDaily 不受镜像影响：本体 startDate/endDate 是权威源", async () => {
+    const end = dayOffset(10);
+    const { task } = await taskRepository.create(baseDraft({
+      timeType: "recurring", schedulePattern: "dateRangeDaily", date: undefined,
+      startDate: dayOffset(-2), endDate: end,
+    }));
+    expect((await db.tasks.get(task.id))?.endDate).toBe(end);
+  });
+});
+
 describe("父子任务联动", () => {
   it("14. 子任务全部完成父任务自动 done，一个退回父任务回 todo", async () => {
     const { task: parent } = await taskRepository.create(baseDraft({ title: "父任务" }));

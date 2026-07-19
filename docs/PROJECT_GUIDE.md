@@ -207,5 +207,6 @@ TASK_08 习惯打卡（2026-07-18 三步重构完成：数据层 → UI → 文�
 
 - ~~任务表单加「计入连续打卡」勾选项~~（已按最终形态改为**只在统计页「管理打卡项目」设置**，表单勾选框已移除；`supabase-migration-stats.sql` 与 `supabase-migration-streak-start.sql` 均已执行）。
 - ~~复活卡、每日打卡项覆盖、休息日入口~~（复活卡与每日覆盖已随重构**废弃删除**；休息日入口已在统计页上线）。
-- **待确认后执行**：2 条存量任务缺 `streakStartDate`（16baeb12"阅读"建议回填 2026-06-26、58054fec"五年级课内课外背诵"建议回填 2026-07-02，取各自首次完成日）。回填前这两条按"无起点不截断"处理，历史排期日全部计入应做（月历里会显示早期漏卡）。
+- ~~**待确认后执行**：2 条存量任务缺 `streakStartDate` 回填~~（07-18 已回填；**07-19 家长在管理弹窗手动把全部 6 个打卡项目起点统一设为 2026-07-02，这是最终意图，后续会话勿再"纠正"回首次完成日**）。
 - **P2** 管理弹窗候选只列重复类任务，但 `getHabitCalendars` 不限任务类型——若存量出现非重复类任务带 `enableStreak=true`，会"月历有卡但管理弹窗无法取消"。当前库中无此数据；收口方案：getHabitCalendars 同样限 `isOccurrenceSchedule`（2026-07-18 记）。
+- ~~dailyRecurring/weeklyRecurring 的 `task.endDate` 与 `recurrence.endDate` 无校验联动，会不断产生死数据不一致（4b8110e8/16baeb12 类）~~（**2026-07-19 已实现**：`sanitizeTaskWrite` 写入时强制 `task.endDate` 镜像 `recurrence.endDate`（含清空），create/update 全覆盖，回归测试 18/19 锁住。存量 3 条陈旧 `task.endDate`（14d89f76 钢琴练习 / 4fe47ec3 FCE听写 / 78b72d1d 公文计算，recurrence 均为长期）对排期无影响，下次保存时自动清洗，无需手工处理）。

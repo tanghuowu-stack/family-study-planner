@@ -158,6 +158,11 @@ function sanitizeTaskWrite(task: Task, previousStatus?: TaskStatus): Task {
     if (!["todo", "cancelled"].includes(clean.status)) clean.status = previousStatus && ["todo", "cancelled"].includes(previousStatus) ? previousStatus : "todo";
     clean.completedAt = undefined;
   }
+  // dailyRecurring/weeklyRecurring 排期只读 recurrence.endDate，本体 endDate 无独立消费者，
+  // 写入时强制镜像（含清空），否则两字段渐行渐远、无从校验（2026-07-19 收口 4b8110e8/16baeb12 类不一致）
+  if (clean.timeType === "recurring" && ["dailyRecurring", "weeklyRecurring"].includes(clean.schedulePattern ?? "") && clean.recurrence) {
+    clean.endDate = clean.recurrence.endDate;
+  }
   return clean;
 }
 

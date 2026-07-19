@@ -4,6 +4,11 @@
 
 ## 2026-07-19
 
+- 收尾「阅读」16baeb12 不一致 + endDate 镜像联动落地：
+  1. `sanitizeTaskWrite` 新增写入联动：`timeType=recurring` 且 `schedulePattern` 为 dailyRecurring/weeklyRecurring 时，`task.endDate` 强制镜像 `recurrence.endDate`（含清空）——该模式下排期只读 recurrence，本体 endDate 无独立消费者，是纯死数据。create/update 单点覆盖（cloudRepository 是包装层自动继承）。回归测试新增 2 例（18 镜像含清空、19 dateRangeDaily 不受影响），35 例全绿，tsc 通过。PROJECT_GUIDE §13 该项记为已实现。
+  2. 16baeb12"阅读"`task.endDate` 06-25→07-31：通过今日页编辑保存走真实 update 路径，由新镜像逻辑自动对齐，云端同步确认。到期（07-31）后会真的停止排期，属预期行为，需继续时手动延长。
+  3. **打卡起点修正取消**：排查发现全部 6 个打卡项目的 `streakStartDate` 是今天由家长在另一设备手动统一设为 2026-07-02（含新启用的分数表/公文计算/FCE/钢琴练习），经用户确认属有意为之，"阅读改回 06-26"不再执行，07-02 为最终意图。统计页确认六张月历渲染正常（起点前灰、起点后按完成着色）。
+  4. 全库只读扫描（dailyRecurring/weeklyRecurring 范围）：4b8110e8/16baeb12 类"两字段都有值且不同"的不一致已清零；余 3 条陈旧 `task.endDate`（钢琴练习 06-21 / FCE听写 06-22 / 公文计算 06-30，recurrence 均为长期无终点）对排期零影响，下次保存自动被镜像清洗，不手工处理。
 - 处置「暑假作业-趣味练习题1页」重复任务（07-18 只读排查的后续）：①`4b8110e8` 的 `recurrence.endDate` 由 07-04 改为与 `task.endDate` 一致的 08-20，恢复正常排期（原有 17 条 occurrence、4 条完成记录不变）；②软删重建品 `62bf9f02`、`774aa7b3`，历史数据保留在 `4b8110e8` 上。均通过真实 UI（任务管理页编辑/删除）走 repository 写入路径完成，本地+云端同步确认无失败请求。今日页确认 `4b8110e8` 正常出现，任务管理页确认排期显示"每日重复｜07-03 至 08-20"。
 - 只读扫描全库 `recurrence.endDate` 与 `task.endDate` 不一致的活跃任务：发现 1 条新增待确认——`16baeb12`（"阅读"，`recurrence.endDate=07-31` 但 `task.endDate=06-25`），本次未处理，等待确认。其余出现的字段差异均为 `recurrence.endDate` 为空（长期/无结束日）的正常形态，不算不一致。
 - npm test 33 例全绿，tsc 通过。

@@ -145,10 +145,19 @@ export function TaskItem({ task, compact = false, print = false, showTimerUI = t
   };
 
   const handleChecklistToggle = (itemId: string, wasDone: boolean) => {
+    const completing = !wasDone;
     setOptimisticItems(prev => ({ ...prev, [itemId]: !wasDone }));
     setItemAnim(prev => ({ ...prev, [itemId]: wasDone ? "unchecking" : "checking" }));
     setTimeout(() => setItemAnim(prev => { const next = { ...prev }; delete next[itemId]; return next; }), wasDone ? 250 : 400);
-    onChecklistToggle?.(task, itemId); // 立即触发
+
+    // 勾完小项前，若正是这个小项自己在计时，先停止计时并保存实际用时——否则计时器留在后台孤儿运行，
+    // 这条小项（可能连带父任务）已经完成却永远拿不到这段用时（同任务级 handleStatusChange 的防线，按小项收窄）
+    const timerBelongsToItem = completing && isRunning && !!onSaveActualTime && activeType === "checklist" && activeId === itemId;
+    if (timerBelongsToItem) {
+      void stop(onSaveActualTime!).then(() => onChecklistToggle?.(task, itemId));
+    } else {
+      onChecklistToggle?.(task, itemId); // 立即触发
+    }
   };
 
   return (

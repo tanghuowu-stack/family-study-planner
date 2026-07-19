@@ -4,6 +4,10 @@
 
 ## 2026-07-19
 
+- 今日页任务级拖拽 + iPad 计时器 bug 修复：
+  1. **今日页学科分组内逐条任务可拖拽**（`DayPage.tsx` 新增 `SortableTaskList`，与任务管理页共用 `getRepository().reorderTasks`）：拖拽作用域是今日页的学科合并粒度（语文/数学/英语/其他，`taskSubjectGroup`），允许跨 `mainCategory`（如把"课外"语文任务拖到"学校作业"语文任务前面）——这与任务管理页按 `mainCategory→subCategory` 分别显示但共用同一个 `sortOrder` 字段是一致的，任务管理页每个子分组内排序不受影响（子集排序不受其他任务 sortOrder 取值影响）。带具体时间的任务始终按时间置顶，不参与拖拽、不显示手柄。
+  2. 相应把 `taskSort` 的跨分组排序键从"按 mainCategory:subCategory 现算默认序"改为"按今日页学科合并粒度现算默认序"（`subjectRank`，基于 `taskSubjectGroup`）——旧键粒度比今日页的显示粒度更细，会导致任务管理页写的 sortOrder 被这里的粗粒度默认序压回原位，今日页的跨 mainCategory 拖拽因此不生效。存量数据验证：现有 baked sortOrder 在各学科桶内本来就单调递增，此改动不引发任何未拖拽任务的可见重排。回归测试相应更新（22 改为验证"可跨 mainCategory 拖到前面"，新增 23 验证"学科分组之间互不干扰"），41 例全绿。
+  3. **修复 iPad 计时器 bug**：计时中的任务小项直接勾选完成（不点计时器自己的"完成计时"按钮）时，正在跑的计时器从未被停止/保存，实际用时静默丢失，同时计时器孤儿运行在 localStorage 里。根因：`TaskItem.tsx` 的 `handleStatusChange`（任务级"标记为完成"）有"先停计时再完成"防线，但 `handleChecklistToggle`（小项勾选）没有这层防线。修复：`handleChecklistToggle` 补齐同款防线，仅在这个小项自己正在计时时才停止+保存。真实复现验证：本地模式建任务→小项计时→直接勾选完成，修复前 `actualMinutes` 缺失且计时器孤儿运行，修复后 `actualMinutes` 正确写入、计时器正常清除。此路径无自动化组件测试覆盖（项目目前只有数据层 Vitest 用例，无 React 组件测试基础设施），仅手动复现验证。
 - 任务管理页子分组内拖拽排序，与今日页共用 sortOrder：
   1. **排序语义收口**：`taskSort` 改两级——跨分类按分类默认序（`defaultSortOrder` 现算，不依赖存量字段），同分类内按 `sortOrder`（拖拽写 0..n-1），createdAt 兜底。sortOrder 从此只承担组内手动顺序，不再兼任跨分类排序（否则拖拽写小值会把整组提前）。存量数据行为零变化。
   2. 数据层新增 `reorderTasks(ids)`（taskRepository + cloudRepository 包装）：按数组序写 sortOrder 并刷新 updatedAt（R5 防 LWW 回滚），云端逐条 upsert、失败 notifySyncError。

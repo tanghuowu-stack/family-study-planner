@@ -7,21 +7,23 @@ import type {
 import { getMonthBounds, getMonthKey, getWeekEndKey, getWeekStartKey, isDateInRange, todayKey, toDateKey, toLocalDateKey } from "../utils/date";
 import { taskOccursOn } from "../utils/recurrence";
 import { defaultSortOrder, isCourseTask, isOccurrenceSchedule, subCategoryLabel } from "../utils/taskMeta";
-import { taskSubjectGroup } from "../utils/taskGrouping";
+import { TASK_SUBJECT_GROUPS, taskSubjectGroup } from "../utils/taskGrouping";
 
 const makeId = () => crypto.randomUUID();
 const isActiveTask = (task: Task) => !task.deletedAt;
 const unfinished = (status: TaskStatus | OccurrenceStatus) => !["done", "cancelled"].includes(status);
-// 无时间任务两级排序：跨分类按分类默认序（现算，不依赖存量 sortOrder），
-// 同分类内按 sortOrder（管理页拖拽写 0..n-1）——sortOrder 只承担组内手动顺序，
-// 不再兼任跨分类排序，否则拖拽写小值会把整组提到其他分类前面
+// 无时间任务两级排序：跨学科分组（今日页语文/数学/英语/其他的合并口径，现算）按分组序，
+// 同分组内按 sortOrder（今日页/管理页拖拽都写这个字段，写 0..n-1）——两处拖拽共用同一个排序空间，
+// 分组口径必须对齐今日页的合并粒度（taskSubjectGroup），而不是管理页更细的 mainCategory:subCategory，
+// 否则今日页合并显示的语文分组里，管理页按更细粒度写的 sortOrder 会被这里的粗粒度默认序悄悄压回原位
+const subjectRank = (task: Task) => TASK_SUBJECT_GROUPS.findIndex((group) => group.key === taskSubjectGroup(task));
 const taskSort = (a: Task, b: Task) => {
   const aTime = a.startTime ?? a.time;
   const bTime = b.startTime ?? b.time;
   if (aTime && bTime) return aTime.localeCompare(bTime);
   if (aTime) return -1;
   if (bTime) return 1;
-  return defaultSortOrder(a.mainCategory, a.subCategory) - defaultSortOrder(b.mainCategory, b.subCategory)
+  return subjectRank(a) - subjectRank(b)
     || (a.sortOrder ?? 999) - (b.sortOrder ?? 999)
     || a.createdAt.localeCompare(b.createdAt);
 };

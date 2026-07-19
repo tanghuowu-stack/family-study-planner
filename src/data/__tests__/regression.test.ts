@@ -301,13 +301,22 @@ describe("拖拽排序 reorderTasks（2026-07-19）", () => {
     expect(titles).toEqual(["最后建", "先建", "后建"]);
   });
 
-  it("22. 跨分类默认序不受拖拽影响：课外数学 sortOrder=0 仍排在学校数学之后", async () => {
+  it("22. 拖拽作用域是今日页的学科合并分组（非管理页更细的 mainCategory:subCategory）：课外数学可拖到学校数学之前", async () => {
     const { task: extra } = await taskRepository.create(baseDraft({ title: "课外数学", mainCategory: "extraHomework", extraContentType: "homework" }));
-    await taskRepository.create(baseDraft({ title: "学校数学" }));
-    await taskRepository.reorderTasks([extra.id]);
-    expect((await db.tasks.get(extra.id))?.sortOrder).toBe(0);
+    const { task: school } = await taskRepository.create(baseDraft({ title: "学校数学" }));
+    await taskRepository.reorderTasks([extra.id, school.id]);
     const titles = (await taskRepository.getTasksForDate(today)).map((t) => t.title);
-    expect(titles).toEqual(["学校数学", "课外数学"]);
+    expect(titles).toEqual(["课外数学", "学校数学"]);
+  });
+
+  it("23. 学科分组之间互不干扰：math 分组内拖拽不影响 chinese 分组任务的相对顺序", async () => {
+    await taskRepository.create(baseDraft({ title: "语文A", subCategory: "chinese" }));
+    await taskRepository.create(baseDraft({ title: "语文B", subCategory: "chinese" }));
+    const { task: mathA } = await taskRepository.create(baseDraft({ title: "数学A" }));
+    const { task: mathB } = await taskRepository.create(baseDraft({ title: "数学B" }));
+    await taskRepository.reorderTasks([mathB.id, mathA.id]);
+    const titles = (await taskRepository.getTasksForDate(today)).map((t) => t.title);
+    expect(titles).toEqual(["语文A", "语文B", "数学B", "数学A"]);
   });
 });
 

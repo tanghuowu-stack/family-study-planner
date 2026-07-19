@@ -5,6 +5,7 @@ import { useSwipe } from "../hooks/useSwipe";
 import { EmptyState } from "../components/EmptyState";
 import { TaskItem } from "../components/TaskItem";
 import { getCalendarAnnotation } from "../data/calendarAnnotations";
+import { getRepository } from "../data/repositoryProvider";
 import { taskRepository } from "../data/taskRepository";
 import type { PlanOverviewItem, TaskDisplay, TaskStatus } from "../types/task";
 import { formatFullDate, fromDateKey, toDateKey, todayKey } from "../utils/date";
@@ -44,7 +45,9 @@ export function DayPage(props: Props) {
   const [overdue, setOverdue] = useState<TaskDisplay[]>([]);
   const [showDone, setShowDone] = useState(true);
   const { order, updateOrder } = useGroupOrder();
-  useEffect(() => { Promise.all([taskRepository.getTasksForDate(props.date), taskRepository.getOverdueTasks(props.date)]).then(([items, late]) => { setTasks(items); setOverdue(late); }); }, [props.date, props.refreshKey]);
+  const reload = () => Promise.all([taskRepository.getTasksForDate(props.date), taskRepository.getOverdueTasks(props.date)]).then(([items, late]) => { setTasks(items); setOverdue(late); });
+  useEffect(() => { reload(); }, [props.date, props.refreshKey]);
+  const reorderTasks = async (ids: string[]) => { await getRepository().reorderTasks(ids); await reload(); };
   const pending = tasks.filter((task) => !["done", "cancelled"].includes(task.status));
   const done = tasks.filter((task) => ["done", "cancelled"].includes(task.status));
   const move = (days: number) => props.onDateChange(toDateKey(addDays(fromDateKey(props.date), days)));
@@ -68,7 +71,7 @@ export function DayPage(props: Props) {
   return <main className="mx-auto w-full max-w-7xl overflow-x-hidden px-4 pb-28 pt-3 sm:px-6 sm:pt-5">
     <div className="mb-5 flex flex-col items-center justify-center"><div className="flex items-center justify-center gap-3 text-center"><h1 className="text-3xl font-bold text-ink sm:text-4xl">{formatFullDate(props.date)}{annotationLabels.length > 0 && <span className="ml-2 text-base font-medium text-amber-700 sm:text-lg">· {annotationLabels.join(" · ")}</span>}{annotation.holidayStatus && <span className={`ml-2 inline-flex rounded-md px-2 py-0.5 align-middle text-sm font-bold ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{annotation.holidayStatus}</span>}</h1><ProgressCircle completed={done.length} total={pending.length + done.length} /></div></div>
     <div className="mb-5 grid grid-cols-3 rounded-2xl border border-stone-100 bg-white p-1.5 text-sm"><button onClick={() => move(-1)} className="rounded-xl px-2 py-2 text-stone-500 hover:bg-stone-50">← 昨天</button><button onClick={() => props.onDateChange(todayKey())} className="rounded-xl px-2 py-2 font-medium text-primary hover:bg-mint">回到今天</button><button onClick={() => move(1)} className="rounded-xl px-2 py-2 text-stone-500 hover:bg-stone-50">明天 →</button></div>
-    <div ref={swipeRef}><section className="rounded-2xl border border-stone-100 bg-white p-4 shadow-card"><div className="border-b border-stone-100 px-1 pb-3.5"><h2 className="text-base font-bold text-ink">今日清单</h2></div>{pending.length ? <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} /> : <div className="p-2"><EmptyState compact /></div>}</section>{overdue.length > 0 && <section className="mt-6 overflow-visible rounded-2xl border border-alert/30 bg-white"><div className="border-b border-alert/30 bg-alert/10 px-4 py-3"><h2 className="font-semibold text-alert">逾期未完成 · {overdue.length}</h2></div>{overdue.map(renderTask)}</section>}{done.length > 0 && <section className="mt-6 rounded-2xl border border-stone-100 bg-white p-4"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-1 py-1 text-base font-bold text-stone-600">已完成 · {done.length}<ChevronDown className={`h-4 w-4 transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <GroupedTaskGrid tasks={done} renderTask={renderTask} order={order} onReorder={updateOrder} />}</section>}</div>
+    <div ref={swipeRef}><section className="rounded-2xl border border-stone-100 bg-white p-4 shadow-card"><div className="border-b border-stone-100 px-1 pb-3.5"><h2 className="text-base font-bold text-ink">今日清单</h2></div>{pending.length ? <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} onTaskReorder={reorderTasks} /> : <div className="p-2"><EmptyState compact /></div>}</section>{overdue.length > 0 && <section className="mt-6 overflow-visible rounded-2xl border border-alert/30 bg-white"><div className="border-b border-alert/30 bg-alert/10 px-4 py-3"><h2 className="font-semibold text-alert">逾期未完成 · {overdue.length}</h2></div>{overdue.map(renderTask)}</section>}{done.length > 0 && <section className="mt-6 rounded-2xl border border-stone-100 bg-white p-4"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-1 py-1 text-base font-bold text-stone-600">已完成 · {done.length}<ChevronDown className={`h-4 w-4 transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <GroupedTaskGrid tasks={done} renderTask={renderTask} order={order} onReorder={updateOrder} />}</section>}</div>
   </main>;
 }
 
@@ -77,11 +80,13 @@ function GroupedTaskGrid({
   renderTask,
   order,
   onReorder,
+  onTaskReorder,
 }: {
   tasks: TaskDisplay[];
   renderTask: (task: TaskDisplay) => ReactNode;
   order: TaskSubjectGroup[];
   onReorder: (newOrder: TaskSubjectGroup[]) => void;
+  onTaskReorder?: (ids: string[]) => Promise<void>;
 }) {
   const [dragKey, setDragKey] = useState<TaskSubjectGroup | null>(null);
   const [dragOverKey, setDragOverKey] = useState<TaskSubjectGroup | null>(null);
@@ -121,11 +126,60 @@ function GroupedTaskGrid({
               <GripVertical className="h-3 w-3 shrink-0 text-stone-300" />
               {group.label}
             </h3>
-            {groupTasks.map(renderTask)}
+            <SortableTaskList tasks={groupTasks} renderTask={renderTask} onReorder={onTaskReorder} />
           </section>
         );
       })}
     </div>
+  );
+}
+
+// 学科分组内逐条任务拖拽（与任务管理页共用 reorderTasks/sortOrder）：只对无具体时间的任务开放，
+// 带时间的任务始终按时间置顶（taskSort 规则），拖拽对它们不产生视觉效果，不提供手柄避免误导
+function SortableTaskList({
+  tasks,
+  renderTask,
+  onReorder,
+}: {
+  tasks: TaskDisplay[];
+  renderTask: (task: TaskDisplay) => ReactNode;
+  onReorder?: (ids: string[]) => Promise<void>;
+}) {
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+  const timed = tasks.filter((task) => task.startTime ?? task.time);
+  const untimed = tasks.filter((task) => !(task.startTime ?? task.time));
+  const sortable = !!onReorder && untimed.length > 1;
+
+  const drop = async (targetId: string) => {
+    if (!sortable || !dragId || dragId === targetId) return;
+    const ids = untimed.map((task) => task.id);
+    const fromIdx = ids.indexOf(dragId);
+    const toIdx = ids.indexOf(targetId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    ids.splice(fromIdx, 1);
+    ids.splice(toIdx, 0, dragId);
+    await onReorder!(ids);
+  };
+
+  return (
+    <>
+      {timed.map(renderTask)}
+      {untimed.map((task) => sortable ? (
+        <div
+          key={task.id}
+          draggable
+          onDragStart={() => setDragId(task.id)}
+          onDragEnd={() => { setDragId(null); setOverId(null); }}
+          onDragOver={(e) => { e.preventDefault(); setOverId(task.id); }}
+          onDrop={(e) => { e.preventDefault(); void drop(task.id); setDragId(null); setOverId(null); }}
+          className={`flex items-start gap-1 transition-all ${dragId === task.id ? "opacity-40" : ""} ${overId === task.id && dragId !== task.id ? "border-t-2 border-primary" : ""}`}
+        >
+          <GripVertical className="mt-4 h-3.5 w-3.5 shrink-0 cursor-grab text-stone-300 active:cursor-grabbing" />
+          <div className="min-w-0 flex-1">{renderTask(task)}</div>
+        </div>
+      ) : <div key={task.id}>{renderTask(task)}</div>)}
+    </>
   );
 }
 

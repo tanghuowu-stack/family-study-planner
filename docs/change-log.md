@@ -4,6 +4,11 @@
 
 ## 2026-07-19
 
+- 计时器回归修复（长期存在的老 bug，非近期改动引入，用法撞上才暴露）：
+  1. **暂停后继续从 0 重算**：根因 [TimerContext.tsx](src/context/TimerContext.tsx) 的"继续"按钮一直复用 `start()`（全新开始逻辑），无条件把 `accumulated` 清零。抽出纯状态转换逻辑到新文件 `src/context/timerStore.ts`（`startStore`/`pauseStore`/`resumeStore`/`calcElapsed`），新增 `resume()`——只重开 `startedAt`、保留 `accumulated`，`TimerControls` 的"继续"按钮改调它。
+  2. **计时/手填实际用时后点整体完成，用时消失**：根因 [taskRepository.ts](src/data/taskRepository.ts) 的 `setDisplayStatus` 已经查询了最新的 `before`（DB 现状）却没用上，写 `checklistItems` 时用的是调用方传入的旧 `task` 快照——若小项刚计时/手填保存了 `actualMinutes`，紧接着点任务整体"标记为完成"，这份旧快照会把刚存的值覆盖掉。改为用 `before?.checklistItems` 兜底。
+  3. 回归测试 +6：`timerStore.test.ts` 新增 3 例（暂停继续保留 accumulated、连续多次暂停继续累加、全新开始 accumulated 恒为 0，纯函数测试不依赖 React）；`regression.test.ts` 新增 2 例（24：旧快照调 setDisplayStatus 不覆盖刚存的 actualMinutes；25：手动输入用时不触发完成动作也能正确保存读出）。46 例全绿，tsc 通过。
+  4. 真实浏览器复现验证（本地模式，与诊断时同一操作序列）：暂停 10 秒→继续，`accumulated` 保留 10 不清零；小项计时 2 秒→立即点整体完成，`actualMinutes` 保留、`status=done`；手动填 33 分钟→正确显示"实33m"。三个症状均确认消失。
 - 今日页任务级拖拽 + iPad 计时器 bug 修复：
   1. **今日页学科分组内逐条任务可拖拽**（`DayPage.tsx` 新增 `SortableTaskList`，与任务管理页共用 `getRepository().reorderTasks`）：拖拽作用域是今日页的学科合并粒度（语文/数学/英语/其他，`taskSubjectGroup`），允许跨 `mainCategory`（如把"课外"语文任务拖到"学校作业"语文任务前面）——这与任务管理页按 `mainCategory→subCategory` 分别显示但共用同一个 `sortOrder` 字段是一致的，任务管理页每个子分组内排序不受影响（子集排序不受其他任务 sortOrder 取值影响）。带具体时间的任务始终按时间置顶，不参与拖拽、不显示手柄。
   2. 相应把 `taskSort` 的跨分组排序键从"按 mainCategory:subCategory 现算默认序"改为"按今日页学科合并粒度现算默认序"（`subjectRank`，基于 `taskSubjectGroup`）——旧键粒度比今日页的显示粒度更细，会导致任务管理页写的 sortOrder 被这里的粗粒度默认序压回原位，今日页的跨 mainCategory 拖拽因此不生效。存量数据验证：现有 baked sortOrder 在各学科桶内本来就单调递增，此改动不引发任何未拖拽任务的可见重排。回归测试相应更新（22 改为验证"可跨 mainCategory 拖到前面"，新增 23 验证"学科分组之间互不干扰"），41 例全绿。

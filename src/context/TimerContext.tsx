@@ -1,15 +1,8 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { calcElapsed, pauseStore, resumeStore, startStore, type TimerStore } from "./timerStore";
 
 const LS_KEY = "familyPlanner.activeTimer";
 const STALE_MS = 12 * 60 * 60 * 1000;
-
-interface TimerStore {
-  targetId: string;      // item.id for checklist, task.id for task-level
-  taskId: string;        // parent task.id (same as targetId for task-level)
-  targetType: "checklist" | "task";
-  startedAt: number | null;
-  accumulated: number;   // seconds for current session only
-}
 
 export type TimerSaveFn = (taskId: string, itemId: string | null, minutes: number) => Promise<void>;
 
@@ -20,6 +13,7 @@ interface TimerCtx {
   isRunning: boolean;
   start: (targetId: string, targetType: "checklist" | "task", taskId: string, saveFn: TimerSaveFn) => Promise<void>;
   pause: () => void;
+  resume: () => void;
   stop: (saveFn: TimerSaveFn) => Promise<void>;
   reset: () => void;
 }
@@ -37,11 +31,6 @@ function readStore(): TimerStore | null {
     }
     return store;
   } catch { return null; }
-}
-
-function calcElapsed(store: TimerStore): number {
-  const fromStart = store.startedAt ? Math.floor((Date.now() - store.startedAt) / 1000) : 0;
-  return store.accumulated + fromStart;
 }
 
 export function TimerProvider({ children }: { children: ReactNode }) {
@@ -83,13 +72,21 @@ export function TimerProvider({ children }: { children: ReactNode }) {
         });
       }
     }
-    persist({ targetId, taskId, targetType, startedAt: Date.now(), accumulated: 0 });
+    persist(startStore(targetId, targetType, taskId));
     setTick(0);
   };
 
   const pause = () => {
     if (!store?.startedAt) return;
-    persist({ ...store, startedAt: null, accumulated: calcElapsed(store) });
+    persist(pauseStore(store));
+  };
+
+  // 恢复暂停中的同一个计时目标：只重开 startedAt，保留 accumulated——
+  // 不走 start()，否则会被当成"全新开始"把 accumulated 清零（2026-07-19 修复回归）
+  const resume = () => {
+    if (!store || store.startedAt) return;
+    persist(resumeStore(store));
+    setTick(0);
   };
 
   const reset = () => { persist(null); setTick(0); };
@@ -115,6 +112,7 @@ export function TimerProvider({ children }: { children: ReactNode }) {
       isRunning: !!store?.startedAt,
       start,
       pause,
+      resume,
       stop,
       reset,
     }}>

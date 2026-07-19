@@ -723,7 +723,9 @@ export const taskRepository = {
     const now = new Date().toISOString();
     let parentId: string | undefined;
     await db.transaction("rw", db.tasks, db.activityLogs, async () => {
-      await db.tasks.update(task.id, { status, completedAt: status === "done" ? now : undefined, checklistItems: task.checklistItems?.map((item) => ({ ...item, done: status === "done" ? true : status === "todo" ? false : item.done })), updatedAt: now });
+      // checklistItems 必须以 before（刚查询的最新库内数据）为准，不能用调用方传入的 task 快照——
+      // 否则计时器/手填实际用时落库后紧接着点整体完成，会被这里的旧快照覆盖回去，实际用时静默丢失（2026-07-19 修复回归）
+      await db.tasks.update(task.id, { status, completedAt: status === "done" ? now : undefined, checklistItems: before?.checklistItems?.map((item) => ({ ...item, done: status === "done" ? true : status === "todo" ? false : item.done })), updatedAt: now });
       await writeLog(status === "done" ? "complete" : "uncomplete", "task", { entityId: task.id, entityTitle: task.title, beforeSnapshot: before, afterSnapshot: { status } });
       parentId = await syncParentCompletion(task.id);
     });

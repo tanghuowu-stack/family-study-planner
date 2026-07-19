@@ -320,6 +320,38 @@ describe("拖拽排序 reorderTasks（2026-07-19）", () => {
   });
 });
 
+describe("计时/手填实际用时不被完成动作覆盖（2026-07-19 回归修复）", () => {
+  it("24. 小项计时/手填实际用时落库后，用旧快照调 setDisplayStatus 整体标记完成，actualMinutes 不丢失", async () => {
+    const { task } = await taskRepository.create(baseDraft({
+      title: "带小项", checklistItems: [{ id: "i1", title: "小项", done: false, sortOrder: 0 }],
+    }));
+    // 模拟 UI 侧持有的旧快照（调用方在 actualMinutes 落库前拿到的 task 对象）
+    const staleSnapshot = { ...task } as TaskDisplay;
+    // 计时器 stop() 落库：只有小项级 actualMinutes 变化，task 本体这份旧快照并不知情
+    await taskRepository.saveActualMinutes(task.id, "i1", 12);
+    // 紧接着（不刷新 UI）用旧快照调用整体"标记为完成"——过去的 bug 会用旧快照的 checklistItems 覆盖掉刚保存的 actualMinutes
+    await taskRepository.setDisplayStatus(staleSnapshot, "done");
+    const after = await db.tasks.get(task.id);
+    expect(after?.status).toBe("done");
+    expect(after?.checklistItems?.[0].done).toBe(true);
+    expect(after?.checklistItems?.[0].actualMinutes).toBe(12);
+  });
+
+  it("25. 手动输入实际用时（不触发完成动作）：任务级与小项级都能正确保存并读出", async () => {
+    const { task: plain } = await taskRepository.create(baseDraft({ title: "无小项任务" }));
+    await taskRepository.update(plain.id, { actualMinutes: 30 });
+    expect((await db.tasks.get(plain.id))?.actualMinutes).toBe(30);
+
+    const { task: withItem } = await taskRepository.create(baseDraft({
+      title: "有小项任务", checklistItems: [{ id: "i2", title: "小项", done: false, sortOrder: 0 }],
+    }));
+    const current = await db.tasks.get(withItem.id);
+    const items = current!.checklistItems!.map((item) => item.id === "i2" ? { ...item, actualMinutes: 8 } : item);
+    await taskRepository.update(withItem.id, { checklistItems: items });
+    expect((await db.tasks.get(withItem.id))?.checklistItems?.[0].actualMinutes).toBe(8);
+  });
+});
+
 describe("父子任务联动", () => {
   it("14. 子任务全部完成父任务自动 done，一个退回父任务回 todo", async () => {
     const { task: parent } = await taskRepository.create(baseDraft({ title: "父任务" }));

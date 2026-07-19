@@ -64,7 +64,7 @@ function TimerControls({
   targetType: "checklist" | "task";
   saveFn: TimerSaveFn;
 }) {
-  const { activeId, elapsed, isRunning, start, pause, stop, reset } = useTimer();
+  const { activeId, elapsed, isRunning, start, pause, resume, stop, reset } = useTimer();
   const isActive = activeId === targetId;
 
   if (!isActive) {
@@ -92,7 +92,7 @@ function TimerControls({
           <Pause className="h-4 w-4" />
         </button>
       ) : (
-        <button type="button" onClick={() => void start(targetId, targetType, taskId, saveFn)} title="继续"
+        <button type="button" onClick={() => resume()} title="继续"
           className="rounded-lg p-1 text-primary hover:bg-mint">
           <Play className="h-4 w-4" />
         </button>

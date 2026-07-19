@@ -4,6 +4,11 @@
 
 ## 2026-07-19
 
+- 修复计时"停止后 1-2 秒实际用时消失"（云端模式特有，本地模式不触发）：
+  1. **根因不是覆盖，是云端下载漏了一个字段映射**：[cloudRead.ts](src/lib/cloudRead.ts) 的 `rowToTask()` 把云端行转回本地 Task 对象时，逐字段核对发现漏了 `actualMinutes`（任务级）——上传方向 `taskToRow` 正确写 `actual_minutes` 列，下载方向却没读回来。停止计时后本地写入、云端 upsert 都正确，但 upsert 触发的 Realtime 自我回声在 ~2 秒后拉取云端数据，`rowToTask` 转换时把这个字段丢了，这份"缺字段"的对象通过 LWW 检查（updatedAt 不算旧）覆盖本地缓存，本地显示因此消失——云端数据全程正确，只是本地缓存被反复读丢。只要还在云端模式，任何一次页面刷新/Realtime 事件/3 分钟定时兜底拉取都会重演，不是偶发。修复：`rowToTask` 补上 `actualMinutes: row.actual_minutes ?? undefined`，紧跟 `estimatedMinutes` 那行。
+  2. **回归测试**：新增 `cloudFieldParity.test.ts`，导出 `taskToRow` 供测试，构造覆盖全部任务级字段的 Task 对象，逐字段做"上传→云端行→下载"往返断言（43 个字段用例）。临时还原漏映射验证测试确实会炸（`actualMinutes` 断言失败），修复后全绿，确认测试真的在防这个回归而非摆设。顺带核对了 taskToRow/rowToTask 全部字段，除 `actualMinutes` 外没有发现其他单向漏映射；发现 `month` 字段（monthGoal 任务用）上传下载都没映射且云端 schema 没有对应列——这是"整体未接入云端"而非"单向漏映射"，性质不同，记入 PROJECT_GUIDE §13 待办，本次不修。
+  3. 89 例全绿（新增 43），tsc 通过。真实云端模式复现验证：开计时器→停止→每 500ms 轮询本地库持续 9.5 秒，`actualMinutes` 全程保持为 1（此前约 2 秒消失），云端 REST 接口直查确认一致，UI 显示"实1m"正常。
+  4. 诊断过程中一度误锁定到错误任务的按钮（同类选择器问题上次也遇到过），核实后确认未误写真实生产数据；用于验证的测试任务均已软删除清理。
 - 计时器回归修复（长期存在的老 bug，非近期改动引入，用法撞上才暴露）：
   1. **暂停后继续从 0 重算**：根因 [TimerContext.tsx](src/context/TimerContext.tsx) 的"继续"按钮一直复用 `start()`（全新开始逻辑），无条件把 `accumulated` 清零。抽出纯状态转换逻辑到新文件 `src/context/timerStore.ts`（`startStore`/`pauseStore`/`resumeStore`/`calcElapsed`），新增 `resume()`——只重开 `startedAt`、保留 `accumulated`，`TimerControls` 的"继续"按钮改调它。
   2. **计时/手填实际用时后点整体完成，用时消失**：根因 [taskRepository.ts](src/data/taskRepository.ts) 的 `setDisplayStatus` 已经查询了最新的 `before`（DB 现状）却没用上，写 `checklistItems` 时用的是调用方传入的旧 `task` 快照——若小项刚计时/手填保存了 `actualMinutes`，紧接着点任务整体"标记为完成"，这份旧快照会把刚存的值覆盖掉。改为用 `before?.checklistItems` 兜底。

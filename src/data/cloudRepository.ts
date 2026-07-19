@@ -88,7 +88,8 @@ function buildMetadata(task: Task): Record<string, unknown> | null {
   return Object.keys(meta).length > 0 ? meta : null;
 }
 
-function taskToRow(task: Task, familyId: string): Record<string, unknown> {
+// 导出供测试用：taskToRow/rowToTask 的字段逐一对照（防止再出现 actualMinutes 那类单向漏映射）
+export function taskToRow(task: Task, familyId: string): Record<string, unknown> {
   return stripUndefined({
     id: task.id,
     family_id: familyId,

@@ -193,6 +193,7 @@ App.tsx                 正式任务动作汇聚点（增删改查、勾选、�
 ## 13. 待办清单（技术债）
 
 - `task_occurrence_statuses` 表缺 `deleted_at` 列，跨设备删除 occurrence 目前无墓碑机制（pull 只增改不删，物理删除不会同步到其他设备的本地缓存）。中期如需此能力再做 schema 迁移；当前靠维护面板「对账清理本地缓存」手动对齐（2026-07-17 记）。
+- `Task.month`（monthGoal 任务用）云端 `tasks` 表没有对应列，`taskToRow`/`rowToTask` 都不映射——不是"漏映射"而是"整体没接入云端"，monthGoal 任务的 month 字段云端模式下不同步。当前未见故障（monthGoal 使用面窄），如要接入需先加 schema 迁移（2026-07-19 排查 actualMinutes 云端漏映射时顺带发现）。
 
 2026-07-17 代码审查遗留（P1/P2，文件位置为审查时行号）：
 

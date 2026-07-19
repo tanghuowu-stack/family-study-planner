@@ -51,6 +51,7 @@ export function rowToTask(row: any): Task {
     startTime: row.start_time ?? undefined,
     endTime: row.end_time ?? undefined,
     estimatedMinutes: row.estimated_minutes ?? undefined,
+    actualMinutes: row.actual_minutes ?? undefined,
     location: row.location ?? undefined,
     note: row.note ?? undefined,
     important: row.important,

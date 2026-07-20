@@ -489,6 +489,18 @@ export const cloudRepository = {
     return { task, synced };
   },
 
+  async endRecurring(id: string, today?: string): Promise<TaskWriteResult> {
+    const { task } = await taskRepository.endRecurring(id, today);
+    let synced = true;
+    if (_familyId) {
+      await upsertTask(task, _familyId).catch((e) => {
+        notifySyncError("任务云端同步失败", e);
+        synced = false;
+      });
+    }
+    return { task, synced };
+  },
+
   async remove(id: string) {
     await taskRepository.remove(id);
     if (_familyId) {

@@ -5,7 +5,7 @@
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "../db";
-import { taskRepository } from "../taskRepository";
+import { taskRepository, scheduleOccursOn } from "../taskRepository";
 import { lwwMerge } from "../cloudRepository";
 import type { Task, TaskDraft, TaskDisplay } from "../../types/task";
 
@@ -310,10 +310,13 @@ describe("拖拽排序 reorderTasks（2026-07-19）", () => {
   });
 
   it("23. 学科分组之间互不干扰：math 分组内拖拽不影响 chinese 分组任务的相对顺序", async () => {
-    await taskRepository.create(baseDraft({ title: "语文A", subCategory: "chinese" }));
-    await taskRepository.create(baseDraft({ title: "语文B", subCategory: "chinese" }));
+    const { task: chineseA } = await taskRepository.create(baseDraft({ title: "语文A", subCategory: "chinese" }));
+    const { task: chineseB } = await taskRepository.create(baseDraft({ title: "语文B", subCategory: "chinese" }));
     const { task: mathA } = await taskRepository.create(baseDraft({ title: "数学A" }));
     const { task: mathB } = await taskRepository.create(baseDraft({ title: "数学B" }));
+    // 先显式确定 chinese 组内顺序（否则同分组同 defaultSortOrder + 同毫秒 createdAt，排序非确定，测试会 flaky）
+    await taskRepository.reorderTasks([chineseA.id, chineseB.id]);
+    // 再在 math 组内拖拽，验证不影响已确定的 chinese 顺序
     await taskRepository.reorderTasks([mathB.id, mathA.id]);
     const titles = (await taskRepository.getTasksForDate(today)).map((t) => t.title);
     expect(titles).toEqual(["语文A", "语文B", "数学B", "数学A"]);
@@ -349,6 +352,31 @@ describe("计时/手填实际用时不被完成动作覆盖（2026-07-19 回归�
     const items = current!.checklistItems!.map((item) => item.id === "i2" ? { ...item, actualMinutes: 8 } : item);
     await taskRepository.update(withItem.id, { checklistItems: items });
     expect((await db.tasks.get(withItem.id))?.checklistItems?.[0].actualMinutes).toBe(8);
+  });
+});
+
+describe("结束长期重复任务 endRecurring（2026-07-20）", () => {
+  it("26. 把 recurrence.endDate 设为昨天，当天起不再排期，本体与历史 occurrence 保留", async () => {
+    const { task } = await taskRepository.create(recurringDraft({
+      recurrence: { frequency: "daily", startDate: dayOffset(-5) },
+    }));
+    // 造一条历史完成 occurrence，验证结束后不被动
+    await db.taskOccurrenceStatuses.put({ id: `${task.id}:${yesterday}`, taskId: task.id, occurrenceDate: yesterday, status: "done", createdAt: today, updatedAt: today } as never);
+
+    await taskRepository.endRecurring(task.id, today);
+    const after = await db.tasks.get(task.id);
+    expect(after?.recurrence?.endDate).toBe(yesterday);
+    expect(after?.endDate).toBe(yesterday);       // §3.2 镜像：本体 endDate 同步
+    expect(after?.deletedAt).toBeUndefined();      // 本体不删
+    expect(scheduleOccursOn(after!, today)).toBe(false);     // 今天起不再排期
+    expect(scheduleOccursOn(after!, yesterday)).toBe(true);  // 昨天仍在排期
+    // 历史 occurrence 完整保留
+    expect((await db.taskOccurrenceStatuses.get(`${task.id}:${yesterday}`))?.status).toBe("done");
+  });
+
+  it("27. 非重复任务调用 endRecurring 抛错，不误伤", async () => {
+    const { task } = await taskRepository.create(baseDraft());
+    await expect(taskRepository.endRecurring(task.id, today)).rejects.toThrow();
   });
 });
 

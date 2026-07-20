@@ -580,6 +580,17 @@ export const taskRepository = {
     return { task: result, synced: true };
   },
 
+  // 「结束」长期重复任务：把 recurrence.endDate 设为结束当天的前一天，使当天起不再排期，
+  // 但任务本体不删、历史 occurrence 完整保留、统计月历卡片继续可见（区别于 remove 的软删）。
+  // 走 update 入口，自动继承 endDate 镜像（sanitizeTaskWrite 把 task.endDate 一并同步）与云端上传。
+  async endRecurring(id: string, today: string = todayKey()): Promise<TaskWriteResult> {
+    const task = await db.tasks.get(id);
+    if (!task) throw new Error("找不到要结束的任务");
+    if (!task.recurrence) throw new Error("该任务不是重复任务，无法结束");
+    const yesterday = toDateKey(addDays(parseISO(today), -1));
+    return this.update(id, { recurrence: { ...task.recurrence, endDate: yesterday } });
+  },
+
   async copyToDate(id: string, date: string) {
     const source = await db.tasks.get(id);
     if (!source) throw new Error("找不到要复制的任务");

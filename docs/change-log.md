@@ -2,6 +2,15 @@
 
 此文件只记录简短变更摘要。以后每次完成项目修改后，在顶部日期下追加一条记录，不需要复制完整需求或实现细节。
 
+## 2026-07-20
+
+- 任务管理页给长期重复任务加独立「结束」按钮（与删除分开）：
+  1. **需求背景**：用户想"停止未来排期但保留历史"，此前只有"删除"（软删本体→任务从今日页排期消失、且因 `statsEligible` 过滤 `isActiveTask` 连打卡月历卡片一起不显示，误以为历史没了，实际 occurrence 从未被删）。「结束」提供正确语义。
+  2. **数据层**：`taskRepository.endRecurring(id, today?)` 把 `recurrence.endDate` 设为结束当天的前一天（当天起 `scheduleOccursOn` 不再命中），走 `update` 入口自动继承 §3.2 的 `task.endDate` 镜像与云端上传；`cloudRepository.endRecurring` 包装同步。本体不软删、历史 occurrence 完整保留、打卡月历卡片继续显示（本体仍 `isActiveTask`）。
+  3. **UI**：`TaskManagementPage` 每行「编辑」与「删除」之间新增琥珀色 `CalendarX`「结束」按钮，仅对仍在排期的长期重复任务显示（`canEndRecurring`：timeType=recurring 且 schedulePattern∈{dailyRecurring,weeklyRecurring} 且无 endDate 或 endDate≥今天）；已完成/取消行不显示。删除按钮维持原样（软删）。App 新增 `endTask` 动作走 `getRepository().endRecurring`，云端失败挂黄标提示。
+  4. 测试 +2（regression 26/27：endDate 设昨天+镜像+本体不删+今天起不排期+历史 occurrence 保留；非重复任务调用抛错）。顺带修复既有 flaky 用例 23（同分组同 defaultSortOrder + 同毫秒 createdAt 导致 chinese 相对顺序非确定，改为先显式 reorder 确定 chinese 顺序再验 math 拖拽隔离，语义不变）。91 例连跑 3 次全绿，tsc 通过。
+  5. 真实云端验证：造临时每日重复打卡任务（起点 07-16、07-19 有 done occurrence）→ 今日页可见 → 任务管理页点「结束」→ 今日页/明日不再出现、`recurrence.endDate`+本体 `end_date` 均=07-19（本地+云端一致）、`deleted_at` 为 null、打卡月历卡片仍在且 07-19 仍 done、今天格子由 missed 正确转 off。验证后临时任务已软删清理（其 07-19 orphan occurrence 因 occurrence 表无 deleted_at 残留于云端，任务已软删故各视图不可见，属既有技术债不单独物理清理）。
+
 ## 2026-07-19
 
 - 修复计时"停止后 1-2 秒实际用时消失"（云端模式特有，本地模式不触发）：

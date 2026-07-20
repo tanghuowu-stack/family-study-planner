@@ -222,6 +222,10 @@ bg-mint text-primary text-[10px] font-semibold rounded-md px-2 py-0.5
 bg-stone-200 text-stone-400（随任务灰化）
 ```
 
+### 今日页非今天浏览态（2026-07-20 新增）
+
+今日页顶部常驻显示系统真实当天日期（`今天是 …`，`text-xs text-muted`，不随翻页变化），避免用户翻页看别的日期时误以为在看今天。当前浏览日期非今天时，主日期标题从 `text-ink` 换成 `text-primary`，并在标题后加一个 `浏览中` 徽章（`bg-mint text-primary text-sm font-bold rounded-md px-2 py-0.5`，标签配色沿用 §7 标签铁律的浅底深字，不新造 token）。回到今天后标题恢复 `text-ink`、徽章消失。
+
 ### 标签 / 小按钮颜色铁律
 
 > **教训来自"上课"标签在四处颜色不统一的事故（TASK_05 返工）。**

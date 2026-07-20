@@ -4,18 +4,10 @@ import { taskRepository } from "../data/taskRepository";
 import { getRepository } from "../data/repositoryProvider";
 import type { Course, CourseStatus, ExtraContentType, MainCategory, PlanPeriod, Task } from "../types/task";
 import { fmtDate, formatSpecificDates, getWeekEndKey, todayKey } from "../utils/date";
-import { COURSE_MAIN_OPTIONS, COURSE_STATUS_META, MAIN_CATEGORY_META, SUB_CATEGORY_OPTIONS, WEEKDAY_LABELS, extraContentLabel, isCourseTask, subCategoryLabel, taskShortName } from "../utils/taskMeta";
+import { COURSE_MAIN_OPTIONS, COURSE_STATUS_META, MAIN_CATEGORY_META, SUB_CATEGORY_OPTIONS, WEEKDAY_LABELS, canEndRecurring, extraContentLabel, isCourseTask, subCategoryLabel, taskShortName } from "../utils/taskMeta";
 
 interface Props { refreshKey: number; onRefresh: () => void; notify: (text: string) => void; onEdit: (task: Task) => void; onDelete: (task: Task) => void; onEnd: (task: Task) => void; onCopy: (task: Task) => void; }
 const order: MainCategory[] = ["school", "extraHomework", "interestClass", "temporary"];
-
-// 「结束」只对仍在排期的长期重复任务开放：dailyRecurring/weeklyRecurring（排期读 recurrence.endDate），
-// 且尚未结束（无 endDate 或 endDate 未过）。dateRangeDaily/Weekdays/specificDates 是有界排期，非"长期"，不显示。
-const canEndRecurring = (task: Task) =>
-  task.timeType === "recurring"
-  && ["dailyRecurring", "weeklyRecurring"].includes(task.schedulePattern ?? "")
-  && !!task.recurrence
-  && (!task.recurrence.endDate || task.recurrence.endDate >= todayKey());
 
 export function TaskManagementPage(props: Props) {
   const [tasks, setTasks] = useState<Task[]>([]);

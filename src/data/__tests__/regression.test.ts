@@ -380,6 +380,25 @@ describe("结束长期重复任务 endRecurring（2026-07-20）", () => {
   });
 });
 
+describe("时间字段 time/startTime 镜像（2026-07-20 修复：清空时间保存后旧值复活）", () => {
+  it("28. update 清空 startTime 时，遗留的旧 time 字段一并清除，不再通过 ?? 兜底复活", async () => {
+    const { task } = await taskRepository.create(baseDraft({ startTime: "14:25" }));
+    // 模拟迁移前遗留的脏数据：time 独立残留旧值（真实场景是这次修复前的代码从未把它同步清掉）
+    await db.tasks.update(task.id, { time: "14:25" } as never);
+    await taskRepository.update(task.id, { startTime: undefined });
+    const after = await db.tasks.get(task.id);
+    expect(after?.startTime).toBeUndefined();
+    expect(after?.time).toBeUndefined(); // 关键断言：不再独立残留，否则展示层 startTime ?? time 会把旧时间复活
+  });
+
+  it("29. create/update 始终让 time 镜像 startTime，不会再渐行渐远", async () => {
+    const { task } = await taskRepository.create(baseDraft({ startTime: "09:00" }));
+    expect(task.time).toBe("09:00");
+    const { task: updated } = await taskRepository.update(task.id, { startTime: "10:30" });
+    expect(updated.time).toBe("10:30");
+  });
+});
+
 describe("父子任务联动", () => {
   it("14. 子任务全部完成父任务自动 done，一个退回父任务回 todo", async () => {
     const { task: parent } = await taskRepository.create(baseDraft({ title: "父任务" }));

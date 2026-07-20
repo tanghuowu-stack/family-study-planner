@@ -1,8 +1,8 @@
-import { Check, Copy, MoreHorizontal, Pause, Pencil, Play, RotateCcw, Square, Trash2, TriangleAlert } from "lucide-react";
+import { CalendarX, Check, Copy, MoreHorizontal, Pause, Pencil, Play, RotateCcw, Square, Trash2, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatElapsed, useTimer, type TimerSaveFn } from "../context/TimerContext";
 import type { ChecklistItem, TaskDisplay, TaskStatus } from "../types/task";
-import { STATUS_META, isCourseTask, taskShortName, SUB_CATEGORY_META } from "../utils/taskMeta";
+import { STATUS_META, canEndRecurring, isCourseTask, taskShortName, SUB_CATEGORY_META } from "../utils/taskMeta";
 
 interface Props {
   task: TaskDisplay;
@@ -14,6 +14,7 @@ interface Props {
   onStatusChange?: (task: TaskDisplay, status: TaskStatus) => void;
   onEdit?: (task: TaskDisplay) => void;
   onDelete?: (task: TaskDisplay) => void;
+  onEnd?: (task: TaskDisplay) => void;
   onOccurrenceCancel?: (task: TaskDisplay) => void;
   onOccurrencePostpone?: (task: TaskDisplay) => void;
   onChecklistToggle?: (task: TaskDisplay, itemId: string) => void;
@@ -109,7 +110,7 @@ function TimerControls({
   );
 }
 
-export function TaskItem({ task, compact = false, print = false, showTimerUI = true, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onRetrySync, onRetryItemSync, onCopy, onSaveActualTime, onSaveActualTimeManual, onSaveEstimatedMinutes }: Props) {
+export function TaskItem({ task, compact = false, print = false, showTimerUI = true, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onRetrySync, onRetryItemSync, onCopy, onSaveActualTime, onSaveActualTimeManual, onSaveEstimatedMinutes }: Props) {
   const [menu, setMenu] = useState(false);
   const [checkState, setCheckState] = useState<AnimState>("idle");
   const [itemAnim, setItemAnim] = useState<Record<string, AnimState>>({});
@@ -263,6 +264,12 @@ export function TaskItem({ task, compact = false, print = false, showTimerUI = t
                 <>
                   <button onClick={() => { onOccurrencePostpone?.(task); setMenu(false); }} className="w-full rounded-lg px-3 py-2 text-left hover:bg-violet-50">延期本次</button>
                   <button onClick={() => { onOccurrenceCancel?.(task); setMenu(false); }} className="w-full rounded-lg px-3 py-2 text-left hover:bg-amber-50">取消本次</button>
+                </>
+              )}
+              {onEnd && canEndRecurring(task) && effectiveStatus !== "done" && effectiveStatus !== "cancelled" && (
+                <>
+                  <div className="my-1 border-t border-stone-100" />
+                  <button onClick={() => { onEnd(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-amber-700 hover:bg-amber-50"><CalendarX className="h-4 w-4" />结束</button>
                 </>
               )}
               <button onClick={() => { onDelete?.(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-rose-600 hover:bg-rose-50"><Trash2 className="h-4 w-4" />删除任务</button>

@@ -1,4 +1,5 @@
 import type { CourseStatus, ExtraContentType, MainCategory, RolloverMode, SchedulePattern, TaskStatus, TaskTimeType, SubCategory } from "../types/task";
+import { todayKey } from "./date";
 
 /**
  * R1 完成状态权威源判定（PROJECT_GUIDE 6.5 数据层铁律）：
@@ -7,6 +8,22 @@ import type { CourseStatus, ExtraContentType, MainCategory, RolloverMode, Schedu
  */
 export const isOccurrenceSchedule = (task: { schedulePattern?: SchedulePattern; timeType: TaskTimeType }) =>
   task.timeType === "recurring";
+
+/**
+ * 是否可对该任务执行「结束」（taskRepository.endRecurring：recurrence.endDate 设为昨天，
+ * 今天起不再排期，任务本体与历史 occurrence 保留）——只对仍在排期的长期重复任务开放：
+ * dailyRecurring/weeklyRecurring（排期读 recurrence.endDate）且未结束（无 endDate 或未过期）。
+ * dateRangeDaily/Weekdays/specificDates 是有界排期，非"长期"，不适用。
+ * 任务管理页与今日页任务操作菜单共用本判定，避免两处各写一套条件、行为不一致（2026-07-20）。
+ */
+export const canEndRecurring = (
+  task: { timeType: TaskTimeType; schedulePattern?: SchedulePattern; recurrence?: { endDate?: string } },
+  today: string = todayKey(),
+) =>
+  task.timeType === "recurring"
+  && !!task.schedulePattern && ["dailyRecurring", "weeklyRecurring"].includes(task.schedulePattern)
+  && !!task.recurrence
+  && (!task.recurrence.endDate || task.recurrence.endDate >= today);
 
 export const SUB_CATEGORY_META: Record<SubCategory | ExtraContentType, { icon: string; color: string; bgColor: string; label: string }> = {
   chinese: { icon: "📖", color: "#C65D3B", bgColor: "#F5E6E0", label: "语文" },

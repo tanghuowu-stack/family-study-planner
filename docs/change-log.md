@@ -4,6 +4,13 @@
 
 ## 2026-07-20
 
+- 今日页三项改动：清空时间保存不生效的数据 bug 修复、任务操作菜单加「结束」、顶部常驻显示今天日期：
+  1. **数据 bug（优先级最高）——清空时间保存后旧时间复活**：根因是遗留字段 `Task.time`（`startTime` 上线前的历史字段）。`TaskForm` 只编辑 `startTime`，从不碰 `time`；多处展示/排序读 `task.startTime ?? task.time` 兜底。编辑旧任务清空"开始时间"时，`draft.time` 由 `strip()` 原样继承旧值、随表单一起提交，`startTime` 被正确清空但 `time` 仍是旧值，`??` 兜底把旧时间复活——今日页因此"清不掉"。修复：`sanitizeTaskWrite`（唯一写入口）新增 `clean.time = clean.startTime` 强制镜像（含清空），令 `time` 彻底降级为纯镜像字段，不会再独立发散。`taskToRow`/`rowToTask` 云端映射本就走同一个 `start_time` 列，无需改动。
+  2. **配套 UI——时间选择器加显式清除按钮**：原生 `<input type="time">` 在部分移动端浏览器（尤其 iPad Safari）打开过选择器后不提供明确的清空方式。`TaskForm` 抽出 `TimeField` 组件（开始/结束时间共用），值非空时在输入框下方显示"清除，不设置时间"按钮，一并解决"新建任务时间选择器要有不设置时间的退出方式"的历史反馈。
+  3. **今日页任务操作菜单加「结束」**：复用 `canEndRecurring` 判定（从 `TaskManagementPage.tsx` 抽到 `utils/taskMeta.ts` 共享，两处不再各写一套条件）和 App.tsx 已有的 `endTask` 动作（未重新实现），`TaskItem.tsx` 的"···"菜单在"删除任务"上方加分隔线 + 「结束」项（琥珀色，`CalendarX` 图标），仅对仍在排期的长期重复任务、且非已完成/取消时显示；点击复用同一个确认框（"结束…吗？今天起不再排期，历史记录和打卡月历都会保留"）。`DayPage`/`App.tsx` 的 `actions` 补 `onEnd` 透传。
+  4. **今日页顶部常驻显示真实当天日期**：新增 `今天是 {今天日期}` 固定行（`text-xs text-muted`），恒用 `todayKey()`，不随翻页变化。浏览非今天日期时，主标题从 `text-ink` 换成 `text-primary` 并加"浏览中"徽章（`bg-mint text-primary`，标签配色遵循 style.md 标签铁律），回到今天恢复原样。新视觉规则已补进 `style.md` §7。
+  5. 测试 +2（regression 28/29：清空 startTime 时遗留 time 字段一并清除、create/update 后 time 恒镜像 startTime），临时还原镜像逻辑验证测试确实会炸。93 例全绿，tsc 通过。UI 改动（结束菜单项、时间清除按钮、今日头部）无自动化组件测试覆盖（项目无 React 组件测试基础设施），走真实浏览器复现验证。
+  6. 真实验证（本地模式，模拟修复前"time 与 startTime 分裂"的脏数据状态）：①造任务写入分裂的 `time`/`startTime`，今日页确认显示旧时间→编辑表单点"清除，不设置时间"→保存→今日页确认旧时间消失、`startTime`/`time` 本地库双双为空；②造长期 dailyRecurring 任务，今日页"···"菜单确认「结束」出现在"取消本次"之下、"删除任务"之上，点击后确认框文案正确，确认后 `recurrence.endDate` 设为昨天、`deletedAt` 仍为 null、任务从今日页消失；③翻页到明天，顶部"今天是 7月20日"不变，主标题变绿色并带"浏览中"徽章，回到今天后恢复。手机 375px / 平板 768px 布局确认正常（时间清除按钮全宽、头部换行不破版）。
 - 记入技术债（仅文档，不改代码）：**任务级 `actualMinutes` 不按天区分存储**——`Task.actualMinutes` 是任务本体单一字段（occurrence 表无 `actual_minutes` 列），recurring 任务在还没做的新一天今日页会显示历史某次计时的旧值（用户实测"公文计算"多天显示同一个"实7m"）。属数据模型问题，计划并入"计时器独立页面重新设计"那一轮一并解决，不单独修补。已记入 PROJECT_GUIDE §13 与 ARCHITECTURE_RULES §4（含届时的占用天存储/schema 迁移/字段映射注意事项）。
 - 任务管理页给长期重复任务加独立「结束」按钮（与删除分开）：
   1. **需求背景**：用户想"停止未来排期但保留历史"，此前只有"删除"（软删本体→任务从今日页排期消失、且因 `statsEligible` 过滤 `isActiveTask` 连打卡月历卡片一起不显示，误以为历史没了，实际 occurrence 从未被删）。「结束」提供正确语义。

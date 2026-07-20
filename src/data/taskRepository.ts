@@ -170,6 +170,11 @@ function sanitizeTaskWrite(task: Task, previousStatus?: TaskStatus): Task {
   if (clean.timeType === "recurring" && ["dailyRecurring", "weeklyRecurring"].includes(clean.schedulePattern ?? "") && clean.recurrence) {
     clean.endDate = clean.recurrence.endDate;
   }
+  // `time` 是 startTime 上线前的遗留字段，展示/排序多处仍读 `startTime ?? time` 兜底。
+  // 表单只编辑 startTime，从不碰 time——若不镜像，编辑旧任务清空开始时间时 time 字段原样留存，
+  // 显示层的 ?? 兜底会把旧时间复活，"清空保存后今日页仍显示旧时间"（2026-07-20 修复）。
+  // 强制 time 恒等于 startTime，令 time 彻底降级为纯镜像，不再可能独立发散。
+  clean.time = clean.startTime;
   return clean;
 }
 

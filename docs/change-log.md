@@ -4,6 +4,7 @@
 
 ## 2026-07-20
 
+- 记入技术债（仅文档，不改代码）：**任务级 `actualMinutes` 不按天区分存储**——`Task.actualMinutes` 是任务本体单一字段（occurrence 表无 `actual_minutes` 列），recurring 任务在还没做的新一天今日页会显示历史某次计时的旧值（用户实测"公文计算"多天显示同一个"实7m"）。属数据模型问题，计划并入"计时器独立页面重新设计"那一轮一并解决，不单独修补。已记入 PROJECT_GUIDE §13 与 ARCHITECTURE_RULES §4（含届时的占用天存储/schema 迁移/字段映射注意事项）。
 - 任务管理页给长期重复任务加独立「结束」按钮（与删除分开）：
   1. **需求背景**：用户想"停止未来排期但保留历史"，此前只有"删除"（软删本体→任务从今日页排期消失、且因 `statsEligible` 过滤 `isActiveTask` 连打卡月历卡片一起不显示，误以为历史没了，实际 occurrence 从未被删）。「结束」提供正确语义。
   2. **数据层**：`taskRepository.endRecurring(id, today?)` 把 `recurrence.endDate` 设为结束当天的前一天（当天起 `scheduleOccursOn` 不再命中），走 `update` 入口自动继承 §3.2 的 `task.endDate` 镜像与云端上传；`cloudRepository.endRecurring` 包装同步。本体不软删、历史 occurrence 完整保留、打卡月历卡片继续显示（本体仍 `isActiveTask`）。

@@ -182,6 +182,10 @@
 - **`task_occurrence_statuses` 表缺 `deleted_at` 列**：跨设备删除 occurrence 无墓碑机制（pull 只增改不删，物理删除不同步到其他设备本地缓存）。中期如需再做 schema 迁移；当前靠维护面板「对账清理本地缓存」手动对齐（2026-07-17 记）。
 - **`Task.month`（monthGoal 用）云端未接入**：`tasks` 表没有对应列，`taskToRow`/`rowToTask` 都不映射——不是"漏映射"而是"整体没接入云端"，monthGoal 任务的 month 字段云端模式下不同步。当前未见故障（monthGoal 使用面窄），要接入需先加 schema 迁移（2026-07-19 排查 actualMinutes 时顺带发现）。
 
+### 计时器数据模型
+
+- **任务级 `actualMinutes` 不按天区分存储**（2026-07-20 记）：`Task.actualMinutes` 是任务本体上的单一字段——`task_occurrence_statuses` 表**没有** `actual_minutes` 列，`saveActualMinutes`（`itemId=null` 任务级路径）累加写本体 `task.actualMinutes`，`TaskItem` 的任务级行恒读 `task.actualMinutes`（与当前查看的是哪个 occurrence 日无关）。后果：recurring（occurrence 类）任务在**任何一天**（含还没做的新一天）今日页都显示同一个本体累计值——用户实测"公文计算"多天显示同一个"实7m"。这是数据模型层面的问题：占用某天的实际用时本该像完成状态一样按 occurrence 天存（occurrence 行加 `actual_minutes` 列，或另建按天用时表），而非落在共享的任务本体上。**计划并入"计时器独立页面重新设计"那一轮一并解决，不单独修补**（届时同步考虑：占用天存储、schema 迁移按 §3.5 归档、按 §3.1 补齐四个映射面 + parity 测试）。
+
 ### 2026-07-17 代码审查遗留（P1/P2，文件位置为审查时行号，可能已漂移）
 
 - **P1** `removePlanPeriod`/`removeCourse` 的任务解绑（`taskRepository.ts` 的 `.modify`）不刷新 updatedAt，且 `cloudRepository.ts` 不把被解绑任务 upsert 上云 → 下次 pull 被 LWW（相等即覆盖）回滚，任务重新指向已删除的假期/课程。修法：modify 时带 updatedAt=now，云端包装层补 upsert 受影响任务。

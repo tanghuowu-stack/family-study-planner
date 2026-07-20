@@ -158,6 +158,19 @@
 - 部分字段 `db.tasks.update({...})`（不触发 sanitize，但只改指定键、不会重引入展示字段）：`setDisplayStatus`、`saveActualMinutes`、`toggleChecklistItem`、`reorderTasks`、软删/恢复、父子联动。这些**不经过 §3.2 镜像**，因此约定它们不去碰 recurrence/endDate/status 之外的联动字段——要碰就得走 create/update。
 - 裸 `bulkPut`（绕过所有防线，已知技术债）：`importBackup`（见 §4）。
 
+### 3.5 Schema 变更必须归档进受控脚本（强制流程）
+
+**教训**：`tasks.actual_minutes` 列曾直接在 Supabase SQL Editor 手动加上、没记进任何受控 SQL 文件——现网库和前端读写链路都在用，但 `supabase-schema.sql` 与 migration 文件都没有它。后果是"拿现有 SQL 重建一个新库就会缺这一列，任务级实际用时上传即报错"，而且这种漂移只有在通读源码逐字段核对时才会被发现（2026-07-19 排查 actualMinutes 云端漏映射时顺带发现，已于 2026-07-20 补 `supabase-migration-actual-minutes.sql` 归档）。
+
+**原则**：**线上库的 schema 变更（加列/加表/改类型/加索引/改 RLS）绝不允许只存在于线上库。** 任何直接在 Supabase SQL Editor 手动执行的 DDL，必须同步补一份受控 migration 文件归档，否则受控 SQL 与现网必然渐行渐远，且无从复现/重建。
+
+**具体要求**：
+1. **先写文件再执行，或至少执行后立刻补档**——不能"手动改完就算了"。migration 文件放 `docs/supabase-migration-<主题>.sql`，与现有 `-stats` / `-streak-start` / `-courses` / `-actual-minutes` 命名一致。
+2. **必须幂等**：用 `add column if not exists` / `create table if not exists` / `create index if not exists` / `create policy`（配合 drop-if-exists 或依赖唯一名）等写法，保证"现网重复执行无副作用、全新库上执行能正确建出"。
+3. **不改现有数据**：migration 只做结构变更，数据订正走真实 repository 写入路径（见 change-log 里的脏数据清洗记录），不在 migration 里 UPDATE 业务数据。
+4. **文件头写清背景**：为什么加、现网是否已有（幂等）、影不影响现有数据——参考现有 migration 文件的注释风格。
+5. 加/改列后，**别忘了 §3.1 的字段双向映射**（4 个映射面 + parity 测试）——schema 归档和字段映射是两件事，都要做。
+
 ---
 
 ## 4. 已知技术债清单
@@ -178,9 +191,9 @@
 - **P2** `exportBackup`（`taskRepository.ts`）不含 courses 表，恢复备份后任务 courseId 悬空。
 - **P2** `remove` 级联软删子任务但 `restore` 只恢复本体不级联恢复子任务，行为不对称。
 
-### Schema 文档漂移（2026-07-19 本次发现，仅文档问题，代码与线上库正常）
+### Schema 文档漂移
 
-- **`tasks.actual_minutes` 列不在任何受控 SQL 文件里**：代码读写它、线上 Supabase 库确实有这一列（REST 查询可返回值），但 `supabase-schema.sql` 未定义、三个 `supabase-migration-*.sql` 也都没有——说明它是当初直接在 Supabase SQL Editor 手加、没记进任何受控脚本（推测随 2026-07-03 审查补字段那次加的）。**风险**：若拿现有 SQL 文件重建一个新库，会缺这一列，任务级实际用时上传即报错。**建议**：补一份 `supabase-migration-actual-minutes.sql`（`alter table public.tasks add column if not exists actual_minutes integer;`）归档，纯文档补全、不影响现网。
+- ~~**`tasks.actual_minutes` 列不在任何受控 SQL 文件里**~~（**2026-07-20 已解决**）：该列此前是直接在 Supabase SQL Editor 手加、没记进任何受控脚本（推测随 2026-07-03 审查补字段那次加的），`supabase-schema.sql` 与三个 migration 文件都没有它——用现有 SQL 重建新库会缺列、任务级实际用时上传即报错。已补 `docs/supabase-migration-actual-minutes.sql`（`add column if not exists`，幂等、不改现网数据）归档。**该次漂移已提炼为 §3.5 的强制流程，杜绝再发生。**
 
 ### TASK_08 打卡收尾（现状）
 
@@ -247,7 +260,7 @@
 
 写作过程中通读源码核对，发现以下不一致，**均未改动代码，仅在此列出**：
 
-1. **`tasks.actual_minutes` 列的 SQL 文档缺失**（已在 §4 详述）：线上库和代码都有 `actual_minutes` 任务级列，但 `supabase-schema.sql` 和三个 migration 文件都没有它。用现有 SQL 重建库会缺列。属文档漂移，建议补一份 migration 归档。这是本次唯一实质性的"文档与现网不符"。
+1. ~~**`tasks.actual_minutes` 列的 SQL 文档缺失**~~（**2026-07-20 已处理**）：线上库和代码都有 `actual_minutes` 任务级列，但 `supabase-schema.sql` 和三个 migration 文件都没有它，用现有 SQL 重建库会缺列。已补 `docs/supabase-migration-actual-minutes.sql` 归档，并把"手动 DDL 必须补 migration 归档"提炼为 §3.5 强制流程。这是本次唯一实质性的"文档与现网不符"，现已闭环。
 
 2. **`cloudFieldParity.test.ts` 的覆盖范围与"4 个映射面"的差距**（已在 §3.1 详述）：字段对照测试只覆盖 `taskToRow`↔`rowToTask` 这一对（日常读写路径）。维护面板用的 `cloudUpload.ts` / `cloudDownload.ts` 是另外两个独立映射面，未被任何自动化测试覆盖，靠手动核对。当前这两个面的 `actualMinutes` 等字段是齐的（本次已逐一核对），但没有测试兜底，将来新增字段时容易只更新到有测试的那一对。属测试覆盖缺口，非当前 bug。
 

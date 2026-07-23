@@ -4,7 +4,7 @@ import { taskRepository } from "../data/taskRepository";
 import { getRepository } from "../data/repositoryProvider";
 import type { Course, CourseStatus, ExtraContentType, MainCategory, PlanPeriod, Task } from "../types/task";
 import { fmtDate, formatSpecificDates, getWeekEndKey, todayKey } from "../utils/date";
-import { COURSE_MAIN_OPTIONS, COURSE_STATUS_META, MAIN_CATEGORY_META, SUB_CATEGORY_OPTIONS, WEEKDAY_LABELS, canEndRecurring, extraContentLabel, isCourseTask, subCategoryLabel, taskShortName } from "../utils/taskMeta";
+import { COURSE_MAIN_OPTIONS, COURSE_STATUS_META, MAIN_CATEGORY_META, SUB_CATEGORY_OPTIONS, WEEKDAY_LABELS, canEndRecurring, extraContentLabel, isCourseTask, isEndedRecurring, subCategoryLabel, taskShortName } from "../utils/taskMeta";
 
 interface Props { refreshKey: number; onRefresh: () => void; notify: (text: string) => void; onEdit: (task: Task) => void; onDelete: (task: Task) => void; onEnd: (task: Task) => void; onCopy: (task: Task) => void; }
 const order: MainCategory[] = ["school", "extraHomework", "interestClass", "temporary"];
@@ -17,6 +17,7 @@ export function TaskManagementPage(props: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showDone, setShowDone] = useState(false);
   const [showAllDone, setShowAllDone] = useState(false);
+  const [showEnded, setShowEnded] = useState(false);
   const reload = () => Promise.all([taskRepository.listAll(), taskRepository.listPlanPeriods(), getRepository().listCourses()]).then(([items, stages, courseList]) => { setTasks(items); setPeriods(stages); setCourses(courseList); setSelected(new Set()); });
   useEffect(() => { reload(); }, [props.refreshKey]);
   const holidays = periods.filter((period) => period.type === "holiday");
@@ -28,7 +29,11 @@ export function TaskManagementPage(props: Props) {
     if (filter === "holiday") return boundHoliday;
     return currentHoliday ? task.planPeriodId === currentHoliday.id : !boundHoliday;
   }), [tasks, periods, filter, currentHoliday?.id]);
-  const pending = filtered.filter((task) => !["done", "cancelled"].includes(task.status));
+  const notFinished = filtered.filter((task) => !["done", "cancelled"].includes(task.status));
+  // 「结束」≠「完成」：结束只改 recurrence.endDate，occurrence 类任务本体 status 按 R1 恒为
+  // todo/cancelled，永远进不了"已完成"分组——不单独摘出来会一直卡在待办列表里（2026-07-20 用户反馈）
+  const pending = notFinished.filter((task) => !isEndedRecurring(task));
+  const ended = notFinished.filter((task) => isEndedRecurring(task));
   const completed = filtered.filter((task) => ["done", "cancelled"].includes(task.status));
   const completedCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const recentCompleted = completed.filter((task) => (task.completedAt ?? task.updatedAt) >= completedCutoff);
@@ -45,6 +50,7 @@ export function TaskManagementPage(props: Props) {
     <div className="mb-5 grid grid-cols-[1fr_auto_1fr] items-end gap-3"><span /><div className="text-center"><p className="text-xs font-semibold tracking-widest text-sage-700">TASKS</p><h1 className="mt-1 text-2xl font-semibold">任务管理</h1></div>{selected.size > 0 ? <button onClick={batchDelete} className="inline-flex items-center gap-2 justify-self-end rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white"><Trash2 className="h-4 w-4" />删除已选（{selected.size}）</button> : <span />}</div>
     <div className="mb-4 mt-6 flex flex-wrap items-center gap-2">{(["all", "current", "regular", "holiday"] as const).map((value) => <button key={value} onClick={() => setFilter(value)} className={`rounded-full px-3 py-1.5 text-xs ${filter === value ? "bg-primary text-white" : "bg-white text-stone-500"}`}>{value === "current" ? `当前阶段（${currentHoliday ? "假期" : "平时"}）` : { all: "全部", regular: "平时", holiday: "假期" }[value]}</button>)}<span className="text-xs text-stone-400">今天：{currentHoliday?.name ?? "平时"}</span><button onClick={() => selectIds(filtered.map((task) => task.id))} className="ml-auto rounded-full border bg-white px-3 py-1.5 text-xs text-stone-500">{filtered.length && filtered.every((task) => selected.has(task.id)) ? "取消全选当前筛选" : "全选当前筛选"}</button></div>
     <div className="space-y-5">{order.map((category) => <TaskGroup key={category} category={category} sortable onReorder={async (ids) => { await getRepository().reorderTasks(ids); await reload(); props.onRefresh(); }} tasks={pending.filter((task) => task.mainCategory === category)} periods={periods} selected={selected} onToggle={toggle} onSelectGroup={selectIds} {...props} />)}</div>
+    {ended.length > 0 && <section className="mt-6 rounded-2xl border border-stone-100 bg-white p-3 opacity-75 shadow-card"><button onClick={() => setShowEnded(!showEnded)} className="flex w-full items-center justify-between px-1 py-2 text-sm font-semibold text-stone-500">已结束的重复任务 · {ended.length}<ChevronDown className={`h-4 w-4 transition ${showEnded ? "rotate-180" : ""}`} /></button>{showEnded && <div className="mt-2 space-y-4">{order.map((category) => <TaskGroup key={category} category={category} tasks={ended.filter((task) => task.mainCategory === category)} periods={periods} selected={selected} onToggle={toggle} onSelectGroup={selectIds} {...props} />)}</div>}</section>}
     {completed.length > 0 && <section className="mt-6 rounded-2xl border border-stone-100 bg-white p-3 opacity-75 shadow-card"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-1 py-2 text-sm font-semibold text-stone-500">已完成任务 · {visibleCompleted.length}{!showAllDone && earlierCompletedCount > 0 ? `（另有 ${earlierCompletedCount} 项更早记录）` : ""}<ChevronDown className={`h-4 w-4 transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <div className="mt-2 space-y-4">{order.map((category) => <TaskGroup key={category} category={category} tasks={visibleCompleted.filter((task) => task.mainCategory === category)} periods={periods} selected={selected} onToggle={toggle} onSelectGroup={selectIds} {...props} />)}{earlierCompletedCount > 0 && <button onClick={() => setShowAllDone(!showAllDone)} className="mx-auto block rounded-xl border px-4 py-2 text-xs font-semibold text-stone-500">{showAllDone ? "只显示最近 30 天" : "显示更早已完成任务"}</button>}</div>}</section>}
     <div className="mt-8 space-y-4"><PlanPeriodManager periods={holidays} currentHoliday={currentHoliday} onChanged={() => { reload(); props.onRefresh(); }} notify={props.notify} /><CourseManager courses={courses} onChanged={() => { reload(); props.onRefresh(); }} notify={props.notify} /></div>
   </main>;

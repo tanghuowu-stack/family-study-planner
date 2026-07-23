@@ -25,6 +25,21 @@ export const canEndRecurring = (
   && !!task.recurrence
   && (!task.recurrence.endDate || task.recurrence.endDate >= today);
 
+/**
+ * 「结束」≠「完成」：结束只改 recurrence.endDate，R1 铁律下 occurrence 类任务本体 status
+ * 永远是 todo/cancelled，不会变成 done——所以已结束的重复任务不会自动落进"已完成"分组，
+ * 会一直卡在"待办"列表里（2026-07-20 用户反馈发现）。任务管理页用这个判定把已结束的
+ * 长期重复任务单独分组展示，不再和真正待办的任务混在一起。
+ */
+export const isEndedRecurring = (
+  task: { timeType: TaskTimeType; schedulePattern?: SchedulePattern; recurrence?: { endDate?: string } },
+  today: string = todayKey(),
+) =>
+  task.timeType === "recurring"
+  && !!task.schedulePattern && ["dailyRecurring", "weeklyRecurring"].includes(task.schedulePattern)
+  && !!task.recurrence?.endDate
+  && task.recurrence.endDate < today;
+
 export const SUB_CATEGORY_META: Record<SubCategory | ExtraContentType, { icon: string; color: string; bgColor: string; label: string }> = {
   chinese: { icon: "📖", color: "#C65D3B", bgColor: "#F5E6E0", label: "语文" },
   math: { icon: "🔢", color: "#4F46E5", bgColor: "#EEF2FF", label: "数学" },

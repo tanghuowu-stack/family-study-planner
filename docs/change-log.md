@@ -9,6 +9,11 @@
   2. **修复**：`utils/taskMeta.ts` 新增 `isEndedRecurring`（与 `canEndRecurring` 边界互斥：`recurrence.endDate < today` 才算已结束，等于今天仍算"可结束/未结束"）。`TaskManagementPage` 把 `pending` 拆成"待办"（未结束）与"已结束的重复任务"（新分组，折叠展示，样式复用"已完成任务"区块的 `opacity-75` 卡片），已结束任务不再显示「结束」按钮（`canEndRecurring` 本就返回 false），仍保留编辑/复制/删除。
   3. 测试 +4（`taskMeta.test.ts`：`canEndRecurring`/`isEndedRecurring` 边界互斥——长期/等于今天/早于今天/非长期重复类型四种情况）。97 例全绿，tsc 通过。
   4. 真实验证（本地模式）：造一条已结束（`endDate` 早于今天）+一条仍在排期的 dailyRecurring 任务，任务管理页"全部"筛选下确认：待办分组只剩仍在排期的那条；新增的"已结束的重复任务 · 1"折叠区展开后显示已结束的那条，只有编辑/复制/删除，无「结束」按钮。
+- **同一个 bug 换 schedulePattern 又冒出来一次，二次修复**：用户反馈"大增背诵：24课内容+卷子40-41"（`07-04～07-25 每天`）结束多日仍卡在待办列表。
+  1. **根因**：上一版 `isEndedRecurring` 只覆盖了 `dailyRecurring`/`weeklyRecurring`（判 `recurrence.endDate`），漏了 `dateRangeDaily`/`dateRangeWeekdays`（真正governing 字段是 `task.endDate`，不是 `recurrence.endDate`）和 `specificDates`（governing 是日期列表最大值）——这条任务是 `dateRangeDaily` 模式，压根没进上一版的判定范围，状态和上次"公文计算"的 bug 本质相同，只是排期字段来源不同。
+  2. **修复**：`isEndedRecurring` 改为统一走新增的 `scheduleEndBound(task)`，按 `schedulePattern` 分别取正确的终点字段（dailyRecurring/weeklyRecurring→`recurrence.endDate`，dateRangeDaily/dateRangeWeekdays→`task.endDate`，specificDates→日期列表最大值），逐一对齐 `taskRepository.ts` 的 `scheduleOccursOn` 判定口径，覆盖全部 5 种 recurring 排期模式；`canEndRecurring`（手动「结束」按钮的显示条件）维持只覆盖 dailyRecurring/weeklyRecurring 不变——有界排期模式本来就有终点，不需要手动结束。
+  3. 测试重写为按 schedulePattern 分组，新增 dateRangeDaily/dateRangeWeekdays/specificDates 三种模式的已结束/未结束边界用例（含精确复现本次 bug 的 07-04~07-25 场景），以及"dateRangeDaily 只认 task.endDate、不被同名的 recurrence.endDate 干扰"的字段来源测试防混淆。105 例全绿，tsc 通过。
+  4. 真实验证（本地模式，构造与线上"大增背诵"完全相同字段的任务：dateRangeDaily，07-04~07-25，验证时系统日期已到 07-31）：任务管理页确认该任务不再出现在待办列表，正确归入"已结束的重复任务"分组，标签与线上截图一致，只有编辑/复制/删除、无「结束」按钮。
 
 ## 2026-07-20
 

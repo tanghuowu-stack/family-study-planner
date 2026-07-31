@@ -26,19 +26,46 @@ export const canEndRecurring = (
   && (!task.recurrence.endDate || task.recurrence.endDate >= today);
 
 /**
- * 「结束」≠「完成」：结束只改 recurrence.endDate，R1 铁律下 occurrence 类任务本体 status
- * 永远是 todo/cancelled，不会变成 done——所以已结束的重复任务不会自动落进"已完成"分组，
- * 会一直卡在"待办"列表里（2026-07-20 用户反馈发现）。任务管理页用这个判定把已结束的
- * 长期重复任务单独分组展示，不再和真正待办的任务混在一起。
+ * 该 occurrence 类任务排期实际会命中的最后一天（undefined = 长期/无界，永不"结束"）。
+ * 每种 schedulePattern 的排期终点字段不一样，跟 scheduleOccursOn（taskRepository.ts）的
+ * 判定必须逐条对应，否则"是否已结束"和"实际还排不排"会对不上：
+ * - dailyRecurring/weeklyRecurring：排期读 recurrence.endDate（可空=长期）；
+ * - dateRangeDaily/dateRangeWeekdays：排期读 task.startDate~endDate（表单校验强制必填，
+ *   这两种模式的 task.endDate 不是"结束"动作的产物，是任务本来就有界）；
+ * - specificDates：排期只命中列表里的日期，终点是列表最大值。
+ */
+function scheduleEndBound(task: { timeType: TaskTimeType; schedulePattern?: SchedulePattern; recurrence?: { endDate?: string }; endDate?: string; specificDates?: string[] }): string | undefined {
+  if (task.timeType !== "recurring") return undefined;
+  switch (task.schedulePattern) {
+    case "dailyRecurring":
+    case "weeklyRecurring":
+      return task.recurrence?.endDate;
+    case "dateRangeDaily":
+    case "dateRangeWeekdays":
+      return task.endDate;
+    case "specificDates":
+      return task.specificDates?.length ? [...task.specificDates].sort().at(-1) : undefined;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * 「结束」≠「完成」：不管是手动点「结束」（dailyRecurring/weeklyRecurring 写 recurrence.endDate），
+ * 还是排期本来就有界（dateRangeDaily/dateRangeWeekdays/specificDates 排期自然过期），R1 铁律下
+ * occurrence 类任务本体 status 永远是 todo/cancelled、不会变成 done——排期已经过去的这类任务
+ * 不会自动落进"已完成"分组，会一直卡在"待办"列表里（2026-07-20 用户反馈发现；2026-07-23 发现
+ * 上次的判定只覆盖了 dailyRecurring/weeklyRecurring 一种模式，dateRangeDaily 等有界排期漏了，
+ * 同一个 bug 换个 schedulePattern 又冒出来——改成统一走 scheduleEndBound，覆盖全部 recurring 模式）。
+ * 任务管理页用这个判定把排期已结束的重复任务单独分组展示，不再和真正待办的任务混在一起。
  */
 export const isEndedRecurring = (
-  task: { timeType: TaskTimeType; schedulePattern?: SchedulePattern; recurrence?: { endDate?: string } },
+  task: { timeType: TaskTimeType; schedulePattern?: SchedulePattern; recurrence?: { endDate?: string }; endDate?: string; specificDates?: string[] },
   today: string = todayKey(),
-) =>
-  task.timeType === "recurring"
-  && !!task.schedulePattern && ["dailyRecurring", "weeklyRecurring"].includes(task.schedulePattern)
-  && !!task.recurrence?.endDate
-  && task.recurrence.endDate < today;
+) => {
+  const bound = scheduleEndBound(task);
+  return !!bound && bound < today;
+};
 
 export const SUB_CATEGORY_META: Record<SubCategory | ExtraContentType, { icon: string; color: string; bgColor: string; label: string }> = {
   chinese: { icon: "📖", color: "#C65D3B", bgColor: "#F5E6E0", label: "语文" },

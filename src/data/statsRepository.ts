@@ -159,8 +159,10 @@ export async function getHabitCalendars(month: string, today: string = todayKey(
   ]);
   const rests = new Set(restDays);
   const occByKey: OccMap = new Map(occurrences.map((o) => [`${o.taskId}:${o.occurrenceDate}`, o]));
+  // 与 getHabitCandidates 口径对齐：非 recurring 类任务即使 enableStreak=true 也不出现
+  // （管理弹窗只认重复类任务，若这里不同步限制，会出现"月历有卡但管理不了"的孤儿卡）
   const enabled = tasks
-    .filter((t) => statsEligible(t) && t.enableStreak === true && t.status !== "cancelled")
+    .filter((t) => statsEligible(t) && isOccurrenceSchedule(t) && t.enableStreak === true && t.status !== "cancelled")
     .sort(sortTasks);
 
   const monthStart = toDateKey(startOfMonth(parseISO(`${month}-01`)));

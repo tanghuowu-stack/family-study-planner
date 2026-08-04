@@ -236,6 +236,31 @@ describe("getHabitCalendars", () => {
     const cals = await getHabitCalendars("2026-07", "2026-07-13");
     expect(cals.map((c) => c.taskId)).toEqual(["on"]);
   });
+
+  it("12. 非 recurring 类任务即使 enableStreak=true 也不出现在月历（与 getHabitCandidates 口径对齐）", async () => {
+    await db.tasks.bulkAdd([
+      dailyHabit("on", "2026-07-10"),
+      makeTask("orphan", { enableStreak: true, streakStartDate: "2026-07-01", timeType: "singleDate", date: "2026-07-12" }),
+    ]);
+    const cals = await getHabitCalendars("2026-07", "2026-07-13");
+    expect(cals.map((c) => c.taskId)).toEqual(["on"]);
+  });
+});
+
+describe("copyToDate 不继承打卡身份", () => {
+  it("13. 复制一个打卡任务，新任务的 enableStreak/streakStartDate 被清空，不出现在打卡月历", async () => {
+    const { task: source } = await taskRepository.create({
+      title: "钢琴练习", mainCategory: "interestClass", subCategory: "pianoPractice", timeType: "recurring",
+      schedulePattern: "weeklyRecurring", startDate: "2026-06-21", recurrence: { frequency: "weekly", weekdays: [0, 3, 5, 6], startDate: "2026-06-21" },
+      status: "todo", rolloverMode: "keepOverdue", allowRollover: false, childVisible: true,
+      enableStreak: true, streakStartDate: "2026-07-02",
+    } as never);
+    const copy = await taskRepository.copyToDate(source.id, "2026-08-04");
+    expect(copy.enableStreak).toBeUndefined();
+    expect(copy.streakStartDate).toBeUndefined();
+    const cals = await getHabitCalendars("2026-08", "2026-08-04");
+    expect(cals.map((c) => c.taskId)).toEqual([source.id]); // 只有源任务在月历里，复制品不在
+  });
 });
 
 describe("occurrence completedAt 写入路径 + 休息日切换", () => {

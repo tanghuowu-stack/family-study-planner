@@ -26,6 +26,22 @@ export const canEndRecurring = (
   && (!task.recurrence.endDate || task.recurrence.endDate >= today);
 
 /**
+ * 是否可对该任务执行「延长周期」（taskRepository.extendRecurring：改 recurrence.endDate，
+ * 任务本体、streakStartDate、历史 occurrence 完全不受影响）——与 canEndRecurring 严格互斥，
+ * 同一任务不会同时出现「结束」和「延长」两个入口：只对已设定 endDate 且已过期的长期重复任务开放
+ * （无 endDate = 本就不限期，没有"延长"的意义；未过期 = 还在排期中，走「结束」而不是「延长」）。
+ * 解决"任务到期后用户手动新建同名任务续期"的根源问题（2026-08-04）。
+ */
+export const canExtendRecurring = (
+  task: { timeType: TaskTimeType; schedulePattern?: SchedulePattern; recurrence?: { endDate?: string } },
+  today: string = todayKey(),
+) =>
+  task.timeType === "recurring"
+  && !!task.schedulePattern && ["dailyRecurring", "weeklyRecurring"].includes(task.schedulePattern)
+  && !!task.recurrence
+  && !!task.recurrence.endDate && task.recurrence.endDate < today;
+
+/**
  * 该 occurrence 类任务排期实际会命中的最后一天（undefined = 长期/无界，永不"结束"）。
  * 每种 schedulePattern 的排期终点字段不一样，跟 scheduleOccursOn（taskRepository.ts）的
  * 判定必须逐条对应，否则"是否已结束"和"实际还排不排"会对不上：

@@ -596,6 +596,18 @@ export const taskRepository = {
     return this.update(id, { recurrence: { ...task.recurrence, endDate: yesterday } });
   },
 
+  // 「延长周期」：只改 recurrence.endDate（连带镜像的 task.endDate），任务本体、
+  // streakStartDate、历史 occurrence 完全不动，排期自然延续——不创建任何新任务，
+  // 从根上替代"到期后手动新建同名任务续期"这种会产生打卡孤儿数据的做法。
+  // newEndDate 为空表示改成不限期；非空必须 >= today，否则等价于误操作"结束"。
+  async extendRecurring(id: string, newEndDate: string | undefined, today: string = todayKey()): Promise<TaskWriteResult> {
+    const task = await db.tasks.get(id);
+    if (!task) throw new Error("找不到要延长的任务");
+    if (!task.recurrence) throw new Error("该任务不是重复任务，无法延长");
+    if (newEndDate && newEndDate < today) throw new Error("延长的结束日期不能早于今天");
+    return this.update(id, { recurrence: { ...task.recurrence, endDate: newEndDate } });
+  },
+
   async copyToDate(id: string, date: string) {
     const source = await db.tasks.get(id);
     if (!source) throw new Error("找不到要复制的任务");

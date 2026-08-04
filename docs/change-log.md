@@ -4,6 +4,13 @@
 
 ## 2026-08-04
 
+- 新增「延长周期」操作，与「结束」对称，解决"任务到期后用户手动新建同名任务续期"（导致重复打卡任务）的根源：
+  1. `utils/taskMeta.ts` 新增 `canExtendRecurring`，与 `canEndRecurring` 严格互斥（同一任务只可能出现其中一个入口）：只对已设定 `recurrence.endDate` 且已过期的 dailyRecurring/weeklyRecurring 任务开放；无 endDate（本就不限期）或未过期一律不显示。
+  2. `taskRepository`/`cloudRepository` 新增 `extendRecurring(id, newEndDate | undefined)`：只改 `recurrence.endDate`（连带镜像的 `task.endDate`），新日期非空时必须 ≥ 今天；不创建任何新任务，任务本体、`streakStartDate`、历史 occurrence 完全不动，排期自然延续。
+  3. 新组件 `ExtendRecurringDialog`：日期选择（默认今天+30天，`min` 锁今天）+「不限期」单选。入口接入今日页任务「...」菜单（`TaskItem`）与任务管理页「已结束的重复任务」分组行（`TaskManagementPage`），均与「结束」按钮互斥展示。
+  4. 测试 +9（`canExtendRecurring` 边界互斥 6 例、`extendRecurring` 数据层 3 例：延长生效且历史/起点不受影响、改不限期、新日期早于今天与非重复任务两种拒绝），116 例全绿，tsc 通过。
+  5. 真实数据验证：家庭现有「公文计算」（已过期）在任务管理页正确显示"延长"（无"结束"）；用临时测试任务走完整链路——延长后自动从"已结束"移入"待办"、今日页菜单同步切换为"结束"、5 条历史 occurrence 与 streakStartDate 分毫未动、打卡月历连续天数正确（今天未完成不算断）。手机 375px / 平板 768px 双尺寸检查对话框布局正常，日期输入唤起原生选择器。测试数据已清理（本地+云端确认软删）。
+
 - 修复两个打卡数据层 bug + 处理两组重复打卡任务（用户反馈：统计页出现同名重复打卡卡片）：
   1. **bug 1**：`copyToDate`（`taskRepository.ts`）复制任务时会原样继承源任务的 `enableStreak`/`streakStartDate`，但副本被强制成 `singleDate`，不再是 recurring 类——继承来的打卡身份成了孤儿（月历有卡、「管理打卡项目」弹窗却看不到、也无法取消）。修复：复制清单里补上这两个字段清空。
   2. **bug 2**：`getHabitCalendars` 未像 `getHabitCandidates` 一样限制 `isOccurrenceSchedule`，导致非 recurring 类任务只要 `enableStreak=true` 也会生成月历卡（管理弹窗管不到）。修复：两处过滤口径对齐。

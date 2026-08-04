@@ -1,8 +1,8 @@
-import { CalendarX, Check, Copy, MoreHorizontal, Pause, Pencil, Play, RotateCcw, Square, Trash2, TriangleAlert } from "lucide-react";
+import { CalendarPlus, CalendarX, Check, Copy, MoreHorizontal, Pause, Pencil, Play, RotateCcw, Square, Trash2, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatElapsed, useTimer, type TimerSaveFn } from "../context/TimerContext";
 import type { ChecklistItem, TaskDisplay, TaskStatus } from "../types/task";
-import { STATUS_META, canEndRecurring, isCourseTask, taskShortName, SUB_CATEGORY_META } from "../utils/taskMeta";
+import { STATUS_META, canEndRecurring, canExtendRecurring, isCourseTask, taskShortName, SUB_CATEGORY_META } from "../utils/taskMeta";
 
 interface Props {
   task: TaskDisplay;
@@ -15,6 +15,7 @@ interface Props {
   onEdit?: (task: TaskDisplay) => void;
   onDelete?: (task: TaskDisplay) => void;
   onEnd?: (task: TaskDisplay) => void;
+  onExtend?: (task: TaskDisplay) => void;
   onOccurrenceCancel?: (task: TaskDisplay) => void;
   onOccurrencePostpone?: (task: TaskDisplay) => void;
   onChecklistToggle?: (task: TaskDisplay, itemId: string) => void;
@@ -110,7 +111,7 @@ function TimerControls({
   );
 }
 
-export function TaskItem({ task, compact = false, print = false, showTimerUI = true, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onRetrySync, onRetryItemSync, onCopy, onSaveActualTime, onSaveActualTimeManual, onSaveEstimatedMinutes }: Props) {
+export function TaskItem({ task, compact = false, print = false, showTimerUI = true, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onExtend, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onRetrySync, onRetryItemSync, onCopy, onSaveActualTime, onSaveActualTimeManual, onSaveEstimatedMinutes }: Props) {
   const [menu, setMenu] = useState(false);
   const [checkState, setCheckState] = useState<AnimState>("idle");
   const [itemAnim, setItemAnim] = useState<Record<string, AnimState>>({});
@@ -270,6 +271,12 @@ export function TaskItem({ task, compact = false, print = false, showTimerUI = t
                 <>
                   <div className="my-1 border-t border-stone-100" />
                   <button onClick={() => { onEnd(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-amber-700 hover:bg-amber-50"><CalendarX className="h-4 w-4" />结束</button>
+                </>
+              )}
+              {onExtend && canExtendRecurring(task) && effectiveStatus !== "done" && effectiveStatus !== "cancelled" && (
+                <>
+                  <div className="my-1 border-t border-stone-100" />
+                  <button onClick={() => { onExtend(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-primary hover:bg-mint"><CalendarPlus className="h-4 w-4" />延长周期</button>
                 </>
               )}
               <button onClick={() => { onDelete?.(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-rose-600 hover:bg-rose-50"><Trash2 className="h-4 w-4" />删除任务</button>

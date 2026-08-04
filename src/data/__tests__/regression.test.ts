@@ -380,6 +380,48 @@ describe("结束长期重复任务 endRecurring（2026-07-20）", () => {
   });
 });
 
+describe("延长周期 extendRecurring（2026-08-04）", () => {
+  it("26b. 改 recurrence.endDate（含镜像）为新日期，排期自然延续，本体/streakStartDate/历史 occurrence 完全不动", async () => {
+    const { task } = await taskRepository.create(recurringDraft({
+      recurrence: { frequency: "daily", startDate: dayOffset(-10), endDate: yesterday },
+      enableStreak: true, streakStartDate: dayOffset(-10),
+    }));
+    // 造一条历史完成 occurrence，验证延长后不被动
+    await db.taskOccurrenceStatuses.put({ id: `${task.id}:${yesterday}`, taskId: task.id, occurrenceDate: yesterday, status: "done", createdAt: today, updatedAt: today } as never);
+
+    const future = dayOffset(30);
+    await taskRepository.extendRecurring(task.id, future, today);
+    const after = await db.tasks.get(task.id);
+    expect(after?.recurrence?.endDate).toBe(future);
+    expect(after?.endDate).toBe(future);              // 镜像同步
+    expect(after?.streakStartDate).toBe(dayOffset(-10)); // 不受影响
+    expect(scheduleOccursOn(after!, today)).toBe(true);   // 今天起恢复排期
+    expect(scheduleOccursOn(after!, future)).toBe(true);
+    expect((await db.taskOccurrenceStatuses.get(`${task.id}:${yesterday}`))?.status).toBe("done"); // 历史不动
+  });
+
+  it("26c. 传 undefined 改为不限期", async () => {
+    const { task } = await taskRepository.create(recurringDraft({
+      recurrence: { frequency: "daily", startDate: dayOffset(-10), endDate: yesterday },
+    }));
+    await taskRepository.extendRecurring(task.id, undefined, today);
+    const after = await db.tasks.get(task.id);
+    expect(after?.recurrence?.endDate).toBeUndefined();
+    expect(after?.endDate).toBeUndefined();
+    expect(scheduleOccursOn(after!, dayOffset(365))).toBe(true); // 长期排下去
+  });
+
+  it("26d. 新结束日期早于今天时拒绝；非重复任务调用抛错", async () => {
+    const { task } = await taskRepository.create(recurringDraft({
+      recurrence: { frequency: "daily", startDate: dayOffset(-10), endDate: yesterday },
+    }));
+    await expect(taskRepository.extendRecurring(task.id, dayOffset(-1), today)).rejects.toThrow();
+
+    const { task: single } = await taskRepository.create(baseDraft());
+    await expect(taskRepository.extendRecurring(single.id, dayOffset(30), today)).rejects.toThrow();
+  });
+});
+
 describe("时间字段 time/startTime 镜像（2026-07-20 修复：清空时间保存后旧值复活）", () => {
   it("28. update 清空 startTime 时，遗留的旧 time 字段一并清除，不再通过 ?? 兜底复活", async () => {
     const { task } = await taskRepository.create(baseDraft({ startTime: "14:25" }));

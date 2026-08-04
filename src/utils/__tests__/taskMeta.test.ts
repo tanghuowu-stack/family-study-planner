@@ -11,7 +11,7 @@
  * 覆盖"已结束/未结束"边界，防止再次漏某一种模式。
  */
 import { describe, expect, it } from "vitest";
-import { canEndRecurring, isEndedRecurring } from "../taskMeta";
+import { canEndRecurring, canExtendRecurring, isEndedRecurring } from "../taskMeta";
 
 describe("dailyRecurring/weeklyRecurring：canEndRecurring / isEndedRecurring 互斥边界", () => {
   const dailyTask = (endDate?: string) => ({
@@ -42,6 +42,48 @@ describe("dailyRecurring/weeklyRecurring：canEndRecurring / isEndedRecurring �
     const t = { timeType: "recurring" as const, schedulePattern: "weeklyRecurring" as const, recurrence: { endDate: "2026-07-19" } };
     expect(canEndRecurring(t, "2026-07-20")).toBe(false);
     expect(isEndedRecurring(t, "2026-07-20")).toBe(true);
+  });
+});
+
+describe("canExtendRecurring：与 canEndRecurring 严格互斥（2026-08-04，「延长周期」功能）", () => {
+  const dailyTask = (endDate?: string) => ({
+    timeType: "recurring" as const,
+    schedulePattern: "dailyRecurring" as const,
+    recurrence: { endDate },
+  });
+
+  it("无 endDate（本就不限期）：不可延长（没有延长的意义），可结束", () => {
+    const t = dailyTask(undefined);
+    expect(canExtendRecurring(t, "2026-07-20")).toBe(false);
+    expect(canEndRecurring(t, "2026-07-20")).toBe(true);
+  });
+
+  it("endDate 等于今天（还在排期内）：不可延长，可结束", () => {
+    const t = dailyTask("2026-07-20");
+    expect(canExtendRecurring(t, "2026-07-20")).toBe(false);
+    expect(canEndRecurring(t, "2026-07-20")).toBe(true);
+  });
+
+  it("endDate 早于今天（已过期）：可延长，不可结束（互斥边界）", () => {
+    const t = dailyTask("2026-07-19");
+    expect(canExtendRecurring(t, "2026-07-20")).toBe(true);
+    expect(canEndRecurring(t, "2026-07-20")).toBe(false);
+  });
+
+  it("weeklyRecurring 同理", () => {
+    const t = { timeType: "recurring" as const, schedulePattern: "weeklyRecurring" as const, recurrence: { endDate: "2026-07-19" } };
+    expect(canExtendRecurring(t, "2026-07-20")).toBe(true);
+    expect(canEndRecurring(t, "2026-07-20")).toBe(false);
+  });
+
+  it("有界排期（dateRangeDaily/specificDates）不适用「延长」——只对读 recurrence.endDate 的两种模式开放", () => {
+    const t = { timeType: "recurring" as const, schedulePattern: "dateRangeDaily" as const, startDate: "2026-07-04", endDate: "2026-07-25" };
+    expect(canExtendRecurring(t, "2026-07-26")).toBe(false);
+  });
+
+  it("非 recurring 类型恒为 false", () => {
+    const t = { timeType: "singleDate" as const };
+    expect(canExtendRecurring(t, "2026-07-20")).toBe(false);
   });
 });
 

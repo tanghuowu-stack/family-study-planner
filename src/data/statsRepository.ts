@@ -66,14 +66,15 @@ function itemFloor(task: Task, today: string): string {
 }
 
 /**
- * 单项当前连续天数：从今天往回，应做日完成 +1（休息日完成同样计入）、
- * 应做日未完成断——但休息日"免罚"穿过；非应做日穿过；
- * 今天应做但未完成不算断（当天未结束）。
+ * 当前连续天数（单任务或分组均适用，传入数组长度为 1 即单任务）：从今天往回，
+ * 应做日完成 +1（休息日完成同样计入）、应做日未完成断——但休息日"免罚"穿过；
+ * 非应做日穿过；今天应做但未完成不算断（当天未结束）。分组时"应做/完成"取组内任一任务满足。
  */
-function computeItemStreak(task: Task, today: string, occByKey: OccMap, rests: Set<string>): number {
-  const floor = itemFloor(task, today);
-  const applicable = (d: string) => isApplicable(task, d, occByKey);
-  const ok = (d: string) => itemSatisfied(task, d, occByKey);
+function computeGroupStreak(tasks: Task[], today: string, occByKey: OccMap, rests: Set<string>): number {
+  if (tasks.length === 0) return 0;
+  const floor = tasks.map((t) => itemFloor(t, today)).reduce((a, b) => (a < b ? a : b));
+  const applicable = (d: string) => groupApplicable(tasks, d, occByKey);
+  const ok = (d: string) => groupSatisfied(tasks, d, occByKey);
   let streak = 0;
   let cursor = today;
   if (applicable(cursor) && !ok(cursor)) cursor = prevDayKey(cursor); // 今天未完成不算断
@@ -88,6 +89,29 @@ function computeItemStreak(task: Task, today: string, occByKey: OccMap, rests: S
 
 const sortTasks = (a: Task, b: Task) =>
   (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || a.createdAt.localeCompare(b.createdAt);
+
+/**
+ * 打卡分组（2026-08-12）：同一习惯的不同任务形式合并成一张打卡月历卡
+ * （如"钢琴课" piano + "钢琴练习" pianoPractice → 统一显示"钢琴"），
+ * 组内任一任务当天完成即算这一天打卡成功。
+ *
+ * 按 subCategory 聚合而非任务实例字段：这是分类体系自身的属性（枚举值，非用户可编辑的
+ * 自由文本），新建的同类任务自动归组、无需用户逐条配置。未命中这张表的任务照旧各自一张卡。
+ * 只新增分组，不要在这里放跨分类体系的临时组合——那种需求应该用任务级字段单独设计。
+ */
+const HABIT_GROUPS: Record<string, { groupKey: string; label: string }> = {
+  piano: { groupKey: "piano", label: "钢琴" },
+  pianoPractice: { groupKey: "piano", label: "钢琴" },
+};
+
+const habitGroupKey = (task: Task): string => HABIT_GROUPS[task.subCategory]?.groupKey ?? task.id;
+
+/** 分组版应做判定：组内任一任务当天应做 */
+const groupApplicable = (tasks: Task[], date: string, occByKey: OccMap) =>
+  tasks.some((t) => isApplicable(t, date, occByKey));
+/** 分组版完成判定：组内任一应做任务当天完成 */
+const groupSatisfied = (tasks: Task[], date: string, occByKey: OccMap) =>
+  tasks.some((t) => isApplicable(t, date, occByKey) && itemSatisfied(t, date, occByKey));
 
 // ── 管理打卡项目 ─────────────────────────────────────────────────────────────
 
@@ -139,6 +163,7 @@ export async function setHabitStartDate(taskId: string, date: string, today: str
 export type HabitDayStatus = "done" | "missed" | "off";
 
 export interface HabitCalendar {
+  /** 单任务时是真实 taskId；命中 HABIT_GROUPS 分组时是合成的组 key（如 "piano"） */
   taskId: string;
   title: string;
   /** 该项目自身的当前连续天数（与展示月份无关，恒从今天往回算） */
@@ -165,24 +190,34 @@ export async function getHabitCalendars(month: string, today: string = todayKey(
     .filter((t) => statsEligible(t) && isOccurrenceSchedule(t) && t.enableStreak === true && t.status !== "cancelled")
     .sort(sortTasks);
 
+  // 打卡分组：同一习惯的不同任务形式合并成一张卡（见 HABIT_GROUPS），
+  // 用 Map 保序聚合——保持 enabled 已排好的顺序，组的位置由组内首个任务的顺序决定。
+  const groups = new Map<string, Task[]>();
+  for (const task of enabled) {
+    const key = habitGroupKey(task);
+    const list = groups.get(key);
+    if (list) list.push(task); else groups.set(key, [task]);
+  }
+
   const monthStart = toDateKey(startOfMonth(parseISO(`${month}-01`)));
   const monthEnd = toDateKey(endOfMonth(parseISO(`${month}-01`)));
   const monthDays = listDays(monthStart, monthEnd);
 
-  return enabled.map((task) => {
+  return [...groups.entries()].map(([key, groupTasks]) => {
+    const groupLabel = HABIT_GROUPS[groupTasks[0].subCategory]?.label;
     const days = monthDays.map((date) => {
       let status: HabitDayStatus;
-      if (date > today) status = "off";                                    // 未来日
-      else if (!isApplicable(task, date, occByKey)) status = "off";       // 起点前 / 未排期 / 单日取消
-      else if (itemSatisfied(task, date, occByKey)) status = "done";      // 完成（休息日完成同样算 done）
-      else if (rests.has(date)) status = "off";                           // 休息日未完成：免罚不算漏卡
+      if (date > today) status = "off";                                          // 未来日
+      else if (!groupApplicable(groupTasks, date, occByKey)) status = "off";     // 起点前 / 未排期 / 单日取消
+      else if (groupSatisfied(groupTasks, date, occByKey)) status = "done";      // 完成（休息日完成同样算 done）
+      else if (rests.has(date)) status = "off";                                 // 休息日未完成：免罚不算漏卡
       else status = "missed";
       return { date, status };
     });
     return {
-      taskId: task.id,
-      title: taskShortName(task),
-      currentStreak: computeItemStreak(task, today, occByKey, rests),
+      taskId: key,
+      title: groupLabel ?? taskShortName(groupTasks[0]),
+      currentStreak: computeGroupStreak(groupTasks, today, occByKey, rests),
       days,
     };
   });

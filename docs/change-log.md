@@ -2,6 +2,14 @@
 
 此文件只记录简短变更摘要。以后每次完成项目修改后，在顶部日期下追加一条记录，不需要复制完整需求或实现细节。
 
+## 2026-08-12
+
+- 恢复被软删的真实任务「暑假作业-趣味练习题3页」（用户反馈"任务整个消失"）：诊断确认 `deletedAt=2026-08-11T14:56:16`（iPad Safari），与当天 13:31 完成打卡相隔 1h25min，非同一操作；全库代码审计确认 `setOccurrence`/`setDisplayStatus`/`toggleChecklistItem` 均无隐藏的"完成后自动删除"逻辑，排除该可能。27 条 occurrence（14 条完成）、`recurrence` 排期规则均完整保留，走 `getRepository().restore()` 正规路径恢复，本地+云端 `deletedAt` 确认清空，今日页验证正常出现。备注：该任务今年 7 月已因 `recurrence.endDate` 与 `task.endDate` 不一致"消失"过一次（见 08-04 记录），本次是独立的软删事件；`activity_logs` 默认不自动同步云端（只有手动上传才批量同步），故删除操作的设备端具体触发路径无法从云端还原，已建议用户直接查看 iPad 本地"最近操作记录"确认。
+- 打卡分组：钢琴课（`piano`）+ 钢琴练习（`pianoPractice`）合并为一张"钢琴"打卡月历卡，组内任一任务当天完成即算打卡成功（用户确认两者不会同一天出现）。方案选型：按 subCategory 聚合（而非新增任务级 `habitGroupId` 字段）——这一分组是分类体系本身的稳定属性，新建的同类任务自动归组、零维护成本，且零 schema/迁移/表单改动；灵活性更高的任务级字段方案留作未来真正出现跨分类临时分组需求时的备选。
+  1. `statsRepository.ts` 新增 `HABIT_GROUPS` 映射表（`piano`/`pianoPractice` → `{groupKey: "piano", label: "钢琴"}`），`getHabitCalendars` 按 `habitGroupKey` 聚合已勾选任务；`computeItemStreak` 泛化为 `computeGroupStreak(tasks[], ...)`（单任务/多任务同一套逻辑，`.some()` 语义天然兼容），新增 `groupApplicable`/`groupSatisfied` 分组版应做/完成判定。`getHabitCandidates`（管理弹窗）不变，仍按任务逐条勾选。
+  2. 测试 +4（两任务合并一张卡、互斥排期下任一完成即算打卡成功、只勾选其中一个仍显示分组标签、未命中分组表的任务不受影响），120 例全绿，tsc 通过。
+  3. 真实数据验证：家庭现有"钢琴练习"单独一条也正确显示为"钢琴"；临时加一条"钢琴课"测试任务与真实任务合并——仍只 1 张卡、当天状态因测试任务完成从 missed 转 done；意外发现当天真实"钢琴练习" occurrence 被标记 cancelled（大概率当天上钢琴课），验证了"off"正确排除 cancelled 日，也印证了两者互斥的真实场景。测试任务已清理（云端确认软删）。
+
 ## 2026-08-04
 
 - 新增「延长周期」操作，与「结束」对称，解决"任务到期后用户手动新建同名任务续期"（导致重复打卡任务）的根源：

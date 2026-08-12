@@ -247,6 +247,73 @@ describe("getHabitCalendars", () => {
   });
 });
 
+describe("打卡分组（钢琴课 piano + 钢琴练习 pianoPractice → 统一显示钢琴，2026-08-12）", () => {
+  const pianoClass = (id: string, streakStartDate: string, weekdays: number[]) =>
+    makeTask(id, {
+      enableStreak: true, streakStartDate, mainCategory: "interestClass", subCategory: "piano",
+      timeType: "recurring", schedulePattern: "weeklyRecurring", date: undefined,
+      startDate: "2026-06-01", recurrence: { frequency: "weekly", weekdays, startDate: "2026-06-01" },
+    });
+  const pianoPractice = (id: string, streakStartDate: string) =>
+    makeTask(id, {
+      enableStreak: true, streakStartDate, mainCategory: "interestClass", subCategory: "pianoPractice",
+      timeType: "recurring", schedulePattern: "dailyRecurring", date: undefined,
+      startDate: "2026-06-01", recurrence: { frequency: "daily", startDate: "2026-06-01" },
+    });
+
+  it("14. 两条任务合并成一张卡，标题显示分组标签钢琴而非单个任务的展示名", async () => {
+    await db.tasks.bulkAdd([
+      pianoClass("class", "2026-07-01", [1, 3, 5]),   // 周二/四/六上课
+      pianoPractice("practice", "2026-07-01"),          // 每天练习
+    ]);
+    const cals = await getHabitCalendars("2026-07", "2026-07-13");
+    expect(cals).toHaveLength(1); // 不是两张卡
+    expect(cals[0].title).toBe("钢琴");
+  });
+
+  it("15. 当天完成两者之一即算这一天打卡成功（互斥排期：上课日只有 class 应做，其余日子只有 practice 应做）", async () => {
+    await db.tasks.bulkAdd([
+      pianoClass("class", "2026-07-01", [2]), // 只周二上课：2026-07-14 是周二（getDay()：0=周日...2=周二）
+      pianoPractice("practice", "2026-07-01"),
+    ]);
+    // 周二(07-14) 用 class 的 occurrence 打卡；其余每天用 practice 的 occurrence 打卡
+    await db.taskOccurrenceStatuses.bulkAdd([
+      occRow("class", "2026-07-14", "done", noonOf("2026-07-14")),
+      occRow("practice", "2026-07-13", "done", noonOf("2026-07-13")),
+      occRow("practice", "2026-07-15", "done", noonOf("2026-07-15")),
+    ]);
+    const cals = await getHabitCalendars("2026-07", "2026-07-15");
+    const m = statusMap(cals[0]);
+    expect(m["2026-07-13"]).toBe("done"); // practice 完成
+    expect(m["2026-07-14"]).toBe("done"); // class 完成（当天 practice 也应做但未做，只要 class 做了就算成功）
+    expect(m["2026-07-15"]).toBe("done"); // practice 完成
+    expect(cals[0].currentStreak).toBe(3); // 三天连续，尽管是两个不同任务在贡献
+  });
+
+  it("16. 只勾选其中一个（如只勾练习，没勾上课）也显示分组标签钢琴，不受影响独立工作", async () => {
+    await db.tasks.bulkAdd([
+      pianoPractice("practice", "2026-07-01"),
+      makeTask("classOff", { mainCategory: "interestClass", subCategory: "piano", timeType: "recurring", schedulePattern: "weeklyRecurring", date: undefined, startDate: "2026-06-01", recurrence: { frequency: "weekly", weekdays: [1], startDate: "2026-06-01" } }), // 未勾选打卡
+    ]);
+    const cals = await getHabitCalendars("2026-07", "2026-07-13");
+    expect(cals).toHaveLength(1);
+    expect(cals[0].title).toBe("钢琴");
+    expect(cals[0].taskId).not.toBe("classOff"); // 未勾选的任务不参与分组
+  });
+
+  it("17. 未命中分组表的任务（如数学任务）不受影响，仍各自一张卡、标题用任务自身展示名", async () => {
+    await db.tasks.bulkAdd([
+      pianoClass("class", "2026-07-01", [1, 3, 5]),
+      pianoPractice("practice", "2026-07-01"),
+      dailyHabit("math", "2026-07-01"), // subCategory 默认 "math"，不在 HABIT_GROUPS 里
+    ]);
+    const cals = await getHabitCalendars("2026-07", "2026-07-13");
+    expect(cals).toHaveLength(2); // 钢琴一张 + math 一张
+    const mathCal = cals.find((c) => c.taskId === "math");
+    expect(mathCal?.title).toBe("math"); // 未分组任务用 taskShortName（这里 title 字段就是 id）
+  });
+});
+
 describe("copyToDate 不继承打卡身份", () => {
   it("13. 复制一个打卡任务，新任务的 enableStreak/streakStartDate 被清空，不出现在打卡月历", async () => {
     const { task: source } = await taskRepository.create({
@@ -259,7 +326,9 @@ describe("copyToDate 不继承打卡身份", () => {
     expect(copy.enableStreak).toBeUndefined();
     expect(copy.streakStartDate).toBeUndefined();
     const cals = await getHabitCalendars("2026-08", "2026-08-04");
-    expect(cals.map((c) => c.taskId)).toEqual([source.id]); // 只有源任务在月历里，复制品不在
+    // 2026-08-12 起 pianoPractice 命中打卡分组（见"打卡分组"用例），卡片 taskId 显示为组 key "piano"
+    // 而非 source.id；这里的重点仍是"只有一张卡、复制品不产生第二张"
+    expect(cals.map((c) => c.taskId)).toEqual(["piano"]);
   });
 });
 

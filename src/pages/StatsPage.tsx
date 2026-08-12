@@ -5,6 +5,7 @@ import { CloudLoginPanel } from "../components/CloudLoginPanel";
 import { getCalendarDisplaySettings, saveCalendarDisplaySettings, type CalendarDisplaySettings } from "../data/calendarAnnotations";
 import { HabitSection } from "../components/HabitSection";
 import { taskRepository } from "../data/taskRepository";
+import { canUndoActivityLog, undoActivityLog } from "../data/activityUndo";
 import type { ActivityLog, TaskDisplay } from "../types/task";
 import { formatLongDate, todayKey, toLocalDateKey } from "../utils/date";
 
@@ -20,6 +21,7 @@ export function StatsPage({ onImported, cloudMode }: { onImported: () => void; c
   const [calendarSettings, setCalendarSettings] = useState(getCalendarDisplaySettings);
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [logsOpen, setLogsOpen] = useState(false);
+  const [undoingId, setUndoingId] = useState<string | null>(null);
   const [courseStart, setCourseStart] = useState(() => `${todayKey().slice(0, 7)}-01`);
   const [courseEnd, setCourseEnd] = useState(todayKey);
   const [courseStats, setCourseStats] = useState<CourseStats>();
@@ -28,6 +30,20 @@ export function StatsPage({ onImported, cloudMode }: { onImported: () => void; c
   const [moreSettingsOpen, setMoreSettingsOpen] = useState(false);
   const loadLogs = () => taskRepository.listActivityLogs(100).then(setLogs);
   useEffect(() => { void loadLogs(); }, []);
+  const handleUndo = async (log: ActivityLog) => {
+    if (!confirm(`撤回"${actionLabel(log.actionType)}${log.entityTitle ? "：" + log.entityTitle : ""}"这条操作吗？`)) return;
+    setUndoingId(log.id);
+    try {
+      await undoActivityLog(log);
+      setMessage("已撤回");
+      onImported();
+      void loadLogs();
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "撤回失败");
+    } finally {
+      setUndoingId(null);
+    }
+  };
   const updateCalendarSetting = (key: keyof CalendarDisplaySettings, value: boolean) => { const next = { ...calendarSettings, [key]: value }; setCalendarSettings(next); saveCalendarDisplaySettings(next); setMessage("日历显示设置已保存"); };
   const exportData = async () => { const backup = await taskRepository.exportBackup(); const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `小步计划备份-${toLocalDateKey(backup.exportedAt)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 500); setMessage("备份已导出"); void loadLogs(); };
   const importData = async (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; event.target.value = ""; if (!file || !confirm("导入将覆盖当前数据，确定继续吗？")) return; try { await taskRepository.importBackup(JSON.parse(await file.text())); setMessage("导入成功"); onImported(); void loadLogs(); } catch (reason) { setMessage(reason instanceof Error ? reason.message : "导入失败"); } };
@@ -48,7 +64,7 @@ export function StatsPage({ onImported, cloudMode }: { onImported: () => void; c
         <div className="border-t pt-4"><h3 className="text-sm font-semibold">数据备份</h3><button onClick={() => setBackupOpen(!backupOpen)} className="mt-2 flex w-full items-center justify-between text-left"><span className="text-xs text-stone-500">导入 / 导出</span><span className="inline-flex items-center gap-1 text-xs text-stone-500">{backupOpen ? "收起" : "展开"}<ChevronDown className={`h-4 w-4 transition ${backupOpen ? "rotate-180" : ""}`} /></span></button>{backupOpen && <div className="mt-3 grid gap-4 sm:grid-cols-2"><ActionCard icon={<Download />} title="导出备份" text="保存全部任务、软删除记录和操作日志。" button="导出备份" onClick={exportData} /><div className="rounded-2xl border border-stone-100 bg-white p-5 shadow-card"><span className="inline-flex rounded-xl bg-amber-50 p-2 text-amber-700"><Upload className="h-5 w-5" /></span><h2 className="mt-3 font-semibold">导入备份</h2><p className="mt-1 text-sm text-stone-500">从 JSON 文件恢复任务。</p><input ref={fileRef} type="file" accept=".json,application/json" onChange={importData} className="hidden" /><button onClick={() => fileRef.current?.click()} className="mt-4 w-full rounded-xl border px-4 py-2.5 text-sm font-semibold">选择备份文件</button></div></div>}</div>
         <div className="border-t pt-4"><h3 className="text-sm font-semibold">日历提示</h3><div className="mt-2 flex flex-wrap items-center gap-2"><SettingCheck label="显示节气" checked={calendarSettings.showSolarTerms} onChange={(value) => updateCalendarSetting("showSolarTerms", value)} /><SettingCheck label="显示节日" checked={calendarSettings.showFestivals} onChange={(value) => updateCalendarSetting("showFestivals", value)} /><SettingCheck label="显示休/班标记" checked={calendarSettings.showHolidayStatus} onChange={(value) => updateCalendarSetting("showHolidayStatus", value)} /></div></div>
         <div className="border-t pt-4"><label className="inline-flex items-center gap-2 rounded-xl bg-stone-50 px-4 py-2.5 text-sm text-stone-600"><input type="checkbox" checked={includeDone} onChange={(event) => setIncludeDone(event.target.checked)} className="h-4 w-4 rounded" />打印时包含已完成任务</label><div className="mt-3 max-w-xs"><ActionCard icon={<Printer />} title="打印今日清单" text="紧凑清单，适合 A4 打印。" button="打印今日" onClick={printToday} /></div></div>
-        <div className="border-t pt-4"><button onClick={() => setLogsOpen(!logsOpen)} className="flex w-full items-center justify-between text-left"><span className="text-sm font-semibold">最近操作记录 · {logs.length}</span><span className="inline-flex items-center gap-1 text-xs text-stone-500">{logsOpen ? "收起" : "展开"}<ChevronDown className={`h-4 w-4 transition ${logsOpen ? "rotate-180" : ""}`} /></span></button>{logsOpen && <><div className="mt-2 flex justify-end"><button onClick={() => void loadLogs()} className="text-xs text-sage-700">刷新</button></div><div className="mt-1 divide-y">{logs.length ? logs.map((log) => <details key={log.id} className="py-2 text-sm"><summary className="cursor-pointer list-none"><span className="font-medium">{actionLabel(log.actionType)}</span><span className="ml-2 text-stone-500">{log.entityTitle ?? log.entityId ?? "系统数据"}</span><span className="ml-2 text-xs text-stone-400">{new Date(log.createdAt).toLocaleString("zh-CN")} · {log.deviceLabel} · {log.browser}</span></summary><pre className="mt-2 max-h-56 overflow-auto rounded-lg bg-stone-50 p-3 text-[11px] text-stone-500">{JSON.stringify({ before: log.beforeSnapshot, after: log.afterSnapshot }, null, 2)}</pre></details>) : <p className="py-5 text-sm text-stone-400">暂无操作记录</p>}</div></>}</div>
+        <div className="border-t pt-4"><button onClick={() => setLogsOpen(!logsOpen)} className="flex w-full items-center justify-between text-left"><span className="text-sm font-semibold">最近操作记录 · {logs.length}</span><span className="inline-flex items-center gap-1 text-xs text-stone-500">{logsOpen ? "收起" : "展开"}<ChevronDown className={`h-4 w-4 transition ${logsOpen ? "rotate-180" : ""}`} /></span></button>{logsOpen && <><div className="mt-2 flex justify-end"><button onClick={() => void loadLogs()} className="text-xs text-sage-700">刷新</button></div><div className="mt-1 divide-y">{logs.length ? logs.map((log) => <details key={log.id} className="py-2 text-sm"><summary className="flex cursor-pointer list-none items-center gap-2"><span className="min-w-0 flex-1"><span className="font-medium">{actionLabel(log.actionType)}</span><span className="ml-2 text-stone-500">{log.entityTitle ?? log.entityId ?? "系统数据"}</span><span className="ml-2 text-xs text-stone-400">{new Date(log.createdAt).toLocaleString("zh-CN")} · {log.deviceLabel} · {log.browser}</span></span>{canUndoActivityLog(log) && <button onClick={(event) => { event.preventDefault(); event.stopPropagation(); void handleUndo(log); }} disabled={undoingId === log.id} className="shrink-0 rounded-lg border border-stone-200 px-2 py-1 text-xs font-medium text-stone-600 hover:bg-mint/40 disabled:opacity-50">{undoingId === log.id ? "撤回中…" : "撤回"}</button>}</summary><pre className="mt-2 max-h-56 overflow-auto rounded-lg bg-stone-50 p-3 text-[11px] text-stone-500">{JSON.stringify({ before: log.beforeSnapshot, after: log.afterSnapshot }, null, 2)}</pre></details>) : <p className="py-5 text-sm text-stone-400">暂无操作记录</p>}</div></>}</div>
       </div>}
     </section>
   </main>{printData && <PrintSheet data={printData} />}</>;

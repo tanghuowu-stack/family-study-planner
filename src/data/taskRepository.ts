@@ -585,6 +585,23 @@ export const taskRepository = {
     return { task: result, synced: true };
   },
 
+  /**
+   * 撤回专用：把任务整体覆盖为给定快照（通常是某条操作记录的 beforeSnapshot），精确复原。
+   * 不走 update() 的"改 status 顺带联动 completedAt"智能推断——那是给表单编辑用的默认规则，
+   * 撤回要的是恢复到当时的真实字段值（含 completedAt），两者语义冲突，必须分开一条路径。
+   */
+  async restoreSnapshot(id: string, snapshot: Task): Promise<TaskWriteResult> {
+    const existing = await db.tasks.get(id);
+    if (!existing) throw new Error("找不到要恢复的任务");
+    const now = new Date().toISOString();
+    const task = sanitizeTaskWrite({ ...snapshot, id, createdAt: snapshot.createdAt ?? existing.createdAt, updatedAt: now }, existing.status);
+    await db.transaction("rw", db.tasks, db.activityLogs, async () => {
+      await db.tasks.put(task);
+      await writeLog("edit", "task", { entityId: id, entityTitle: task.title, beforeSnapshot: existing, afterSnapshot: task });
+    });
+    return { task, synced: true };
+  },
+
   // 「结束」长期重复任务：把 recurrence.endDate 设为结束当天的前一天，使当天起不再排期，
   // 但任务本体不删、历史 occurrence 完整保留、统计月历卡片继续可见（区别于 remove 的软删）。
   // 走 update 入口，自动继承 endDate 镜像（sanitizeTaskWrite 把 task.endDate 一并同步）与云端上传。

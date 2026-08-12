@@ -4,6 +4,13 @@
 
 ## 2026-08-12
 
+- 「最近操作记录」加撤回：按用户要求改为直接在现有 100 条记录列表里逐条加「撤回」按钮，不做 toast+"最近删除"分组的方案。
+  1. `taskRepository.ts` 新增 `restoreSnapshot(id, snapshot)`——撤回专用的整体覆盖写入，不走 `update()` 的"改 status 顺带联动 completedAt"智能推断（那是给表单编辑用的默认规则，会覆盖掉快照里要精确复原的原始 completedAt，两种语义冲突）。`cloudRepository.ts` 加对应云端包装。
+  2. 新模块 `activityUndo.ts`（`canUndoActivityLog`/`undoActivityLog`）：只支持有明确安全撤回语义的动作——task 类的 create/delete/restore/edit/complete/uncomplete，taskOccurrence 类的 complete/uncomplete/cancelOccurrence/postponeOccurrence，以及 batchDelete；拖拽排序（edit 但无 entityId）、假期/课程/阅读旧记录/导入导出一律不可撤回，不强行兼容。occurrence 类撤回的 completedAt 用近似值（`setOccurrence` 不支持精确覆盖），但完成判定只看 status 不看 completedAt，不影响任何读取路径。
+  3. `StatsPage.tsx`「最近操作记录」每行按钮内联，点击弹确认框、执行撤回、成功后触发 `onImported`（联动今日页/任务管理页刷新）+ 重新加载日志列表。
+  4. 测试 +10（`activityUndo.test.ts`：拖拽排序/非任务类不可撤回、新建撤回=软删、删除撤回=恢复、恢复撤回=重新软删、编辑撤回精确复原字段、完成撤回退回 todo 且不残留 completedAt、**取消完成撤回精确复原原始 completedAt 而非联动逻辑生成的 now**、occurrence 撤回保留 override 字段、批量删除撤回全部恢复），134 例全绿，tsc 通过。
+  5. 真实数据端到端验证：登录态下造测试任务、完成、在真实 UI 里点"撤回"按钮——确认框弹出、撤回后 status 退回 todo 且 completedAt 清空、toast 正确显示、云端同步确认；删除操作的日志条目正确显示"撤回"按钮。测试任务已清理。
+  - 顺带说明用户截图疑问"为什么完成记录全是 Mac Chrome"：`activity_logs` 本地表不自动同步云端（只有手动批量上传才会），这次截图里的记录混入了本次会话在自动化预览浏览器（识别为 Mac Chrome）里做的诊断/测试操作，不代表家庭真实设备的操作记录异常；真实 iPad/Mac 各自的本地记录不受影响。
 - 打卡分组补齐：单次课（`singleDate`）现在能自动纳入已启用的打卡分组（用户反馈"打卡页面没显示上钢琴课的打卡"）。
   1. **根因**：钢琴课在库里是 8 条 `singleDate` 任务（每次上课单独建一条），而 `getHabitCandidates`/`getHabitCalendars` 都限制 `isOccurrenceSchedule`（只认 recurring），钢琴课既进不了候选也进不了月历——上一轮按 subCategory 分组时误以为两者都是重复任务，只合并到了"钢琴练习"一条。
   2. **修复**：命中 `HABIT_GROUPS` 的分组改为「组内任一任务被勾选即启用整组」，成员按 subCategory 全量收集、**不限排期类型**——单次课无需（也无法）逐条勾选，将来新建的同类课自动纳入。组级打卡起点取组内已勾选任务的最早起点，统一用于组内所有成员（避免起点前的历史单次课倒灌成打卡）。未命中分组的任务口径不变（仍要求自身 recurring + 已勾选，防孤儿卡）。

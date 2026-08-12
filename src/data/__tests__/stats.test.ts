@@ -301,6 +301,45 @@ describe("打卡分组（钢琴课 piano + 钢琴练习 pianoPractice → 统一
     expect(cals[0].taskId).not.toBe("classOff"); // 未勾选的任务不参与分组
   });
 
+  it("17b. 单次课（singleDate 的钢琴课）自动纳入已启用分组，无需逐条勾选——当天上课即算打卡", async () => {
+    await db.tasks.bulkAdd([
+      pianoPractice("practice", "2026-07-01"),                       // 唯一被勾选的任务
+      // 钢琴课：每次上课单独建的 singleDate 任务，enableStreak 未勾选（也无法逐条勾）
+      makeTask("class0714", { mainCategory: "interestClass", subCategory: "piano", timeType: "singleDate", date: "2026-07-14", status: "done", completedAt: noonOf("2026-07-14") }),
+    ]);
+    // 07-13 练习完成；07-14 只上了课没练琴（练习那天的 occurrence 被取消）
+    await db.taskOccurrenceStatuses.bulkAdd([
+      occRow("practice", "2026-07-13", "done", noonOf("2026-07-13")),
+      occRow("practice", "2026-07-14", "cancelled"),
+    ]);
+    const cals = await getHabitCalendars("2026-07", "2026-07-14");
+    expect(cals).toHaveLength(1);
+    expect(cals[0].title).toBe("钢琴");
+    const m = statusMap(cals[0]);
+    expect(m["2026-07-13"]).toBe("done"); // 练习完成
+    expect(m["2026-07-14"]).toBe("done"); // 练习当天取消，但上了钢琴课 → 仍算打卡成功
+    expect(cals[0].currentStreak).toBe(2);
+  });
+
+  it("17c. 组内无任何任务被勾选时，分组不出现（单次课不会自己冒出一张卡）", async () => {
+    await db.tasks.bulkAdd([
+      makeTask("class0714", { mainCategory: "interestClass", subCategory: "piano", timeType: "singleDate", date: "2026-07-14", status: "done", completedAt: noonOf("2026-07-14") }),
+      dailyHabit("math", "2026-07-01"),
+    ]);
+    const cals = await getHabitCalendars("2026-07", "2026-07-14");
+    expect(cals.map((c) => c.taskId)).toEqual(["math"]); // 只有数学，没有"钢琴"卡
+  });
+
+  it("17d. 组级起点统一生效：起点前的单次课不算打卡（避免历史欠账倒灌）", async () => {
+    await db.tasks.bulkAdd([
+      pianoPractice("practice", "2026-07-10"), // 打卡起点 07-10
+      makeTask("classEarly", { mainCategory: "interestClass", subCategory: "piano", timeType: "singleDate", date: "2026-07-05", status: "done", completedAt: noonOf("2026-07-05") }),
+    ]);
+    const cals = await getHabitCalendars("2026-07", "2026-07-13");
+    const m = statusMap(cals[0]);
+    expect(m["2026-07-05"]).toBe("off"); // 起点前的钢琴课不计入
+  });
+
   it("17. 未命中分组表的任务（如数学任务）不受影响，仍各自一张卡、标题用任务自身展示名", async () => {
     await db.tasks.bulkAdd([
       pianoClass("class", "2026-07-01", [1, 3, 5]),

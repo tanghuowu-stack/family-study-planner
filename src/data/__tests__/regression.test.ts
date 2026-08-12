@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "../db";
 import { taskRepository, scheduleOccursOn } from "../taskRepository";
 import { lwwMerge } from "../cloudRepository";
+import { toLocalDateKey } from "../../utils/date";
 import type { Task, TaskDraft, TaskDisplay } from "../../types/task";
 
 const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -185,6 +186,50 @@ describe("R6 dateRange 整体任务语义", () => {
     expect(body?.status).toBe("done");
     expect(body?.completedAt).toBeTruthy();
     expect(await db.taskOccurrenceStatuses.count()).toBe(0);
+  });
+
+  // 「布置后一个月内任意天做完即可」的作业窗口场景（2026-08-12 用户反馈）：
+  // dateRange 已完整支持——窗口内每天都出现（哪天做都行）、小项跨天累积、
+  // 全部小项完成即在当天判定完成、完成日当天仍显示（进已完成区）、之后不再出现。
+  // 不要为这类作业用 dailyRecurring：那是"每天各欠一次"的语义，会积压逐日欠账。
+  it("11b. 作业窗口：窗口内每天可做、小项跨天累积、做完当天判完成且之后不再出现", async () => {
+    const windowStart = dayOffset(-3);
+    const windowEnd = dayOffset(20);
+    const { task } = await taskRepository.create(baseDraft({
+      title: "暑假作业-趣味练习题",
+      timeType: "dateRange",
+      date: undefined,
+      startDate: windowStart,
+      endDate: windowEnd,
+      checklistItems: [
+        { id: "p1", title: "第1-7页", done: false, sortOrder: 0 },
+        { id: "p2", title: "第8-14页", done: false, sortOrder: 1 },
+        { id: "p3", title: "第15-20页", done: false, sortOrder: 2 },
+      ],
+    }));
+
+    // 窗口内任意一天都出现，没有"逐日欠账"——过去没做的日子不会各自留一笔
+    for (const d of [windowStart, dayOffset(-1), today, dayOffset(10)]) {
+      const list = await taskRepository.getTasksForDate(d);
+      expect(list.some((t) => t.id === task.id), `${d} 应出现在清单`).toBe(true);
+    }
+
+    // 小项跨天完成：前两项做完仍是未完成，任务继续留在清单里
+    await taskRepository.toggleChecklistItem(task.id, "p1");
+    await taskRepository.toggleChecklistItem(task.id, "p2");
+    expect((await db.tasks.get(task.id))?.status).toBe("todo");
+    expect((await taskRepository.getTasksForDate(today)).some((t) => t.id === task.id)).toBe(true);
+
+    // 做完最后一项 → 当天判定完成
+    await taskRepository.toggleChecklistItem(task.id, "p3");
+    const body = await db.tasks.get(task.id);
+    expect(body?.status).toBe("done");
+    expect(toLocalDateKey(body!.completedAt!)).toBe(today); // 完成日 = 做完那天
+
+    // 完成当天仍在清单（显示在已完成区），之后的日子不再出现
+    expect((await taskRepository.getTasksForDate(today)).some((t) => t.id === task.id)).toBe(true);
+    expect((await taskRepository.getTasksForDate(dayOffset(1))).some((t) => t.id === task.id)).toBe(false);
+    expect(await db.taskOccurrenceStatuses.count()).toBe(0); // 全程不产生 occurrence 欠账
   });
 });
 

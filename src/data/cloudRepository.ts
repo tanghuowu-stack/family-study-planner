@@ -20,8 +20,9 @@ import type {
   BackupData,
   SyncResult,
   TaskWriteResult,
+  ActivityLog,
 } from "../types/task";
-import { taskRepository } from "./taskRepository";
+import { taskRepository, setActivityLogHook } from "./taskRepository";
 import { getWeekStartKey, getWeekEndKey, getMonthKey, getMonthBounds, todayKey, toDateKey } from "../utils/date";
 import { addDays, eachDayOfInterval, parseISO } from "date-fns";
 
@@ -216,6 +217,50 @@ async function upsertOccurrence(
     .from("task_occurrence_statuses")
     .upsert(row, { onConflict: "id" });
   if (error) throw new Error(`云端保存单次状态失败: ${error.message}`);
+}
+
+/**
+ * 操作日志逐条上传（2026-08-12）：`ignoreDuplicates: true` 对应 Postgres 的
+ * ON CONFLICT DO NOTHING——冲突时直接跳过、不触发实际 UPDATE，不需要 UPDATE 权限
+ * （RLS 只对 activity_logs 授予了 insert/select，早期版本试过 upsert 触发过权限报错）。
+ */
+async function uploadActivityLog(log: ActivityLog, familyId: string): Promise<void> {
+  if (!supabase) return;
+  const row = stripUndefined({
+    id: log.id,
+    family_id: familyId,
+    action_type: log.actionType,
+    entity_type: log.entityType ?? null,
+    entity_id: log.entityId ?? null,
+    entity_title: log.entityTitle ?? null,
+    before_snapshot: log.beforeSnapshot ?? null,
+    after_snapshot: log.afterSnapshot ?? null,
+    actor_name: log.actorName ?? null,
+    device_type: log.deviceType ?? null,
+    device_label: log.deviceLabel ?? null,
+    browser: log.browser ?? null,
+    created_at: log.createdAt,
+  });
+  const { error } = await supabase.from("activity_logs").upsert(row, { onConflict: "id", ignoreDuplicates: true });
+  if (error) throw new Error(`云端同步操作记录失败: ${error.message}`);
+}
+
+/** Supabase 行 → ActivityLog */
+function rowToActivityLog(row: any): ActivityLog {
+  return {
+    id: row.id,
+    actionType: row.action_type,
+    entityType: row.entity_type ?? undefined,
+    entityId: row.entity_id ?? undefined,
+    entityTitle: row.entity_title ?? undefined,
+    beforeSnapshot: row.before_snapshot ?? undefined,
+    afterSnapshot: row.after_snapshot ?? undefined,
+    actorName: row.actor_name ?? "",
+    deviceType: row.device_type ?? "",
+    deviceLabel: row.device_label ?? "",
+    browser: row.browser ?? "",
+    createdAt: row.created_at,
+  };
 }
 
 /** Supabase courses 行 → Course */
@@ -865,4 +910,44 @@ export const cloudRepository = {
   async findTimeConflicts(draft: TaskDraft, excludeId?: string) {
     return taskRepository.findTimeConflicts(draft, excludeId);
   },
+
+  /**
+   * 操作记录跨设备可见（2026-08-12）：本地日志 + 云端日志按 id 去重合并，按时间倒序取前 limit 条。
+   * 云端拉取失败时静默降级为纯本地结果，不影响页面正常显示。
+   */
+  async listActivityLogs(limit = 100): Promise<ActivityLog[]> {
+    const local = await taskRepository.listActivityLogs(limit);
+    if (!_familyId || !supabase) return local;
+    try {
+      const { data, error } = await supabase
+        .from("activity_logs")
+        .select("*")
+        .eq("family_id", _familyId)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+      if (error) throw error;
+      const merged = new Map<string, ActivityLog>();
+      for (const row of data ?? []) {
+        const log = rowToActivityLog(row);
+        // 与本地同一份过滤口径：阅读计划相关记录不展示
+        const before = log.beforeSnapshot as { mainCategory?: string } | undefined;
+        const after = log.afterSnapshot as { mainCategory?: string } | undefined;
+        if (log.entityType === "readingLog" || ["recordReading", "undoReading"].includes(log.actionType)) continue;
+        if (before?.mainCategory === "readingPlan" || after?.mainCategory === "readingPlan") continue;
+        merged.set(log.id, log);
+      }
+      for (const log of local) merged.set(log.id, log);
+      return [...merged.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit);
+    } catch (e) {
+      console.warn("[cloudRepository] 拉取云端操作记录失败，降级为本地记录", e);
+      return local;
+    }
+  },
 };
+
+// 每条新写入的操作日志自动上传云端（不阻塞、不弹错误提示——这是审计辅助信息，不是关键数据，
+// 上传失败只打印控制台警告，不打扰用户）。
+setActivityLogHook((log) => {
+  if (!_familyId) return;
+  void uploadActivityLog(log, _familyId).catch((e) => console.warn("[cloudRepository] 操作记录上传失败", e));
+});

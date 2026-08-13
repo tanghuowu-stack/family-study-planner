@@ -4,16 +4,19 @@
  * 视觉遵守 docs/style.md：primary/mint 主题、卡片 rounded-2xl border-stone-100，
  * 完成绿（primary）、漏卡红（rose，见 style.md §功能色补充）、off 灰（stone）。
  */
-import { ChevronLeft, ChevronRight, ListChecks, CalendarOff } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ListChecks, CalendarOff, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { addDays, addMonths, endOfMonth, getDay, parseISO, startOfMonth } from "date-fns";
 import {
   getHabitCalendars,
   getHabitCandidates,
+  getHiddenHabitCandidates,
   getRestDays,
+  hideHabitCandidate,
   setHabitEnabled,
   setHabitStartDate,
   toggleRestDay,
+  unhideHabitCandidate,
   type HabitCalendar,
   type HabitCandidate,
   type HabitDayStatus,
@@ -124,9 +127,14 @@ function MonthGrid({ days }: { days: { date: string; status: HabitDayStatus }[] 
 /** 管理打卡项目：勾选/取消即时调 setHabitEnabled */
 function ManageDialog({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
   const [candidates, setCandidates] = useState<HabitCandidate[] | null>(null);
+  const [hidden, setHidden] = useState<{ taskId: string; title: string }[]>([]);
+  const [hiddenOpen, setHiddenOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const load = useCallback(() => { getHabitCandidates().then(setCandidates).catch(() => setCandidates([])); }, []);
+  const load = useCallback(() => {
+    getHabitCandidates().then(setCandidates).catch(() => setCandidates([]));
+    getHiddenHabitCandidates().then(setHidden).catch(() => setHidden([]));
+  }, []);
   useEffect(load, [load]);
 
   const toggle = async (c: HabitCandidate) => {
@@ -153,6 +161,26 @@ function ManageDialog({ onClose, onChanged }: { onClose: () => void; onChanged: 
     }
   };
 
+  const hide = async (taskId: string) => {
+    setBusy(taskId);
+    try {
+      await hideHabitCandidate(taskId);
+      load();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const unhide = async (taskId: string) => {
+    setBusy(taskId);
+    try {
+      await unhideHabitCandidate(taskId);
+      load();
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <Dialog onClose={onClose} title="管理打卡项目">
       {candidates === null ? (
@@ -163,10 +191,17 @@ function ManageDialog({ onClose, onChanged }: { onClose: () => void; onChanged: 
         <div className="mt-3 max-h-72 space-y-1 overflow-y-auto">
           {candidates.map((c) => (
             <div key={c.taskId} className="rounded-lg px-2 py-2 hover:bg-mint/40">
-              <label className="flex cursor-pointer items-center gap-2 text-sm">
-                <input type="checkbox" checked={c.enabled} disabled={busy === c.taskId} onChange={() => toggle(c)} className="h-4 w-4 rounded" />
-                <span className="min-w-0 flex-1 truncate text-ink">{c.title}</span>
-              </label>
+              <div className="flex items-center gap-2">
+                <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-sm">
+                  <input type="checkbox" checked={c.enabled} disabled={busy === c.taskId} onChange={() => toggle(c)} className="h-4 w-4 shrink-0 rounded" />
+                  <span className="min-w-0 flex-1 truncate text-ink">{c.title}</span>
+                </label>
+                {!c.enabled && (
+                  <button onClick={() => hide(c.taskId)} disabled={busy === c.taskId} aria-label={`不再显示"${c.title}"`} title="不再显示这个任务" className="shrink-0 rounded-lg p-1 text-stone-400 hover:bg-stone-100 hover:text-rose-500 disabled:opacity-50">
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
               {c.enabled && c.streakStartDate && (
                 editingId === c.taskId ? (
                   <input
@@ -190,6 +225,24 @@ function ManageDialog({ onClose, onChanged }: { onClose: () => void; onChanged: 
               )}
             </div>
           ))}
+        </div>
+      )}
+      {hidden.length > 0 && (
+        <div className="mt-3 border-t pt-2">
+          <button onClick={() => setHiddenOpen(!hiddenOpen)} className="flex w-full items-center justify-between text-xs text-muted">
+            已隐藏 {hidden.length} 项
+            <ChevronDown className={`h-3.5 w-3.5 transition ${hiddenOpen ? "rotate-180" : ""}`} />
+          </button>
+          {hiddenOpen && (
+            <div className="mt-1 space-y-0.5">
+              {hidden.map((h) => (
+                <div key={h.taskId} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted hover:bg-mint/40">
+                  <span className="min-w-0 flex-1 truncate">{h.title}</span>
+                  <button onClick={() => unhide(h.taskId)} disabled={busy === h.taskId} className="shrink-0 text-primary hover:underline disabled:opacity-50">取消隐藏</button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
       <button onClick={onClose} className="mt-4 w-full rounded-xl border bg-white px-4 py-2 text-sm text-stone-500">完成</button>

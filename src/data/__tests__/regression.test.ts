@@ -227,9 +227,37 @@ describe("R6 dateRange 整体任务语义", () => {
     expect(toLocalDateKey(body!.completedAt!)).toBe(today); // 完成日 = 做完那天
 
     // 完成当天仍在清单（显示在已完成区），之后的日子不再出现
-    expect((await taskRepository.getTasksForDate(today)).some((t) => t.id === task.id)).toBe(true);
+    const todayEntry = (await taskRepository.getTasksForDate(today)).find((t) => t.id === task.id);
+    expect(todayEntry?.status).toBe("done");
     expect((await taskRepository.getTasksForDate(dayOffset(1))).some((t) => t.id === task.id)).toBe(false);
     expect(await db.taskOccurrenceStatuses.count()).toBe(0); // 全程不产生 occurrence 欠账
+  });
+
+  // 2026-08-12 用户反馈的真实 bug：dateRange 任务在某天标记完成后，回看完成日之前的窗口内
+  // 日期（如昨天、前天）也被显示成"已完成"——但那些天从未真正做过。dateRange 只有一个
+  // status 字段（不逐日记录），过去必须靠展示层按日覆盖回 todo，不能把全局 status 原样透传。
+  it("11c. 完成日之前的窗口内日期仍显示未完成，只有完成当天及之后（直到完成日）显示已完成", async () => {
+    const windowStart = dayOffset(-5);
+    const { task } = await taskRepository.create(baseDraft({
+      title: "暑假作业-历史日期不应被误标完成",
+      timeType: "dateRange",
+      date: undefined,
+      startDate: windowStart,
+      endDate: dayOffset(20),
+    }));
+    await taskRepository.setDisplayStatus(task as TaskDisplay, "done"); // 今天做完
+
+    const past = await Promise.all([windowStart, dayOffset(-3), dayOffset(-1)].map((d) => taskRepository.getTasksForDate(d)));
+    past.forEach((list, i) => {
+      const entry = list.find((t) => t.id === task.id);
+      expect(entry, `完成日之前的 ${[windowStart, dayOffset(-3), dayOffset(-1)][i]} 应仍出现在清单`).toBeTruthy();
+      expect(entry?.status, `完成日之前的 ${[windowStart, dayOffset(-3), dayOffset(-1)][i]} 不应显示已完成`).toBe("todo");
+    });
+    const todayEntry = (await taskRepository.getTasksForDate(today)).find((t) => t.id === task.id);
+    expect(todayEntry?.status).toBe("done"); // 完成当天正确显示已完成
+
+    // 数据库里的 status 本身没有被污染——展示层覆盖不写库
+    expect((await db.tasks.get(task.id))?.status).toBe("done");
   });
 });
 

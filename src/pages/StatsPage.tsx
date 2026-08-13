@@ -1,22 +1,19 @@
-import { ChevronDown, Download, Printer, Upload } from "lucide-react";
+import { ChevronDown, Download, Upload } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { TaskItem } from "../components/TaskItem";
 import { CloudLoginPanel } from "../components/CloudLoginPanel";
 import { getCalendarDisplaySettings, saveCalendarDisplaySettings, type CalendarDisplaySettings } from "../data/calendarAnnotations";
 import { HabitSection } from "../components/HabitSection";
 import { taskRepository } from "../data/taskRepository";
+import { getRepository } from "../data/repositoryProvider";
 import { canUndoActivityLog, undoActivityLog } from "../data/activityUndo";
-import type { ActivityLog, TaskDisplay } from "../types/task";
-import { formatLongDate, todayKey, toLocalDateKey } from "../utils/date";
+import type { ActivityLog } from "../types/task";
+import { todayKey, toLocalDateKey } from "../utils/date";
 
-type PrintData = { includeDone: boolean; day: { date: string; tasks: TaskDisplay[] }; overdue: TaskDisplay[] };
 type CourseStats = Awaited<ReturnType<typeof taskRepository.getCourseStatistics>>;
 
 export function StatsPage({ onImported, cloudMode }: { onImported: () => void; cloudMode?: boolean }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState("");
-  const [printData, setPrintData] = useState<PrintData | null>(null);
-  const [includeDone, setIncludeDone] = useState(false);
   const [deviceLabel, setDeviceLabel] = useState(() => localStorage.getItem("familyPlanner.deviceLabel") ?? "");
   const [calendarSettings, setCalendarSettings] = useState(getCalendarDisplaySettings);
   const [logs, setLogs] = useState<ActivityLog[]>([]);
@@ -28,7 +25,7 @@ export function StatsPage({ onImported, cloudMode }: { onImported: () => void; c
   const [backupOpen, setBackupOpen] = useState(false);
   const [cloudSyncOpen, setCloudSyncOpen] = useState(false);
   const [moreSettingsOpen, setMoreSettingsOpen] = useState(false);
-  const loadLogs = () => taskRepository.listActivityLogs(100).then(setLogs);
+  const loadLogs = () => getRepository().listActivityLogs(100).then(setLogs);
   useEffect(() => { void loadLogs(); }, []);
   const handleUndo = async (log: ActivityLog) => {
     if (!confirm(`撤回"${actionLabel(log.actionType)}${log.entityTitle ? "：" + log.entityTitle : ""}"这条操作吗？`)) return;
@@ -47,13 +44,12 @@ export function StatsPage({ onImported, cloudMode }: { onImported: () => void; c
   const updateCalendarSetting = (key: keyof CalendarDisplaySettings, value: boolean) => { const next = { ...calendarSettings, [key]: value }; setCalendarSettings(next); saveCalendarDisplaySettings(next); setMessage("日历显示设置已保存"); };
   const exportData = async () => { const backup = await taskRepository.exportBackup(); const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `小步计划备份-${toLocalDateKey(backup.exportedAt)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 500); setMessage("备份已导出"); void loadLogs(); };
   const importData = async (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; event.target.value = ""; if (!file || !confirm("导入将覆盖当前数据，确定继续吗？")) return; try { await taskRepository.importBackup(JSON.parse(await file.text())); setMessage("导入成功"); onImported(); void loadLogs(); } catch (reason) { setMessage(reason instanceof Error ? reason.message : "导入失败"); } };
-  const printToday = async () => { const today = todayKey(); const [overdue, tasks] = await Promise.all([taskRepository.getOverdueTasks(today), taskRepository.getTasksForDate(today)]); setPrintData({ includeDone, overdue, day: { date: today, tasks } }); setTimeout(() => window.print(), 80); };
   const countCourses = async () => {
     if (!courseStart || !courseEnd || courseStart > courseEnd) return setMessage("课程统计日期范围不正确");
     setCourseStats(await taskRepository.getCourseStatistics(courseStart, courseEnd));
     setMessage("");
   };
-  return <><main className="screen-only mx-auto w-full max-w-4xl px-4 pb-28 pt-6 sm:px-6"><p className="text-xs font-semibold tracking-widest text-sage-700">STATS</p><h1 className="mt-1 text-2xl font-semibold">统计</h1>
+  return <main className="mx-auto w-full max-w-4xl px-4 pb-28 pt-6 sm:px-6"><p className="text-xs font-semibold tracking-widest text-sage-700">STATS</p><h1 className="mt-1 text-2xl font-semibold">统计</h1>
     <HabitSection />
     <section className="mt-6 rounded-2xl border border-stone-100 bg-white p-4 shadow-sm"><h3 className="text-sm font-semibold">课程节数统计</h3><div className="mt-2 flex flex-wrap items-end gap-2"><label className="text-xs text-stone-500">开始日期<input type="date" value={courseStart} onChange={(event) => setCourseStart(event.target.value)} className="mt-1 block rounded-lg border px-2.5 py-1.5 text-sm text-stone-700" /></label><label className="text-xs text-stone-500">结束日期<input type="date" value={courseEnd} onChange={(event) => setCourseEnd(event.target.value)} className="mt-1 block rounded-lg border px-2.5 py-1.5 text-sm text-stone-700" /></label><button onClick={countCourses} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white">统计</button></div>{courseStats && <CourseStatistics data={courseStats} />}</section>
     {message && <p className="mt-4 rounded-xl bg-sage-50 px-4 py-3 text-sm text-sage-700">{message}</p>}
@@ -63,11 +59,10 @@ export function StatsPage({ onImported, cloudMode }: { onImported: () => void; c
         <div className="border-t pt-4"><h3 className="text-sm font-semibold">本机名称</h3><div className="mt-2 inline-flex items-center gap-2"><span className="text-xs text-stone-500">名称</span><input value={deviceLabel} onChange={(event) => setDeviceLabel(event.target.value)} placeholder="例如：书房 MacBook" className="w-36 rounded-lg border px-2.5 py-1.5 text-sm" /><button onClick={() => { localStorage.setItem("familyPlanner.deviceLabel", deviceLabel.trim() || "本地设备"); setMessage("本机名称已保存"); }} className="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-white">保存</button></div></div>
         <div className="border-t pt-4"><h3 className="text-sm font-semibold">数据备份</h3><button onClick={() => setBackupOpen(!backupOpen)} className="mt-2 flex w-full items-center justify-between text-left"><span className="text-xs text-stone-500">导入 / 导出</span><span className="inline-flex items-center gap-1 text-xs text-stone-500">{backupOpen ? "收起" : "展开"}<ChevronDown className={`h-4 w-4 transition ${backupOpen ? "rotate-180" : ""}`} /></span></button>{backupOpen && <div className="mt-3 grid gap-4 sm:grid-cols-2"><ActionCard icon={<Download />} title="导出备份" text="保存全部任务、软删除记录和操作日志。" button="导出备份" onClick={exportData} /><div className="rounded-2xl border border-stone-100 bg-white p-5 shadow-card"><span className="inline-flex rounded-xl bg-amber-50 p-2 text-amber-700"><Upload className="h-5 w-5" /></span><h2 className="mt-3 font-semibold">导入备份</h2><p className="mt-1 text-sm text-stone-500">从 JSON 文件恢复任务。</p><input ref={fileRef} type="file" accept=".json,application/json" onChange={importData} className="hidden" /><button onClick={() => fileRef.current?.click()} className="mt-4 w-full rounded-xl border px-4 py-2.5 text-sm font-semibold">选择备份文件</button></div></div>}</div>
         <div className="border-t pt-4"><h3 className="text-sm font-semibold">日历提示</h3><div className="mt-2 flex flex-wrap items-center gap-2"><SettingCheck label="显示节气" checked={calendarSettings.showSolarTerms} onChange={(value) => updateCalendarSetting("showSolarTerms", value)} /><SettingCheck label="显示节日" checked={calendarSettings.showFestivals} onChange={(value) => updateCalendarSetting("showFestivals", value)} /><SettingCheck label="显示休/班标记" checked={calendarSettings.showHolidayStatus} onChange={(value) => updateCalendarSetting("showHolidayStatus", value)} /></div></div>
-        <div className="border-t pt-4"><label className="inline-flex items-center gap-2 rounded-xl bg-stone-50 px-4 py-2.5 text-sm text-stone-600"><input type="checkbox" checked={includeDone} onChange={(event) => setIncludeDone(event.target.checked)} className="h-4 w-4 rounded" />打印时包含已完成任务</label><div className="mt-3 max-w-xs"><ActionCard icon={<Printer />} title="打印今日清单" text="紧凑清单，适合 A4 打印。" button="打印今日" onClick={printToday} /></div></div>
         <div className="border-t pt-4"><button onClick={() => setLogsOpen(!logsOpen)} className="flex w-full items-center justify-between text-left"><span className="text-sm font-semibold">最近操作记录 · {logs.length}</span><span className="inline-flex items-center gap-1 text-xs text-stone-500">{logsOpen ? "收起" : "展开"}<ChevronDown className={`h-4 w-4 transition ${logsOpen ? "rotate-180" : ""}`} /></span></button>{logsOpen && <><div className="mt-2 flex justify-end"><button onClick={() => void loadLogs()} className="text-xs text-sage-700">刷新</button></div><div className="mt-1 divide-y">{logs.length ? logs.map((log) => <details key={log.id} className="py-2 text-sm"><summary className="flex cursor-pointer list-none items-center gap-2"><span className="min-w-0 flex-1"><span className="font-medium">{actionLabel(log.actionType)}</span><span className="ml-2 text-stone-500">{log.entityTitle ?? log.entityId ?? "系统数据"}</span><span className="ml-2 text-xs text-stone-400">{new Date(log.createdAt).toLocaleString("zh-CN")} · {log.deviceLabel} · {log.browser}</span></span>{canUndoActivityLog(log) && <button onClick={(event) => { event.preventDefault(); event.stopPropagation(); void handleUndo(log); }} disabled={undoingId === log.id} className="shrink-0 rounded-lg border border-stone-200 px-2 py-1 text-xs font-medium text-stone-600 hover:bg-mint/40 disabled:opacity-50">{undoingId === log.id ? "撤回中…" : "撤回"}</button>}</summary><pre className="mt-2 max-h-56 overflow-auto rounded-lg bg-stone-50 p-3 text-[11px] text-stone-500">{JSON.stringify({ before: log.beforeSnapshot, after: log.afterSnapshot }, null, 2)}</pre></details>) : <p className="py-5 text-sm text-stone-400">暂无操作记录</p>}</div></>}</div>
       </div>}
     </section>
-  </main>{printData && <PrintSheet data={printData} />}</>;
+  </main>;
 }
 
 function SettingCheck({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) { return <label className="flex items-center gap-1.5 rounded-lg bg-stone-50 px-2.5 py-1.5 text-xs text-stone-600"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="h-3.5 w-3.5 rounded" />{label}</label>; }
@@ -77,4 +72,3 @@ function CourseStatistics({ data }: { data: CourseStats }) {
 }
 const actionLabel = (action: ActivityLog["actionType"]) => ({ create: "新建任务", edit: "编辑任务", complete: "完成任务", uncomplete: "取消完成", delete: "删除任务", batchDelete: "批量删除", restore: "恢复任务", cancelOccurrence: "取消单次安排", postponeOccurrence: "延期单次安排", createHoliday: "新增假期", editHoliday: "修改假期", deleteHoliday: "删除假期", createCourse: "新增课程", editCourse: "修改课程", deleteCourse: "删除课程", recordReading: "旧版记录", undoReading: "撤销旧版记录", import: "导入备份", export: "导出备份" }[action]);
 function ActionCard({ icon, title, text, button, onClick }: { icon: React.ReactNode; title: string; text: string; button: string; onClick: () => void }) { return <div className="rounded-2xl border border-stone-100 bg-white p-5 shadow-card"><span className="inline-flex rounded-xl bg-sage-50 p-2 text-sage-700">{icon}</span><h2 className="mt-3 font-semibold">{title}</h2><p className="mt-1 text-sm text-stone-500">{text}</p><button onClick={onClick} className="mt-4 w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white">{button}</button></div>; }
-function PrintSheet({ data }: { data: PrintData }) { return <div className="print-only"><h1>今日清单</h1><p className="print-date">{formatLongDate(data.day.date)}</p><section>{data.day.tasks.filter((task) => data.includeDone || (task.status !== "done" && task.status !== "cancelled")).map((task) => <TaskItem key={`${task.id}:${task.occurrenceDate ?? data.day.date}`} task={task} print compact />)}</section>{data.overdue.length > 0 && <section><h2>逾期未完成</h2>{data.overdue.map((task) => <TaskItem key={task.id} task={task} print compact />)}</section>}</div>; }

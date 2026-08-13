@@ -7,7 +7,6 @@ import { STATUS_META, canEndRecurring, canExtendRecurring, isCourseTask, taskSho
 interface Props {
   task: TaskDisplay;
   compact?: boolean;
-  print?: boolean;
   showTimerUI?: boolean; // 页面级开关：false = 整页不显示任何计时/用时 UI
   unsynced?: boolean; // 任务自身完成状态未同步到云端
   unsyncedItemIds?: Set<string>; // 哪些清单小项未同步到云端
@@ -111,7 +110,7 @@ function TimerControls({
   );
 }
 
-export function TaskItem({ task, compact = false, print = false, showTimerUI = true, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onExtend, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onRetrySync, onRetryItemSync, onCopy, onSaveActualTime, onSaveActualTimeManual, onSaveEstimatedMinutes }: Props) {
+export function TaskItem({ task, compact = false, showTimerUI = true, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onExtend, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onRetrySync, onRetryItemSync, onCopy, onSaveActualTime, onSaveActualTimeManual, onSaveEstimatedMinutes }: Props) {
   const [menu, setMenu] = useState(false);
   const [checkState, setCheckState] = useState<AnimState>("idle");
   const [itemAnim, setItemAnim] = useState<Record<string, AnimState>>({});
@@ -164,12 +163,9 @@ export function TaskItem({ task, compact = false, print = false, showTimerUI = t
 
   return (
     <div className={`relative flex items-start gap-3 border-b border-stone-100 last:border-0 ${compact ? "px-3 py-2" : "px-4 py-3.5"} ${done || effectiveStatus === "cancelled" ? "text-stone-400" : "text-ink"}`}>
-      {print
-        ? <span className="mt-0.5 text-lg">□</span>
-        : <button aria-label={done ? "标记为未完成" : "标记为完成"} onClick={() => handleStatusChange(done ? "todo" : "done")} className={checkboxClass(checkState, done)}>
-            <Check className="h-4 w-4" strokeWidth={3} />
-          </button>
-      }
+      <button aria-label={done ? "标记为未完成" : "标记为完成"} onClick={() => handleStatusChange(done ? "todo" : "done")} className={checkboxClass(checkState, done)}>
+        <Check className="h-4 w-4" strokeWidth={3} />
+      </button>
 
       <div className="min-w-0 flex-1">
         {/* 标题行 */}
@@ -187,7 +183,7 @@ export function TaskItem({ task, compact = false, print = false, showTimerUI = t
           {isCourseTask(task) && (
             <span className={`ml-2 inline-flex rounded-md px-2 py-0.5 align-middle text-[10px] font-semibold no-underline ${done || effectiveStatus === "cancelled" ? "bg-stone-200 text-stone-400" : "bg-mint text-primary"}`}>上课</span>
           )}
-          {unsynced && !print && <UnsyncedBadge onRetry={onRetrySync} />}
+          {unsynced && <UnsyncedBadge onRetry={onRetrySync} />}
           {hasChecklist && (() => {
             const items = task.checklistItems!.map(i => ({ ...i, done: optimisticItems[i.id] !== undefined ? optimisticItems[i.id] : i.done }));
             const doneCount = items.filter(i => i.done).length;
@@ -213,7 +209,6 @@ export function TaskItem({ task, compact = false, print = false, showTimerUI = t
                 item={{ ...item, done: optimisticItemDone }}
                 taskId={task.id}
                 animState={itemAnim[item.id] ?? "idle"}
-                print={print}
                 showTimeInfo={showTimeInfo}
                 unsynced={unsyncedItemIds?.has(item.id)}
                 onToggle={() => handleChecklistToggle(item.id, item.done)}
@@ -226,8 +221,8 @@ export function TaskItem({ task, compact = false, print = false, showTimerUI = t
           </div>
         )}
 
-        {/* 计时/用时行（无 checklist，非打印；完成后仍显示作为记录） */}
-        {!hasChecklist && !print && (
+        {/* 计时/用时行（无 checklist；完成后仍显示作为记录） */}
+        {!hasChecklist && (
           <TaskLevelTimerRow
             task={task}
             show={showTimeInfo}
@@ -252,47 +247,44 @@ export function TaskItem({ task, compact = false, print = false, showTimerUI = t
         <span className={`mt-1 hidden shrink-0 rounded-full px-2 py-0.5 text-[11px] sm:block ${STATUS_META[effectiveStatus].className}`}>{STATUS_META[effectiveStatus].label}</span>
       )}
 
-      {!print && (
-        <div className="relative">
-          <button aria-label="任务操作" onClick={() => setMenu(!menu)} className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100">
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
-          {menu && (
-            <div className="absolute right-0 top-8 z-20 w-40 rounded-xl border border-stone-100 bg-white p-1.5 text-sm shadow-card">
-              <button onClick={() => { onEdit?.(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-stone-50"><Pencil className="h-4 w-4" />编辑任务</button>
-              <button onClick={() => { onCopy?.(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-stone-50"><Copy className="h-4 w-4" />复制到日期</button>
-              {task.occurrenceDate && (
-                <>
-                  <button onClick={() => { onOccurrencePostpone?.(task); setMenu(false); }} className="w-full rounded-lg px-3 py-2 text-left hover:bg-violet-50">延期本次</button>
-                  <button onClick={() => { onOccurrenceCancel?.(task); setMenu(false); }} className="w-full rounded-lg px-3 py-2 text-left hover:bg-amber-50">取消本次</button>
-                </>
-              )}
-              {onEnd && canEndRecurring(task) && effectiveStatus !== "done" && effectiveStatus !== "cancelled" && (
-                <>
-                  <div className="my-1 border-t border-stone-100" />
-                  <button onClick={() => { onEnd(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-amber-700 hover:bg-amber-50"><CalendarX className="h-4 w-4" />结束</button>
-                </>
-              )}
-              {onExtend && canExtendRecurring(task) && effectiveStatus !== "done" && effectiveStatus !== "cancelled" && (
-                <>
-                  <div className="my-1 border-t border-stone-100" />
-                  <button onClick={() => { onExtend(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-primary hover:bg-mint"><CalendarPlus className="h-4 w-4" />延长周期</button>
-                </>
-              )}
-              <button onClick={() => { onDelete?.(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-rose-600 hover:bg-rose-50"><Trash2 className="h-4 w-4" />删除任务</button>
-            </div>
-          )}
-        </div>
-      )}
+      <div className="relative">
+        <button aria-label="任务操作" onClick={() => setMenu(!menu)} className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100">
+          <MoreHorizontal className="h-4 w-4" />
+        </button>
+        {menu && (
+          <div className="absolute right-0 top-8 z-20 w-40 rounded-xl border border-stone-100 bg-white p-1.5 text-sm shadow-card">
+            <button onClick={() => { onEdit?.(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-stone-50"><Pencil className="h-4 w-4" />编辑任务</button>
+            <button onClick={() => { onCopy?.(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-stone-50"><Copy className="h-4 w-4" />复制到日期</button>
+            {task.occurrenceDate && (
+              <>
+                <button onClick={() => { onOccurrencePostpone?.(task); setMenu(false); }} className="w-full rounded-lg px-3 py-2 text-left hover:bg-violet-50">延期本次</button>
+                <button onClick={() => { onOccurrenceCancel?.(task); setMenu(false); }} className="w-full rounded-lg px-3 py-2 text-left hover:bg-amber-50">取消本次</button>
+              </>
+            )}
+            {onEnd && canEndRecurring(task) && effectiveStatus !== "done" && effectiveStatus !== "cancelled" && (
+              <>
+                <div className="my-1 border-t border-stone-100" />
+                <button onClick={() => { onEnd(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-amber-700 hover:bg-amber-50"><CalendarX className="h-4 w-4" />结束</button>
+              </>
+            )}
+            {onExtend && canExtendRecurring(task) && effectiveStatus !== "done" && effectiveStatus !== "cancelled" && (
+              <>
+                <div className="my-1 border-t border-stone-100" />
+                <button onClick={() => { onExtend(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-primary hover:bg-mint"><CalendarPlus className="h-4 w-4" />延长周期</button>
+              </>
+            )}
+            <button onClick={() => { onDelete?.(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-rose-600 hover:bg-rose-50"><Trash2 className="h-4 w-4" />删除任务</button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-function ChecklistRow({ item, taskId, animState, print, showTimeInfo, unsynced, onToggle, onRetrySync, saveFn, onSaveEstimated, onSaveActual }: {
+function ChecklistRow({ item, taskId, animState, showTimeInfo, unsynced, onToggle, onRetrySync, saveFn, onSaveEstimated, onSaveActual }: {
   item: ChecklistItem;
   taskId: string;
   animState: AnimState;
-  print: boolean;
   showTimeInfo: boolean;
   unsynced?: boolean;
   onToggle: () => void;
@@ -303,14 +295,14 @@ function ChecklistRow({ item, taskId, animState, print, showTimeInfo, unsynced, 
 }) {
   return (
     <div className={`flex items-center gap-2 rounded-md px-1.5 py-1 ${item.done ? "text-stone-400" : "text-stone-600"}`}>
-      <button type="button" disabled={print} onClick={onToggle} className="shrink-0">
+      <button type="button" onClick={onToggle} className="shrink-0">
         <span className={checkboxClass(animState, item.done, "sm")}>
-          {print ? "□" : item.done ? "✓" : ""}
+          {item.done ? "✓" : ""}
         </span>
       </button>
       <span className={`min-w-0 flex-1 text-sm ${item.done ? "line-through" : ""}`}>{item.title}</span>
-      {unsynced && !print && <UnsyncedBadge onRetry={onRetrySync} />}
-      {!print && showTimeInfo && (
+      {unsynced && <UnsyncedBadge onRetry={onRetrySync} />}
+      {showTimeInfo && (
         <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
           {/* 未完成：可编辑预计；已完成：只读显示 */}
           {!item.done ? (

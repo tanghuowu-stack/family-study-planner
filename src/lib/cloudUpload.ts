@@ -120,11 +120,12 @@ export async function uploadLocalDataToCloud(familyId: string): Promise<UploadRe
   if (!supabase) throw new Error("Supabase 未配置");
 
   // ── 1. 读取本地数据 ─────────────────────────────────────────────
-  const [tasks, occurrenceStatuses, planPeriods, courses] = await Promise.all([
+  const [tasks, occurrenceStatuses, planPeriods, courses, activityLogs] = await Promise.all([
     db.tasks.toArray(),
     db.taskOccurrenceStatuses.toArray(),
     db.planPeriods.toArray(),
     db.courses.toArray(),
+    db.activityLogs.toArray(),
   ]);
 
   const result: UploadResult = {
@@ -154,6 +155,25 @@ export async function uploadLocalDataToCloud(familyId: string): Promise<UploadRe
       const { error } = await supabase!
         .from(table)
         .upsert(chunk, { onConflict });
+      if (error) throw new Error(`上传 ${table} 失败: ${error.message}`);
+      count += chunk.length;
+    }
+    return count;
+  }
+
+  /** 只追加不覆盖的表专用（如 activity_logs）：冲突静默跳过，不触发实际 UPDATE，不需要 update 权限 */
+  async function upsertChunkedIgnoreDup<T extends object>(
+    table: string,
+    rows: T[],
+    onConflict: string
+  ): Promise<number> {
+    if (rows.length === 0) return 0;
+    let count = 0;
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const chunk = rows.slice(i, i + CHUNK);
+      const { error } = await supabase!
+        .from(table)
+        .upsert(chunk, { onConflict, ignoreDuplicates: true });
       if (error) throw new Error(`上传 ${table} 失败: ${error.message}`);
       count += chunk.length;
     }
@@ -265,9 +285,9 @@ export async function uploadLocalDataToCloud(familyId: string): Promise<UploadRe
   result.courses = await upsertChunked("courses", courseRows, "id");
 
   // ── 6. 上传 activity_logs ──────────────────────────────────────
-  // 第一阶段跳过操作日志上传，因为 activity_logs 表仅 grant 了 insert，
-  // upsert 可能触发 update 权限不足的报错。
-  /*
+  // 2026-08-12 启用：改用 ignoreDuplicates（ON CONFLICT DO NOTHING），不再依赖
+  // update 权限，用于把这台设备存量的历史操作记录一次性补到云端（之后的新记录走
+  // cloudRepository 的逐条自动上传，不再需要这个手动入口）。
   const logRows = activityLogs.map((log: ActivityLog) =>
     stripUndefined({
       id: log.id,
@@ -285,8 +305,7 @@ export async function uploadLocalDataToCloud(familyId: string): Promise<UploadRe
       created_at: toTimestampOrNull(log.createdAt) ?? new Date().toISOString(),
     })
   );
-  result.activityLogs = await upsertChunked("activity_logs", logRows, "id");
-  */
+  result.activityLogs = await upsertChunkedIgnoreDup("activity_logs", logRows, "id");
 
   return result;
 }

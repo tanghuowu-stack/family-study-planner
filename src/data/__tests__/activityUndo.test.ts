@@ -21,9 +21,17 @@ const baseDraft = (overrides: Partial<Task> = {}): TaskDraft => ({
 const recurringDraft = (overrides: Partial<Task> = {}): TaskDraft =>
   baseDraft({ timeType: "recurring", schedulePattern: "dailyRecurring", date: undefined, startDate: dayOffset(-3), recurrence: { frequency: "daily", startDate: dayOffset(-3) }, ...overrides });
 
-const lastLog = async (): Promise<ActivityLog> => {
-  const logs = await taskRepository.listActivityLogs(1);
-  return logs[0];
+/**
+ * 抓取某个动作新写入的那条日志：不依赖 createdAt 排序取最新一条——vitest 执行极快，
+ * 同一毫秒内写入的多条日志时间戳完全相同，排序不稳定会撞车。改用"操作前后 id 差集"
+ * 精确定位新增记录，与生产环境的排序方式无关，只是让测试自身更健壮。
+ */
+const captureLog = async (action: () => Promise<unknown>): Promise<ActivityLog> => {
+  const before = new Set((await db.activityLogs.toArray()).map((l) => l.id));
+  await action();
+  const added = (await db.activityLogs.toArray()).filter((l) => !before.has(l.id));
+  if (added.length === 0) throw new Error("没有新增日志");
+  return added.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).at(-1)!;
 };
 
 beforeEach(async () => {
@@ -34,8 +42,8 @@ describe("canUndoActivityLog", () => {
   it("1. 拖拽排序（edit 但无 entityId）不可撤回", async () => {
     const { task: a } = await taskRepository.create(baseDraft({ title: "a" }));
     const { task: b } = await taskRepository.create(baseDraft({ title: "b" }));
-    await taskRepository.reorderTasks([b.id, a.id]);
-    expect(canUndoActivityLog(await lastLog())).toBe(false);
+    const log = await captureLog(() => taskRepository.reorderTasks([b.id, a.id]));
+    expect(canUndoActivityLog(log)).toBe(false);
   });
 
   it("2. 假期/课程/阅读旧记录/导入导出一律不可撤回", async () => {
@@ -48,25 +56,23 @@ describe("canUndoActivityLog", () => {
 
 describe("task 类撤回", () => {
   it("3. 撤回新建 = 软删该任务", async () => {
-    const { task } = await taskRepository.create(baseDraft());
-    const log = await lastLog();
+    let taskId = "";
+    const log = await captureLog(async () => { taskId = (await taskRepository.create(baseDraft())).task.id; });
     expect(log.actionType).toBe("create");
     expect(canUndoActivityLog(log)).toBe(true);
     await undoActivityLog(log);
-    expect((await db.tasks.get(task.id))?.deletedAt).toBeTruthy();
+    expect((await db.tasks.get(taskId))?.deletedAt).toBeTruthy();
   });
 
   it("4. 撤回删除 = 恢复；撤回恢复 = 重新软删", async () => {
     const { task } = await taskRepository.create(baseDraft());
-    await taskRepository.remove(task.id);
-    const deleteLog = await lastLog();
+    const deleteLog = await captureLog(() => taskRepository.remove(task.id));
     expect(deleteLog.actionType).toBe("delete");
     await undoActivityLog(deleteLog);
     expect((await db.tasks.get(task.id))?.deletedAt).toBeUndefined();
 
     await taskRepository.remove(task.id);
-    await taskRepository.restore(task.id);
-    const restoreLog = await lastLog();
+    const restoreLog = await captureLog(() => taskRepository.restore(task.id));
     expect(restoreLog.actionType).toBe("restore");
     await undoActivityLog(restoreLog);
     expect((await db.tasks.get(task.id))?.deletedAt).toBeTruthy();
@@ -74,8 +80,7 @@ describe("task 类撤回", () => {
 
   it("5. 撤回编辑：字段精确复原到编辑前", async () => {
     const { task } = await taskRepository.create(baseDraft({ title: "原标题", note: "原备注" }));
-    await taskRepository.update(task.id, { title: "改过的标题", note: "改过的备注" });
-    const log = await lastLog();
+    const log = await captureLog(() => taskRepository.update(task.id, { title: "改过的标题", note: "改过的备注" }));
     expect(log.actionType).toBe("edit");
     await undoActivityLog(log);
     const after = await db.tasks.get(task.id);
@@ -85,8 +90,7 @@ describe("task 类撤回", () => {
 
   it("6. 撤回完成：不仅状态退回 todo，且不残留 completedAt（不是 update() 的智能联动，是精确复原）", async () => {
     const { task } = await taskRepository.create(baseDraft());
-    await taskRepository.setDisplayStatus(task as never, "done");
-    const log = await lastLog();
+    const log = await captureLog(() => taskRepository.setDisplayStatus(task as never, "done"));
     expect(log.actionType).toBe("complete");
     await undoActivityLog(log);
     const after = await db.tasks.get(task.id);
@@ -100,8 +104,7 @@ describe("task 类撤回", () => {
     const originalCompletedAt = (await db.tasks.get(task.id))?.completedAt;
     expect(originalCompletedAt).toBeTruthy();
     await new Promise((r) => setTimeout(r, 5)); // 确保"现在"的时间戳与原始 completedAt 不同，能证伪"被联动逻辑覆盖成 now"
-    await taskRepository.setDisplayStatus(task as never, "todo");
-    const log = await lastLog();
+    const log = await captureLog(() => taskRepository.setDisplayStatus(task as never, "todo"));
     expect(log.actionType).toBe("uncomplete");
     await undoActivityLog(log);
     const after = await db.tasks.get(task.id);
@@ -114,8 +117,7 @@ describe("taskOccurrence 类撤回", () => {
   it("8. 撤回单日完成：occurrence 退回未完成前的状态（含保留 override 字段）", async () => {
     const { task } = await taskRepository.create(recurringDraft());
     await taskRepository.setOccurrence(task.id, today, "postponed", dayOffset(3), "备注");
-    await taskRepository.setOccurrence(task.id, today, "done");
-    const log = await lastLog();
+    const log = await captureLog(() => taskRepository.setOccurrence(task.id, today, "done"));
     expect(log.actionType).toBe("complete");
     expect(log.entityType).toBe("taskOccurrence");
     await undoActivityLog(log);
@@ -127,8 +129,7 @@ describe("taskOccurrence 类撤回", () => {
   it("9. 撤回取消本次：恢复成取消前的状态", async () => {
     const { task } = await taskRepository.create(recurringDraft());
     await taskRepository.setOccurrence(task.id, today, "done");
-    await taskRepository.setOccurrence(task.id, today, "cancelled");
-    const log = await lastLog();
+    const log = await captureLog(() => taskRepository.setOccurrence(task.id, today, "cancelled"));
     expect(log.actionType).toBe("cancelOccurrence");
     await undoActivityLog(log);
     expect((await db.taskOccurrenceStatuses.get(`${task.id}:${today}`))?.status).toBe("done");
@@ -139,8 +140,7 @@ describe("批量删除撤回", () => {
   it("10. 撤回批量删除 = 全部恢复", async () => {
     const { task: a } = await taskRepository.create(baseDraft({ title: "a" }));
     const { task: b } = await taskRepository.create(baseDraft({ title: "b" }));
-    await taskRepository.batchRemove([a.id, b.id]);
-    const log = await lastLog();
+    const log = await captureLog(() => taskRepository.batchRemove([a.id, b.id]));
     expect(log.actionType).toBe("batchDelete");
     expect(canUndoActivityLog(log)).toBe(true);
     await undoActivityLog(log);

@@ -16,7 +16,7 @@ import { scheduleOccursOn } from "./taskRepository";
 import { getRepository } from "./repositoryProvider";
 import { isOccurrenceSchedule, taskShortName } from "../utils/taskMeta";
 import { todayKey, toDateKey, toLocalDateKey } from "../utils/date";
-import { loadRestDays, saveRestDays } from "./appSettingsRepository";
+import { loadRestDays, saveRestDays, loadHiddenHabitCandidates, saveHiddenHabitCandidates } from "./appSettingsRepository";
 import type { Task, TaskOccurrenceStatus } from "../types/task";
 
 /** 逐日回看上限（防止极旧任务让连续扫描无界） */
@@ -128,11 +128,13 @@ export interface HabitCandidate {
   streakStartDate?: string;
 }
 
-/** 可成为打卡项目的活跃重复类任务（供「管理打卡项目」选择器） */
+/** 可成为打卡项目的活跃重复类任务（供「管理打卡项目」选择器）。已隐藏且未勾选的任务不出现 */
 export async function getHabitCandidates(): Promise<HabitCandidate[]> {
-  const tasks = await db.tasks.toArray();
+  const [tasks, hidden] = await Promise.all([db.tasks.toArray(), loadHiddenHabitCandidates()]);
+  const hiddenSet = new Set(hidden);
   return tasks
     .filter((t) => statsEligible(t) && isOccurrenceSchedule(t) && t.status !== "cancelled")
+    .filter((t) => !hiddenSet.has(t.id) || t.enableStreak === true) // 已勾选的即使在隐藏名单里也要露出，避免"关不掉"
     .sort(sortTasks)
     .map((t) => ({
       taskId: t.id,
@@ -140,6 +142,32 @@ export async function getHabitCandidates(): Promise<HabitCandidate[]> {
       enabled: t.enableStreak === true,
       streakStartDate: t.enableStreak === true ? t.streakStartDate : undefined,
     }));
+}
+
+/**
+ * 隐藏某个候选任务（如"奥数暑假班"这类肯定不会用来打卡的），使其不再出现在管理弹窗列表里。
+ * 只允许隐藏未勾选的任务——已勾选的任务隐藏了就没法在弹窗里取消勾选，会陷入"关不掉"的死角。
+ */
+export async function hideHabitCandidate(taskId: string): Promise<void> {
+  const task = await db.tasks.get(taskId);
+  if (task?.enableStreak === true) throw new Error("已勾选为打卡项目的任务不能隐藏，请先取消勾选");
+  const hidden = await loadHiddenHabitCandidates();
+  if (!hidden.includes(taskId)) await saveHiddenHabitCandidates([...hidden, taskId]);
+}
+
+export async function unhideHabitCandidate(taskId: string): Promise<void> {
+  const hidden = await loadHiddenHabitCandidates();
+  await saveHiddenHabitCandidates(hidden.filter((id) => id !== taskId));
+}
+
+/** 已隐藏的候选任务列表（供"已隐藏 N 项"展开区用，可从这里取消隐藏） */
+export async function getHiddenHabitCandidates(): Promise<{ taskId: string; title: string }[]> {
+  const [tasks, hidden] = await Promise.all([db.tasks.toArray(), loadHiddenHabitCandidates()]);
+  const hiddenSet = new Set(hidden);
+  return tasks
+    .filter((t) => hiddenSet.has(t.id))
+    .sort(sortTasks)
+    .map((t) => ({ taskId: t.id, title: taskShortName(t) }));
 }
 
 /**

@@ -38,8 +38,18 @@ const deviceInfo = () => {
   return { browser, deviceType, deviceLabel, actorName: "本地用户" };
 };
 
+// 操作日志跨设备可见（2026-08-12）：taskRepository 不知道云端/familyId 的存在（依赖方向是
+// cloudRepository → taskRepository，不能反过来 import），所以用注册回调的方式让 cloudRepository
+// 挂钩每一条新写入的日志，逐条上传云端；taskRepository 自身完全不感知云端逻辑。
+let onActivityLogWritten: ((log: ActivityLog) => void) | null = null;
+export function setActivityLogHook(fn: ((log: ActivityLog) => void) | null): void {
+  onActivityLogWritten = fn;
+}
+
 async function writeLog(actionType: ActivityActionType, entityType: ActivityLog["entityType"], details: Partial<ActivityLog> = {}) {
-  await db.activityLogs.add({ id: makeId(), actionType, entityType, createdAt: new Date().toISOString(), ...deviceInfo(), ...details });
+  const log: ActivityLog = { id: makeId(), actionType, entityType, createdAt: new Date().toISOString(), ...deviceInfo(), ...details };
+  await db.activityLogs.add(log);
+  onActivityLogWritten?.(log);
 }
 
 function defaultRollover(main: MainCategory, sub: string): { rolloverMode: RolloverMode; allowRollover: boolean } {
@@ -265,7 +275,14 @@ export const taskRepository = {
           }
         }
       } else if (scheduleOccursOn(task, date)) {
-        result.push(task);
+        // dateRange 整体任务只有一个 status 字段（R6：不产生逐日 occurrence），完成后窗口内
+        // 早于实际完成日的那些天不该跟着显示"已完成"——展示层按日覆盖，不写库（R3）。
+        // 月历例外（forCalendar）：旅游等跨天安排要整块高亮，维持原有"整体完成"视觉不变。
+        if (!options?.forCalendar && task.timeType === "dateRange" && task.status === "done" && task.completedAt && date < toLocalDateKey(task.completedAt)) {
+          result.push({ ...task, status: "todo" });
+        } else {
+          result.push(task);
+        }
       }
 
       if (task.timeType === "singleDate" && task.date && task.date < date && date <= todayKey() && unfinished(task.status) && task.allowRollover && task.rolloverMode === "autoNextDay") {

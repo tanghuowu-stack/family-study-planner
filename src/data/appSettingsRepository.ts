@@ -73,3 +73,14 @@ export async function loadRestDays(): Promise<string[]> {
 export async function saveRestDays(days: string[]): Promise<void> {
   return saveJsonSetting(REST_DAYS_KEY, [...new Set(days)].sort(), "休息日设置云端同步失败");
 }
+
+const HIDDEN_HABIT_CANDIDATES_KEY = "stats_hidden_habit_candidates";
+
+/** 「管理打卡项目」里被隐藏、不再展示的任务 id 列表（如"奥数暑假班"这类肯定不打卡的） */
+export async function loadHiddenHabitCandidates(): Promise<string[]> {
+  return (await loadJsonSetting<string[]>(HIDDEN_HABIT_CANDIDATES_KEY)) ?? [];
+}
+
+export async function saveHiddenHabitCandidates(ids: string[]): Promise<void> {
+  return saveJsonSetting(HIDDEN_HABIT_CANDIDATES_KEY, [...new Set(ids)], "打卡候选设置云端同步失败");
+}

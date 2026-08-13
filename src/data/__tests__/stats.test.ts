@@ -18,7 +18,7 @@ const memStore = new Map<string, string>();
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "../db";
 import { taskRepository } from "../taskRepository";
-import { getHabitCandidates, setHabitEnabled, setHabitStartDate, getHabitCalendars, toggleRestDay } from "../statsRepository";
+import { getHabitCandidates, setHabitEnabled, setHabitStartDate, getHabitCalendars, toggleRestDay, hideHabitCandidate, unhideHabitCandidate, getHiddenHabitCandidates } from "../statsRepository";
 import { saveRestDays } from "../appSettingsRepository";
 import type { Task, TaskOccurrenceStatus } from "../../types/task";
 
@@ -92,6 +92,36 @@ describe("getHabitCandidates", () => {
     const list = await getHabitCandidates();
     expect(list.find((c) => c.taskId === "on")?.streakStartDate).toBe("2026-07-10");
     expect(list.find((c) => c.taskId === "off")?.streakStartDate).toBeUndefined();
+  });
+});
+
+describe("隐藏/取消隐藏打卡候选（2026-08-12，「奥数暑假班」这类噪音项清理）", () => {
+  const noise = () => makeTask("noise", { timeType: "recurring", schedulePattern: "dailyRecurring", date: undefined, startDate: "2026-07-01", recurrence: { frequency: "daily", startDate: "2026-07-01" } });
+
+  it("18. 隐藏后从候选列表消失，出现在已隐藏列表里；取消隐藏后恢复", async () => {
+    await db.tasks.add(noise());
+    expect((await getHabitCandidates()).map((c) => c.taskId)).toContain("noise");
+
+    await hideHabitCandidate("noise");
+    expect((await getHabitCandidates()).map((c) => c.taskId)).not.toContain("noise");
+    expect((await getHiddenHabitCandidates()).map((h) => h.taskId)).toEqual(["noise"]);
+
+    await unhideHabitCandidate("noise");
+    expect((await getHabitCandidates()).map((c) => c.taskId)).toContain("noise");
+    expect(await getHiddenHabitCandidates()).toEqual([]);
+  });
+
+  it("19b. 已勾选为打卡项目的任务不能隐藏，防止陷入关不掉的死角", async () => {
+    await db.tasks.add(dailyHabit("on", "2026-07-10"));
+    await expect(hideHabitCandidate("on")).rejects.toThrow("已勾选为打卡项目的任务不能隐藏");
+  });
+
+  it("20b. 隐藏后再勾选为打卡项目：即使仍在隐藏名单里也照常出现（不会被隐藏卡住）", async () => {
+    await db.tasks.add(noise());
+    await hideHabitCandidate("noise");
+    await setHabitEnabled("noise", true);
+    const list = await getHabitCandidates();
+    expect(list.find((c) => c.taskId === "noise")?.enabled).toBe(true);
   });
 });
 

@@ -2,6 +2,16 @@
 
 此文件只记录简短变更摘要。以后每次完成项目修改后，在顶部日期下追加一条记录，不需要复制完整需求或实现细节。
 
+## 2026-08-13
+
+- 四项改动（均在开发环境验证，**尚未部署到生产**，需部署后用户端才能生效）：
+  1. **操作记录跨设备可见**：`taskRepository.writeLog` 新增可注册钩子（`setActivityLogHook`），`cloudRepository` 挂钩后每条新日志实时上传云端（`upsert ... ignoreDuplicates: true`，对应 `ON CONFLICT DO NOTHING`，不依赖 activity_logs 表未授予的 UPDATE 权限）；新增 `cloudRepository.listActivityLogs` 合并本地+云端按时间去重，`StatsPage` 改用 `getRepository().listActivityLogs`。顺带启用了 `cloudUpload.ts` 里之前注释掉的存量日志批量上传（同样改用 ignoreDuplicates，供老设备一次性补历史记录）。真实验证：云端插入模拟 iPad 日志能在本设备读到；本地新建任务 1.5 秒内自动出现在云端表。
+  2. **删除"打印今日清单"**：`StatsPage.tsx` 的打印按钮/复选框/PrintSheet 组件、`TaskItem.tsx` 的 `print` prop 全链路（含 ChecklistRow）、`index.css` 的 `@media print`/`.screen-only`/`.print-only`、`App.tsx` 头部导航的 `screen-only` class 一并清除，不留死代码。
+  3. **管理打卡项目支持隐藏候选**：新增 app_settings 键 `stats_hidden_habit_candidates`，`getHabitCandidates` 排除隐藏项（已勾选的例外，防止"关不掉"死角），`hideHabitCandidate`/`unhideHabitCandidate`/`getHiddenHabitCandidates` 配 `HabitSection.tsx` 弹窗里每个未勾选项的"×"按钮 + 底部"已隐藏 N 项"可展开取消隐藏。真实验证：隐藏"奥数暑假班"后从主列表消失、"已隐藏 1 项"正确显示，取消隐藏后完全恢复。
+  4. **修复 dateRange 任务历史日期误显示已完成的真实 bug**：`getTasksForDate` 对 `timeType=dateRange` 且已完成的任务，早于实际完成日的窗口内日期一律不再原样透传 `status:"done"`，展示层覆盖为 `todo`（R3：不写库，`!options?.forCalendar` 范围内，月历整体高亮不受影响）。新增回归用例 11c；用真实任务"暑假作业-趣味练习题3页"验证：完成日之前的 08-09/08-10/08-11 正确显示未完成，完成日 08-12 正确显示已完成。
+  - 测试 +8（`activityUndo.test.ts` 顺带把 `lastLog()` 辅助函数改成 `captureLog`——不依赖 `createdAt` 排序取最后一条，改用操作前后 id 差集精确定位新增日志，修掉一个因 vitest 执行过快、同毫秒内多条日志排序不稳定导致的测试脆弱点，与本轮功能代码无关），138 例全绿，tsc 通过。
+  - **诊断记录**：验证过程中发现真实任务"暑假作业-趣味练习题3页"被软删（`deletedAt` 出现在生产数据里），排查确认不是本轮自动化操作所为（完整核对了操作记录，13:00-14:00 时间段内本会话没有任何针对该任务的写入）；已用 `restore()` 正规路径恢复，本地/云端字段完整无损。结合本轮"跨设备日志同步"尚未部署到生产的事实，判断这更可能是用户在真实设备上操作时的一次误删（与此前讨论的"孩子在 iPad 端误触"场景吻合）。
+
 ## 2026-08-12
 
 - 「最近操作记录」加撤回：按用户要求改为直接在现有 100 条记录列表里逐条加「撤回」按钮，不做 toast+"最近删除"分组的方案。

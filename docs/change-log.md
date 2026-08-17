@@ -2,9 +2,18 @@
 
 此文件只记录简短变更摘要。以后每次完成项目修改后，在顶部日期下追加一条记录，不需要复制完整需求或实现细节。
 
+## 2026-08-16
+
+- **修复 autoNextDay 顺延任务完成后整条消失的真实 bug**（用户反馈"暑假班作业"8/8~8/15 今日页看不到、8/15 点完最后一项后当天已完成列表里也没有、只有翻回 8/7 才显示已完成）。
+  1. **根因**：`getTasksForDate` 里 `singleDate` 任务出现在"原定日之后的日期"唯一依赖顺延分支，而该分支带 `unfinished(task.status)` 前提。顺延多日后一旦置 done，顺延路径立刻关闭，任务从原定日之后的每一天同时蒸发——`scheduleOccursOn` 只认 `task.date === date`，所以只剩原定日显示已完成。`completedAt` 明明记录了真实完成日却完全没被消费（对比 `dateRange` 早已用 `completedAt` 决定按日归属）。
+  2. **修复**：新增 `rolledOverCompletedLate(task)` 判定（singleDate + autoNextDay + done + completedAt 晚于原定日），展示层按日推导完成归属——完成当天显示已完成（不受 `dateLimitFor` 限制，"已完成的事实必须能在完成那天找到"）、原定日及完成日之前的顺延日显示未完成、完成日之后不再出现。全部走展示层覆盖不写库（R3），`forCalendar`（月历）行为完全不变。
+  3. **诊断方式**：改代码前先把用户导出的真实备份灌进 fake-indexeddb 跑真实 `getTasksForDate`，实测复现三个症状（完成后 8/14、8/15、8/16 全部"不出现"，仅 8/7 显示 done），并据此纠正了用户对症状 1 的描述——8/8~8/14 在未完成期间其实是正常顺延显示的，"看不到"是 8/15 完成之后回头翻看的结果，三个症状实为同一根因。修复后同一份真实数据实测：8/7~8/14 未完成、8/15 已完成、8/16 不出现，库内 `status`/`completedAt` 未被污染。
+  4. 顺带确认：该任务 `rolloverMode=autoNextDay` 是用户 8/7 13:55 手动改的（创建时为 `skipIfMissed`，日志 before/after 快照可证），`completedAt=2026-08-15T12:50:19` 归因正确；`ChecklistItem` 无按天维度（只有全局 `done`，云端表的 `updated_at` 不被前端消费），属已知设计限制，未改。
+  - 测试 +3（11d 顺延后完成的完整按日分布 + 库内不被污染、11e 未完成时原有顺延行为不变、11f 当天完成不误入新分支），141 例全绿，tsc 通过，build 通过。
+
 ## 2026-08-13
 
-- 四项改动（均在开发环境验证，**尚未部署到生产**，需部署后用户端才能生效）：
+- 四项改动（原记录称"尚未部署到生产"有误：本项目推 main 即由 Vercel 自动构建上线，这些改动在推送时就已生效）：
   1. **操作记录跨设备可见**：`taskRepository.writeLog` 新增可注册钩子（`setActivityLogHook`），`cloudRepository` 挂钩后每条新日志实时上传云端（`upsert ... ignoreDuplicates: true`，对应 `ON CONFLICT DO NOTHING`，不依赖 activity_logs 表未授予的 UPDATE 权限）；新增 `cloudRepository.listActivityLogs` 合并本地+云端按时间去重，`StatsPage` 改用 `getRepository().listActivityLogs`。顺带启用了 `cloudUpload.ts` 里之前注释掉的存量日志批量上传（同样改用 ignoreDuplicates，供老设备一次性补历史记录）。真实验证：云端插入模拟 iPad 日志能在本设备读到；本地新建任务 1.5 秒内自动出现在云端表。
   2. **删除"打印今日清单"**：`StatsPage.tsx` 的打印按钮/复选框/PrintSheet 组件、`TaskItem.tsx` 的 `print` prop 全链路（含 ChecklistRow）、`index.css` 的 `@media print`/`.screen-only`/`.print-only`、`App.tsx` 头部导航的 `screen-only` class 一并清除，不留死代码。
   3. **管理打卡项目支持隐藏候选**：新增 app_settings 键 `stats_hidden_habit_candidates`，`getHabitCandidates` 排除隐藏项（已勾选的例外，防止"关不掉"死角），`hideHabitCandidate`/`unhideHabitCandidate`/`getHiddenHabitCandidates` 配 `HabitSection.tsx` 弹窗里每个未勾选项的"×"按钮 + 底部"已隐藏 N 项"可展开取消隐藏。真实验证：隐藏"奥数暑假班"后从主列表消失、"已隐藏 1 项"正确显示，取消隐藏后完全恢复。

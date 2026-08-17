@@ -259,6 +259,76 @@ describe("R6 dateRange 整体任务语义", () => {
     // 数据库里的 status 本身没有被污染——展示层覆盖不写库
     expect((await db.tasks.get(task.id))?.status).toBe("done");
   });
+
+  it("11d. autoNextDay 顺延多日后完成：完成当天必须出现在已完成，不能整条消失（真实数据 ea0ba064）", async () => {
+    const origin = dayOffset(-8); // 原定日期，早于完成日
+    const { task } = await taskRepository.create(baseDraft({
+      title: "暑假班作业-顺延后完成",
+      date: origin,
+      rolloverMode: "autoNextDay",
+      allowRollover: true,
+      checklistItems: [
+        { id: "c1", title: "小项1", done: false, sortOrder: 0 },
+        { id: "c2", title: "小项2", done: false, sortOrder: 1 },
+      ],
+    }));
+    // 断续勾选，最后一项在"今天"勾完 → status 置 done，completedAt = 今天
+    await taskRepository.toggleChecklistItem(task.id, "c1");
+    await taskRepository.toggleChecklistItem(task.id, "c2");
+    const body = await db.tasks.get(task.id);
+    expect(body?.status).toBe("done");
+    expect(toLocalDateKey(body!.completedAt!)).toBe(today);
+
+    // 完成当天：必须出现且显示已完成（修复前这里整条消失，连勾选框都看不到）
+    const todayEntry = (await taskRepository.getTasksForDate(today)).find((t) => t.id === task.id);
+    expect(todayEntry, "完成当天必须能找到这条任务").toBeTruthy();
+    expect(todayEntry?.status).toBe("done");
+    expect(todayEntry?.rolledFromDate).toBe(origin);
+
+    // 原定日 + 完成日之前的顺延日：都还没做完，显示未完成（修复前这些天也全部消失）
+    for (const date of [origin, dayOffset(-5), dayOffset(-1)]) {
+      const entry = (await taskRepository.getTasksForDate(date)).find((t) => t.id === task.id);
+      expect(entry, `${date} 应仍出现在清单`).toBeTruthy();
+      expect(entry?.status, `${date} 不应显示已完成`).toBe("todo");
+    }
+
+    // 完成日之后不再出现
+    expect((await taskRepository.getTasksForDate(dayOffset(1))).find((t) => t.id === task.id)).toBeFalsy();
+
+    // 展示层覆盖不写库（R3）
+    const after = await db.tasks.get(task.id);
+    expect(after?.status).toBe("done");
+    expect(toLocalDateKey(after!.completedAt!)).toBe(today);
+  });
+
+  it("11e. autoNextDay 顺延中但未完成：原有顺延显示行为不变", async () => {
+    const origin = dayOffset(-3);
+    const { task } = await taskRepository.create(baseDraft({
+      title: "暑假班作业-仍未完成",
+      date: origin,
+      rolloverMode: "autoNextDay",
+      allowRollover: true,
+    }));
+    for (const date of [origin, dayOffset(-1), today]) {
+      const entry = (await taskRepository.getTasksForDate(date)).find((t) => t.id === task.id);
+      expect(entry, `${date} 应出现`).toBeTruthy();
+      expect(entry?.status).toBe("todo");
+    }
+    expect((await taskRepository.getTasksForDate(today)).find((t) => t.id === task.id)?.rolledFromDate).toBe(origin);
+  });
+
+  it("11f. 当天完成的 singleDate 顺延任务：仍在当天显示已完成（completedAt 不晚于原定日，走原路径）", async () => {
+    const { task } = await taskRepository.create(baseDraft({
+      title: "当天就做完",
+      date: today,
+      rolloverMode: "autoNextDay",
+      allowRollover: true,
+    }));
+    await taskRepository.setDisplayStatus(task as TaskDisplay, "done");
+    const entry = (await taskRepository.getTasksForDate(today)).find((t) => t.id === task.id);
+    expect(entry?.status).toBe("done");
+    expect(entry?.rolledFromDate).toBeUndefined();
+  });
 });
 
 describe("checklist 联动", () => {

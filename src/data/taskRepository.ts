@@ -207,6 +207,15 @@ function findPendingOccurrenceDate(task: Task, date: string, byTaskAndDate: Map<
   return undefined;
 }
 
+// autoNextDay 的 singleDate 任务顺延多日后才做完：本体只有一个 status/completedAt，不产生逐日
+// occurrence，而"原定日之后的日子能显示"唯一依赖顺延分支。一旦置 done，顺延分支的 unfinished 前提
+// 失效，任务会从原定日之后的每一天同时消失——连完成当天都找不到，只剩原定日显示已完成
+// （2026-08-16 修复，真实数据 ea0ba064 复现）。所以完成日归属必须在展示层按日推导。
+const rolledOverCompletedLate = (task: Task) =>
+  task.timeType === "singleDate" && task.allowRollover && task.rolloverMode === "autoNextDay"
+  && task.status === "done" && !!task.completedAt && !!task.date
+  && toLocalDateKey(task.completedAt) > task.date;
+
 async function dateLimitFor(task: Task, allTasks: Task[]) {
   if (!task.parentTaskId) return undefined;
   const parent = allTasks.find((item) => item.id === task.parentTaskId);
@@ -280,14 +289,28 @@ export const taskRepository = {
         // 月历例外（forCalendar）：旅游等跨天安排要整块高亮，维持原有"整体完成"视觉不变。
         if (!options?.forCalendar && task.timeType === "dateRange" && task.status === "done" && task.completedAt && date < toLocalDateKey(task.completedAt)) {
           result.push({ ...task, status: "todo" });
+        } else if (!options?.forCalendar && rolledOverCompletedLate(task)) {
+          // 原定日当天并没做完（完成日更晚），显示未完成；已完成归到 completedAt 那天
+          result.push({ ...task, status: "todo" });
         } else {
           result.push(task);
         }
       }
 
-      if (task.timeType === "singleDate" && task.date && task.date < date && date <= todayKey() && unfinished(task.status) && task.allowRollover && task.rolloverMode === "autoNextDay") {
-        const limit = await dateLimitFor(task, tasks);
-        if (!limit || date <= limit) result.push({ ...task, rolledFromDate: task.date });
+      if (task.timeType === "singleDate" && task.date && task.date < date && date <= todayKey() && task.allowRollover && task.rolloverMode === "autoNextDay") {
+        const completedKey = !options?.forCalendar && rolledOverCompletedLate(task) ? toLocalDateKey(task.completedAt!) : undefined;
+        if (completedKey) {
+          // 完成当天照实显示已完成（不受 dateLimitFor 限制——已完成的事实必须能在完成那天找到）；
+          // 完成日之前的顺延日仍显示未完成（展示层覆盖，不写库，R3）；完成日之后不再出现。
+          if (date === completedKey) result.push({ ...task, rolledFromDate: task.date });
+          else if (date < completedKey) {
+            const limit = await dateLimitFor(task, tasks);
+            if (!limit || date <= limit) result.push({ ...task, status: "todo", rolledFromDate: task.date });
+          }
+        } else if (unfinished(task.status)) {
+          const limit = await dateLimitFor(task, tasks);
+          if (!limit || date <= limit) result.push({ ...task, rolledFromDate: task.date });
+        }
       }
     }
 

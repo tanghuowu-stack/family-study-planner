@@ -45,30 +45,40 @@ export default function App() {
   const clearUnsynced = (set: Dispatch<SetStateAction<Set<string>>>, key: string) =>
     set((prev) => { if (!prev.has(key)) return prev; const next = new Set(prev); next.delete(key); return next; });
 
-  // ── 初始化云同步 ────────────────────────────────────────────────────────────
-  useEffect(() => {
-    async function initCloud() {
-      try {
-        const state = await loadAuthState();
-        if (state.familyId) {
-          setCloudMode(state.familyId);
-          setCloudModeState(true);
-          setCloudSyncErrorHandler((msg) => notify(`⚠️ ${msg}，请检查网络`));
-          // 首次加载：从云端拉取最新数据到本地缓存
-          await cloudRepository.refreshFromCloud().catch((e) =>
-            console.warn("[App] 首次云端同步失败，降级到本地模式", e)
-          );
-          refresh();
-          // 进入云端模式后建立 Realtime 订阅，数据变更自动拉取并重渲染
-          await startRealtimeSync(refresh);
-        }
-      } catch (e) {
-        console.warn("[App] 云同步初始化失败，使用本地模式", e);
-      } finally {
-        setCloudInitializing(false);
+  // ── 云同步启动/切换 ─────────────────────────────────────────────────────────
+  // 挂载时跑一次，登录/登出后由 CloudLoginPanel 回调再跑一次。
+  // 早期只在挂载时跑，导致"本次打开时才登录"的设备（新手机/iPad）停在本地模式、
+  // 数据库空白，必须手动刷新页面才会拉数据（2026-08-18 修复）。
+  const syncCloudSession = async () => {
+    try {
+      const state = await loadAuthState();
+      if (state.familyId) {
+        setCloudMode(state.familyId);
+        setCloudModeState(true);
+        setCloudSyncErrorHandler((msg) => notify(`⚠️ ${msg}，请检查网络`));
+        // 从云端拉取最新数据到本地缓存
+        await cloudRepository.refreshFromCloud().catch((e) =>
+          console.warn("[App] 云端同步失败，降级到本地模式", e)
+        );
+        refresh();
+        // 进入云端模式后建立 Realtime 订阅，数据变更自动拉取并重渲染
+        await startRealtimeSync(refresh);
+      } else {
+        // 登出：停订阅、退回本地模式，避免继续用失效的 familyId 读写
+        stopRealtimeSync();
+        setCloudMode(null);
+        setCloudModeState(false);
+        refresh();
       }
+    } catch (e) {
+      console.warn("[App] 云同步初始化失败，使用本地模式", e);
+    } finally {
+      setCloudInitializing(false);
     }
-    void initCloud();
+  };
+
+  useEffect(() => {
+    void syncCloudSession();
     return () => stopRealtimeSync();
   }, []);
 
@@ -159,8 +169,8 @@ export default function App() {
     {page === "today" && <DayPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenMonth={() => setPage("month")} {...actions} />}
     {page === "month" && <MonthPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenDay={openDay} onAddTask={(date) => { setSelectedDate(date); setForm({ open: true }); }} />}
     {page === "tasks" && <TaskManagementPage refreshKey={refreshKey} onRefresh={refresh} notify={notify} onEdit={(task) => setForm({ open: true, task })} onDelete={deleteTask} onEnd={endTask} onExtend={extendTask} onCopy={copyTask} />}
-    {page === "stats" && <StatsPage onImported={refresh} cloudMode={cloudMode} />}
-    <nav className="bottom-nav-safe fixed inset-x-2 z-40 grid grid-cols-4 rounded-2xl border border-primary/20 bg-lavender/95 p-1 shadow-card backdrop-blur lg:hidden">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`flex min-w-0 flex-col items-center gap-1 rounded-xl px-1 py-2 text-[10px] ${page === value ? "bg-primary/10 text-primary" : "text-muted"}`}><Icon className="h-5 w-5" /><span className="truncate">{label}</span></button>)}</nav>
+    {page === "stats" && <StatsPage onImported={refresh} cloudMode={cloudMode} onAuthChange={syncCloudSession} />}
+    <div className="bottom-nav-safe fixed inset-x-0 bottom-0 z-40 bg-paper px-2 pt-2 lg:hidden"><nav className="grid grid-cols-4 rounded-2xl border border-primary/20 bg-lavender/95 p-1 shadow-card backdrop-blur">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`flex min-w-0 flex-col items-center gap-1 rounded-xl px-1 py-2 text-[10px] ${page === value ? "bg-primary/10 text-primary" : "text-muted"}`}><Icon className="h-5 w-5" /><span className="truncate">{label}</span></button>)}</nav></div>
     {form.open && <TaskForm task={form.task} initialDate={selectedDate} onClose={() => setForm({ open: false })} onSave={saveTask} />}
     {extendTarget && <ExtendRecurringDialog task={extendTarget} onClose={() => setExtendTarget(null)} onConfirm={confirmExtend} />}
     {toast && <div className="toast-safe fixed bottom-24 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-primary px-5 py-2.5 text-sm text-white shadow-xl lg:bottom-8">{toast}</div>}

@@ -2,6 +2,14 @@
 
 此文件只记录简短变更摘要。以后每次完成项目修改后，在顶部日期下追加一条记录，不需要复制完整需求或实现细节。
 
+## 2026-08-18（第二批）
+
+- **修复"登录后云端数据不下来、数据库空白"的真实 bug**（用户在 iPhone 上新装 PWA、登录后打卡项目和操作记录全为 0）。
+  1. **根因**：`App.tsx` 的云同步初始化 effect 依赖数组是 `[]`，只在挂载时跑一次。而 `CloudLoginPanel.handleSignIn` 登录成功后只调了面板自己的 `refresh()`（仅更新面板显示的账号信息），从未通知 App。于是"本次打开时才登录"的设备会停在本地模式——面板显示"已登录"、右上角却是"本地模式"，`setCloudMode`/`refreshFromCloud`/`startRealtimeSync` 一个都没执行，必须手动刷新页面才有数据。这也解释了此前在生产环境看到的"已登录 + 本地模式"矛盾状态。
+  2. **修复**：把初始化逻辑抽成 `syncCloudSession()`，挂载时跑一次，并经 `onAuthChange` 回调（App → StatsPage → CloudLoginPanel）在登录**和登出**后各跑一次。登出分支补上 `stopRealtimeSync()` + 退回本地模式，避免继续用失效 familyId 读写。`startRealtimeSync` 自带 `if (channel || reconnectTimer) return` 幂等保护，重复调用不会叠加订阅。
+  3. 验证：生产构建下沿 React fiber 核对，`StatsPage` 与 `CloudLoginPanel` 均实际收到 `onAuthChange` 函数（组件名被压缩，改按 props 特征定位）。**完整登录流程需在真机验证**——我无法也不应代输账号密码。
+- **修复底部标签栏下方透出页面内容**（用户截图可见"最近操作记录"露在标签栏下面）。底部导航是 `fixed inset-x-2 bottom-2` 的浮动药丸，内容会从药丸下方和两侧的缝隙里透出。改为外套一层 `inset-x-0 bottom-0` 的贴底不透明容器（`bg-paper` + `px-2 pt-2`），药丸放在容器内，视觉不变但缝隙被封住；安全区域内边距随之从 `bottom` 改为容器的 `padding-bottom`。
+
 ## 2026-08-18
 
 - **补全 PWA（离线可用 + 手机/iPad 全屏适配）**。此前只有 manifest 和 apple-touch-icon，能"添加到主屏幕"但没有 Service Worker，断网必白屏。

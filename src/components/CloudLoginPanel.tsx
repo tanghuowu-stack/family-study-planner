@@ -19,7 +19,7 @@ import { downloadCloudDataToLocal, type DownloadResult } from "../lib/cloudDownl
 import { previewLocalOccurrenceCleanup, deleteLocalOccurrences } from "../lib/cloudCleanup";
 import { supabaseConfigured } from "../lib/supabase";
 
-export function CloudLoginPanel({ cloudMode }: { cloudMode?: boolean }) {
+export function CloudLoginPanel({ cloudMode, onAuthChange }: { cloudMode?: boolean; onAuthChange?: () => void | Promise<void> }) {
   const [auth, setAuth] = useState<CloudAuthState | null>(null);
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
@@ -73,6 +73,9 @@ export function CloudLoginPanel({ cloudMode }: { cloudMode?: boolean }) {
     await refresh();
     setShowForm(false);
     setPassword("");
+    // 光刷新本面板的显示状态不够：App 的云同步初始化只在挂载时跑过一次，
+    // 不通知它进入云端模式并拉取，本次会话会一直停在本地模式、数据空白。
+    await onAuthChange?.();
   };
 
   const handleSignOut = async () => {
@@ -81,6 +84,7 @@ export function CloudLoginPanel({ cloudMode }: { cloudMode?: boolean }) {
     setUploadResult(null);
     setUploadError("");
     await refresh();
+    await onAuthChange?.();
   };
 
   const handleUpload = async () => {

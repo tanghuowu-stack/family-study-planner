@@ -8,7 +8,11 @@
   1. **根因**：`App.tsx` 的云同步初始化 effect 依赖数组是 `[]`，只在挂载时跑一次。而 `CloudLoginPanel.handleSignIn` 登录成功后只调了面板自己的 `refresh()`（仅更新面板显示的账号信息），从未通知 App。于是"本次打开时才登录"的设备会停在本地模式——面板显示"已登录"、右上角却是"本地模式"，`setCloudMode`/`refreshFromCloud`/`startRealtimeSync` 一个都没执行，必须手动刷新页面才有数据。这也解释了此前在生产环境看到的"已登录 + 本地模式"矛盾状态。
   2. **修复**：把初始化逻辑抽成 `syncCloudSession()`，挂载时跑一次，并经 `onAuthChange` 回调（App → StatsPage → CloudLoginPanel）在登录**和登出**后各跑一次。登出分支补上 `stopRealtimeSync()` + 退回本地模式，避免继续用失效 familyId 读写。`startRealtimeSync` 自带 `if (channel || reconnectTimer) return` 幂等保护，重复调用不会叠加订阅。
   3. 验证：生产构建下沿 React fiber 核对，`StatsPage` 与 `CloudLoginPanel` 均实际收到 `onAuthChange` 函数（组件名被压缩，改按 props 特征定位）。**完整登录流程需在真机验证**——我无法也不应代输账号密码。
-- **修复底部标签栏下方透出页面内容**（用户截图可见"最近操作记录"露在标签栏下面）。底部导航是 `fixed inset-x-2 bottom-2` 的浮动药丸，内容会从药丸下方和两侧的缝隙里透出。改为外套一层 `inset-x-0 bottom-0` 的贴底不透明容器（`bg-paper` + `px-2 pt-2`），药丸放在容器内，视觉不变但缝隙被封住；安全区域内边距随之从 `bottom` 改为容器的 `padding-bottom`。
+- **底部标签栏重做为原生 App 样式**（用户对比"爱看健康"截图指出：药丸下方多出一条背景色带，看着不完整；随后又指出栏体偏高）。
+  - **核心原则**：标签栏**栏体自身**铺满到屏幕最底边，安全区域做成**栏内的 `padding-bottom`**，让栏的背景色一直延伸到 home 横条底下。此前两版都是把安全区域留在栏**外**（先是 `bottom: calc(0.5rem + safe)` 的浮动药丸，后是外套 `bg-paper` 容器），栏下方必然露出一条"托盘"色带——这是根本做法错了，不是调数值能解决的。
+  - 实现：`nav` 改为 `fixed inset-x-0 bottom-0` + `rounded-t-2xl` + `border-t`（只留顶部描边）+ 栏体自带 `padding-bottom: env(safe-area-inset-bottom)`，取消外层容器与左右留白。
+  - 高度对齐 iOS 原生标签栏 49pt 标准（微信/小红书同标准）：内容区 54px、按钮触控高度 49px（原约 59px 偏高）。
+  - 页面底部留白同步改为 `.pb-content = calc(6rem + env(safe-area-inset-bottom))`，替换四个页面里写死的 `pb-28`——否则刘海机上安全区域变高、最后一条内容会被标签栏盖住。
 
 ## 2026-08-18
 

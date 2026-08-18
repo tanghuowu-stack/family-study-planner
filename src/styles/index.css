@@ -46,9 +46,13 @@ body::before {
  * env(safe-area-inset-*) 在非刘海设备和浏览器标签页里恒为 0，所以这几条对 Mac/iPad 无副作用。
  */
 .pt-safe { padding-top: env(safe-area-inset-top); }
-/* 底部导航是浮动药丸，外面套一层贴底的不透明容器：否则页面内容会从药丸下方
-   和两侧的缝隙里透出来（截图可见"最近操作记录"露在标签栏下面）。 */
-.bottom-nav-safe { padding-bottom: calc(0.5rem + env(safe-area-inset-bottom)); }
+/* 底部标签栏：栏体自身铺满到屏幕最底边，安全区域做成栏内的下内边距，
+   让栏的背景色一直延伸到 home 横条底下。这样底部不会多出一条"托盘"色带
+   （对比错误做法：把安全区域留在栏外，栏下方就会露出一条背景）。 */
+.bottom-nav-safe { padding-bottom: env(safe-area-inset-bottom); }
+/* 页面底部留白要跟着安全区域一起长高，否则刘海机上标签栏会盖住最后一条内容。
+   跟 pb-28 同为 padding-bottom，本文件排在 utilities 之后，这条生效。 */
+.pb-content { padding-bottom: calc(6rem + env(safe-area-inset-bottom)); }
 
 /* 提示条只在挂着底部导航的窄屏上抬高；lg 以上有 lg:bottom-* 负责，这里必须让位，
    否则本文件在 @tailwind utilities 之后、同优先级下会盖掉 lg 断点的定位。 */

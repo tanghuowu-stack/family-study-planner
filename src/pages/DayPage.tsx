@@ -69,7 +69,7 @@ export function DayPage(props: Props) {
     {...rowProps}
   />;
 
-  return <main className="mx-auto w-full max-w-7xl overflow-x-hidden px-4 pb-28 pt-3 sm:px-6 sm:pt-5">
+  return <main className="mx-auto w-full max-w-7xl overflow-x-hidden px-4 pb-content pt-3 sm:px-6 sm:pt-5">
     <div className="mb-5 flex flex-col items-center justify-center">
       <p className="text-xs font-medium text-muted">今天是 {formatFullDate(todayKey())}</p>
       <div className="mt-1 flex items-center justify-center gap-3 text-center">

@@ -40,7 +40,7 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask
   };
 
   return (
-    <main className="mx-auto w-full max-w-7xl overflow-x-hidden px-3 pb-28 pt-6 sm:px-6">
+    <main className="mx-auto w-full max-w-7xl overflow-x-hidden px-3 pb-content pt-6 sm:px-6">
       <div className="mb-5 text-center">
         <p className="text-xs font-semibold tracking-widest text-sage-700">MONTH PLAN</p>
         <h1 className="mt-1 text-3xl font-semibold text-ink sm:text-4xl">{format(monthDate, "yyyy年M月")}</h1>

@@ -49,7 +49,7 @@ export function StatsPage({ onImported, cloudMode, onAuthChange }: { onImported:
     setCourseStats(await taskRepository.getCourseStatistics(courseStart, courseEnd));
     setMessage("");
   };
-  return <main className="mx-auto w-full max-w-4xl px-4 pb-28 pt-6 sm:px-6"><p className="text-xs font-semibold tracking-widest text-sage-700">STATS</p><h1 className="mt-1 text-2xl font-semibold">统计</h1>
+  return <main className="mx-auto w-full max-w-4xl px-4 pb-content pt-6 sm:px-6"><p className="text-xs font-semibold tracking-widest text-sage-700">STATS</p><h1 className="mt-1 text-2xl font-semibold">统计</h1>
     <HabitSection />
     <section className="mt-6 rounded-2xl border border-stone-100 bg-white p-4 shadow-sm"><h3 className="text-sm font-semibold">课程节数统计</h3><div className="mt-2 flex flex-wrap items-end gap-2"><label className="text-xs text-stone-500">开始日期<input type="date" value={courseStart} onChange={(event) => setCourseStart(event.target.value)} className="mt-1 block rounded-lg border px-2.5 py-1.5 text-sm text-stone-700" /></label><label className="text-xs text-stone-500">结束日期<input type="date" value={courseEnd} onChange={(event) => setCourseEnd(event.target.value)} className="mt-1 block rounded-lg border px-2.5 py-1.5 text-sm text-stone-700" /></label><button onClick={countCourses} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white">统计</button></div>{courseStats && <CourseStatistics data={courseStats} />}</section>
     {message && <p className="mt-4 rounded-xl bg-sage-50 px-4 py-3 text-sm text-sage-700">{message}</p>}

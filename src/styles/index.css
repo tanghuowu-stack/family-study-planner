@@ -38,3 +38,19 @@ body::before {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
 }
+
+/*
+ * PWA 全屏（standalone）安全区域适配。
+ * index.html 用了 viewport-fit=cover + black-translucent 状态栏，页面会铺满整块屏幕，
+ * 于是 iPhone 的刘海/灵动岛会盖住顶栏、底部 home 横条会压住底部导航。
+ * env(safe-area-inset-*) 在非刘海设备和浏览器标签页里恒为 0，所以这几条对 Mac/iPad 无副作用。
+ */
+.pt-safe { padding-top: env(safe-area-inset-top); }
+.bottom-nav-safe { bottom: calc(0.5rem + env(safe-area-inset-bottom)); }
+
+/* 提示条只在挂着底部导航的窄屏上抬高；lg 以上有 lg:bottom-* 负责，这里必须让位，
+   否则本文件在 @tailwind utilities 之后、同优先级下会盖掉 lg 断点的定位。 */
+@media (max-width: 1023px) {
+  .toast-safe { bottom: calc(6rem + env(safe-area-inset-bottom)); }
+  .toast-safe-above { bottom: calc(8.5rem + env(safe-area-inset-bottom)); }
+}

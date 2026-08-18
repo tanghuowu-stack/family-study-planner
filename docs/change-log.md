@@ -2,6 +2,15 @@
 
 此文件只记录简短变更摘要。以后每次完成项目修改后，在顶部日期下追加一条记录，不需要复制完整需求或实现细节。
 
+## 2026-08-18
+
+- **补全 PWA（离线可用 + 手机/iPad 全屏适配）**。此前只有 manifest 和 apple-touch-icon，能"添加到主屏幕"但没有 Service Worker，断网必白屏。
+  1. **手写 `public/sw.js`**（不引 Workbox/vite-plugin-pwa——本机 npm 被 TLS 拦截装不了包，且本应用数据本来就在 Dexie 里，SW 只需管静态外壳，手写约 80 行反而比改造构建流程更可控）。策略分三层：页面导航 network-first（保证推新版本后不会卡旧代码）、`/assets/` 带内容哈希的产物 cache-first、图标/manifest stale-while-revalidate。**跨域请求（Supabase 接口与认证）完全不拦截**——缓存接口响应会让 R5 的 LWW 合并读到过期数据，比不缓存危险得多；只处理 GET，写操作一律放行。`activate` 时清理旧版本缓存，`skipWaiting`+`clientsClaim` 让更新立即生效。
+  2. **仅生产注册**（`main.tsx` 判 `import.meta.env.PROD`）：开发环境注册会把 dev server 资源缓存住、改代码看不到效果。
+  3. **iOS 全屏适配**：`index.html` 补 `apple-mobile-web-app-capable` / `mobile-web-app-capable` / `status-bar-style=black-translucent`，viewport 加 `viewport-fit=cover`。随之必须处理安全区域，否则刘海盖顶栏、home 横条压底部导航——新增 `.pt-safe`/`.bottom-nav-safe`/`.toast-safe*`，用 `env(safe-area-inset-*)`（非刘海设备恒为 0，Mac/iPad 无副作用）。提示条的两条规则**特意包在 `max-width:1023px` 里**：本文件排在 `@tailwind utilities` 之后，同优先级下不加限制会盖掉 `lg:bottom-*` 的桌面定位。
+  4. **manifest 补全** `id`/`scope`/`description`/`lang`。**未声明 `maskable`**：现有图标是满幅设计（底部"小步计划"字样贴边），标 maskable 会被 Android 圆形裁切切掉文字。
+  - 真实验证：预览生产构建 → SW 注册并接管（`state: activated`）→ 缓存内容核对**跨域零泄漏**（无任何 supabase URL 进缓存）→ **直接停掉服务器再刷新，页面完整渲染出真实数据**（3/11 任务、今日清单），同时 `fetch("/index.html")` 确实失败，证明确实来自缓存而非服务器 → 恢复服务器后在线路径正常。断点核对：360px 下导航 8px、提示条 96px；1280px 下提示条正确让位给 `lg:bottom-8`(32px)、底部导航 `display:none`。141 例测试全绿，tsc、build 通过。
+
 ## 2026-08-16
 
 - **修复 autoNextDay 顺延任务完成后整条消失的真实 bug**（用户反馈"暑假班作业"8/8~8/15 今日页看不到、8/15 点完最后一项后当天已完成列表里也没有、只有翻回 8/7 才显示已完成）。

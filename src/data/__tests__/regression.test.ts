@@ -329,6 +329,101 @@ describe("R6 dateRange 整体任务语义", () => {
     expect(entry?.status).toBe("done");
     expect(entry?.rolledFromDate).toBeUndefined();
   });
+
+  const fiveItems = () => Array.from({ length: 5 }, (_, i) => ({ id: `c${i}`, title: `小项${i + 1}`, done: false, sortOrder: i }));
+
+  it("11g. 顺延中间某天：checklist 与 status 一起展示为未开始；完成当天显示真实 5/5；库内小项不受影响（真实数据 99932636）", async () => {
+    const origin = dayOffset(-7);
+    const { task } = await taskRepository.create(baseDraft({
+      title: "大增语文课后作业",
+      date: origin,
+      rolloverMode: "autoNextDay",
+      allowRollover: true,
+      checklistItems: fiveItems(),
+    }));
+    for (let i = 0; i < 5; i++) await taskRepository.toggleChecklistItem(task.id, `c${i}`);
+    const body = await db.tasks.get(task.id);
+    expect(body?.status).toBe("done");
+    expect(body?.checklistItems?.every((i) => i.done)).toBe(true);
+
+    // 原定日 + 顺延中的任意一天：修复前是"勾选框未完成、进度 5/5"，两个指示器打架
+    for (const date of [origin, dayOffset(-4), dayOffset(-1)]) {
+      const entry = (await taskRepository.getTasksForDate(date)).find((t) => t.id === task.id);
+      expect(entry, `${date} 应出现`).toBeTruthy();
+      expect(entry?.status, `${date} 勾选框应未完成`).toBe("todo");
+      expect(entry?.checklistItems?.length, `${date} 小项仍应全部列出`).toBe(5);
+      expect(entry?.checklistItems?.filter((i) => i.done).length, `${date} 小项应显示 0 项已勾`).toBe(0);
+    }
+
+    // 完成当天：真实状态，不能连今天也被覆盖
+    const todayEntry = (await taskRepository.getTasksForDate(today)).find((t) => t.id === task.id);
+    expect(todayEntry?.status).toBe("done");
+    expect(todayEntry?.checklistItems?.every((i) => i.done)).toBe(true);
+    expect(todayEntry?.rolledFromDate).toBe(origin);
+
+    // 展示层覆盖没有写回库（R3）：查过历史日期之后，库内小项仍全部 done
+    expect((await db.tasks.get(task.id))?.checklistItems?.every((i) => i.done)).toBe(true);
+  });
+
+  it("11h. dateRange 完成日之前的窗口日：checklist 同样展示为未开始（与 11c 的 status 覆盖配套，同一原则）", async () => {
+    const windowStart = dayOffset(-5);
+    const { task } = await taskRepository.create(baseDraft({
+      title: "作业窗口-小项跨天累积",
+      timeType: "dateRange",
+      date: undefined,
+      startDate: windowStart,
+      endDate: dayOffset(20),
+      checklistItems: fiveItems(),
+    }));
+    for (let i = 0; i < 5; i++) await taskRepository.toggleChecklistItem(task.id, `c${i}`);
+    expect((await db.tasks.get(task.id))?.status).toBe("done");
+
+    for (const date of [windowStart, dayOffset(-2)]) {
+      const entry = (await taskRepository.getTasksForDate(date)).find((t) => t.id === task.id);
+      expect(entry?.status, `${date}`).toBe("todo");
+      expect(entry?.checklistItems?.filter((i) => i.done).length, `${date} 小项应显示 0 项已勾`).toBe(0);
+    }
+    const todayEntry = (await taskRepository.getTasksForDate(today)).find((t) => t.id === task.id);
+    expect(todayEntry?.status).toBe("done");
+    expect(todayEntry?.checklistItems?.every((i) => i.done)).toBe(true);
+    expect((await db.tasks.get(task.id))?.checklistItems?.every((i) => i.done)).toBe(true);
+  });
+
+  it("11i. 重复类单次排期顺延后当天做完：今天既无排期也无别的欠账，仍显示已完成而不是整条消失", async () => {
+    const origin = dayOffset(-5);
+    const { task } = await taskRepository.create(recurringDraft({
+      title: "只此一次的课后作业",
+      schedulePattern: "specificDates",
+      specificDates: [origin],
+      startDate: origin,
+      rolloverMode: "autoNextDay",
+      allowRollover: true,
+      checklistItems: [
+        { id: "c1", title: "小项1", done: false, sortOrder: 0 },
+        { id: "c2", title: "小项2", done: false, sortOrder: 1 },
+      ],
+    }));
+    // 今天看到的是顺延来的那一次
+    const before = (await taskRepository.getTasksForDate(today)).find((t) => t.id === task.id);
+    expect(before?.rolledFromDate).toBe(origin);
+    expect(before?.status).toBe("todo");
+
+    // 按 UI 的真实路径勾完：用展示出来的 occurrenceDate（App.tsx 就是这么传的）
+    await taskRepository.toggleChecklistItem(task.id, "c1", before!.occurrenceDate);
+    await taskRepository.toggleChecklistItem(task.id, "c2", before!.occurrenceDate);
+
+    // 修复前这里整条消失：findPendingOccurrenceDate 跳过已完成的，scheduleOccursOn 今天又不是排期日
+    const after = (await taskRepository.getTasksForDate(today)).find((t) => t.id === task.id);
+    expect(after, "完成当天必须仍能找到这条任务").toBeTruthy();
+    expect(after?.status).toBe("done");
+    expect(after?.rolledFromDate).toBe(origin);
+    expect(after?.checklistItems?.every((i) => i.done)).toBe(true);
+
+    // 明天不再出现；R1：本体 status 仍 todo，完成只记在 occurrence
+    expect((await taskRepository.getTasksForDate(dayOffset(1))).find((t) => t.id === task.id)).toBeFalsy();
+    expect((await db.tasks.get(task.id))?.status).toBe("todo");
+    expect((await db.taskOccurrenceStatuses.get(`${task.id}:${origin}`))?.status).toBe("done");
+  });
 });
 
 describe("checklist 联动", () => {

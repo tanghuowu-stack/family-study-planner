@@ -216,6 +216,17 @@ const rolledOverCompletedLate = (task: Task) =>
   && task.status === "done" && !!task.completedAt && !!task.date
   && toLocalDateKey(task.completedAt) > task.date;
 
+// "那天还欠着"的展示副本：status 和 checklist 一起按日覆盖。
+// 2026-08-16 那版只覆盖了 status，checklist 仍是本体上跨所有日期共享的同一份数组——
+// 于是完成日之前的每一天都显示"未勾选但进度 5/5"，两个指示器自相矛盾（2026-09-12 真实数据
+// 99932636 复现）。checklist 没有按天维度，无法还原"那天勾了几项"，所以这里统一显示为未开始；
+// 完成当天不走这条，显示真实勾选状态。纯展示层，不写库（R3）。
+const asStillOwed = (task: Task): TaskDisplay => ({
+  ...task,
+  status: "todo",
+  checklistItems: task.checklistItems?.map((item) => ({ ...item, done: false })),
+});
+
 async function dateLimitFor(task: Task, allTasks: Task[]) {
   if (!task.parentTaskId) return undefined;
   const parent = allTasks.find((item) => item.id === task.parentTaskId);
@@ -282,16 +293,23 @@ export const taskRepository = {
           if (occurrence?.status !== "cancelled" && occurrence?.status !== "postponed") {
             result.push({ ...task, status: occurrence?.status as TaskStatus ?? "todo", occurrenceDate: date, occurrenceStatus: occurrence?.status ?? "todo", overrideDate: occurrence?.overrideDate, overrideNote: occurrence?.overrideNote });
           }
+        } else if (!options?.forCalendar && task.allowRollover && task.rolloverMode === "autoNextDay") {
+          // 顺延来的那一次在今天做完了，而今天既没有自己的排期、也没有别的欠账：
+          // findPendingOccurrenceDate 只找未完成的、scheduleOccursOn 只认排期日，两条路都不命中，
+          // 任务会从今日页整条消失。已完成的事实必须能在完成那天找到——与 singleDate 的
+          // rolledOverCompletedLate 同一原则（2026-09-12）。
+          const settled = occurrences.find((o) => o.taskId === task.id && o.status === "done" && o.occurrenceDate < date && !!o.completedAt && toLocalDateKey(o.completedAt) === date);
+          if (settled) result.push({ ...task, status: "done", occurrenceDate: settled.occurrenceDate, occurrenceStatus: "done", overrideDate: settled.overrideDate, overrideNote: settled.overrideNote, rolledFromDate: settled.occurrenceDate });
         }
       } else if (scheduleOccursOn(task, date)) {
         // dateRange 整体任务只有一个 status 字段（R6：不产生逐日 occurrence），完成后窗口内
         // 早于实际完成日的那些天不该跟着显示"已完成"——展示层按日覆盖，不写库（R3）。
         // 月历例外（forCalendar）：旅游等跨天安排要整块高亮，维持原有"整体完成"视觉不变。
         if (!options?.forCalendar && task.timeType === "dateRange" && task.status === "done" && task.completedAt && date < toLocalDateKey(task.completedAt)) {
-          result.push({ ...task, status: "todo" });
+          result.push(asStillOwed(task));
         } else if (!options?.forCalendar && rolledOverCompletedLate(task)) {
           // 原定日当天并没做完（完成日更晚），显示未完成；已完成归到 completedAt 那天
-          result.push({ ...task, status: "todo" });
+          result.push(asStillOwed(task));
         } else {
           result.push(task);
         }
@@ -305,7 +323,7 @@ export const taskRepository = {
           if (date === completedKey) result.push({ ...task, rolledFromDate: task.date });
           else if (date < completedKey) {
             const limit = await dateLimitFor(task, tasks);
-            if (!limit || date <= limit) result.push({ ...task, status: "todo", rolledFromDate: task.date });
+            if (!limit || date <= limit) result.push({ ...asStillOwed(task), rolledFromDate: task.date });
           }
         } else if (unfinished(task.status)) {
           const limit = await dateLimitFor(task, tasks);

@@ -1,7 +1,7 @@
 import { addDays, eachDayOfInterval, getDay, parseISO } from "date-fns";
 import { db } from "./db";
 import type {
-  ActivityActionType, ActivityLog, BackupData, Course, MainCategory, OccurrenceStatus, PlanOverviewItem, PlanPeriod, PlanPeriodType, ReadingLog, RolloverMode, SyncResult, Task, TaskDisplay,
+  ActivityActionType, ActivityLog, BackupData, ChecklistItem, Course, MainCategory, OccurrenceStatus, PlanOverviewItem, PlanPeriod, PlanPeriodType, ReadingLog, RolloverMode, SyncResult, Task, TaskDisplay,
   TaskDraft, TaskOccurrenceStatus, TaskStatus, TaskWriteResult,
 } from "../types/task";
 import { getMonthBounds, getMonthKey, getWeekEndKey, getWeekStartKey, isDateInRange, todayKey, toDateKey, toLocalDateKey } from "../utils/date";
@@ -216,15 +216,19 @@ const rolledOverCompletedLate = (task: Task) =>
   && task.status === "done" && !!task.completedAt && !!task.date
   && toLocalDateKey(task.completedAt) > task.date;
 
-// "那天还欠着"的展示副本：status 和 checklist 一起按日覆盖。
-// 2026-08-16 那版只覆盖了 status，checklist 仍是本体上跨所有日期共享的同一份数组——
-// 于是完成日之前的每一天都显示"未勾选但进度 5/5"，两个指示器自相矛盾（2026-09-12 真实数据
-// 99932636 复现）。checklist 没有按天维度，无法还原"那天勾了几项"，所以这里统一显示为未开始；
-// 完成当天不走这条，显示真实勾选状态。纯展示层，不写库（R3）。
-const asStillOwed = (task: Task): TaskDisplay => ({
+// "那天还欠着"的展示副本：status 覆盖为 todo，checklist 按 completedDate 回放到那一天。
+// 演进：08-16 只覆盖 status → 历史日"未勾选但 5/5"自相矛盾；09-12 改成 checklist 一刀切未勾选 →
+// 历史日全是 0/N，用户要的是"哪天勾的哪天起显示完成"。现在小项带 completedDate（09-19），
+// 看某天时 completedDate <= 当天 的显示已勾，之后才勾的显示未勾。
+// 老数据兜底：没有 completedDate 的小项（历史遗留，真实完成日拿不到）按未勾处理，不回填假日期。
+// 完成当天不走这条，显示真实状态。纯展示层，不写库（R3）。
+const checklistAsOf = (items: ChecklistItem[] | undefined, date: string) =>
+  items?.map((item) => ({ ...item, done: item.done && !!item.completedDate && item.completedDate <= date }));
+
+const asStillOwed = (task: Task, date: string): TaskDisplay => ({
   ...task,
   status: "todo",
-  checklistItems: task.checklistItems?.map((item) => ({ ...item, done: false })),
+  checklistItems: checklistAsOf(task.checklistItems, date),
 });
 
 async function dateLimitFor(task: Task, allTasks: Task[]) {
@@ -306,10 +310,14 @@ export const taskRepository = {
         // 早于实际完成日的那些天不该跟着显示"已完成"——展示层按日覆盖，不写库（R3）。
         // 月历例外（forCalendar）：旅游等跨天安排要整块高亮，维持原有"整体完成"视觉不变。
         if (!options?.forCalendar && task.timeType === "dateRange" && task.status === "done" && task.completedAt && date < toLocalDateKey(task.completedAt)) {
-          result.push(asStillOwed(task));
+          result.push(asStillOwed(task, date));
         } else if (!options?.forCalendar && rolledOverCompletedLate(task)) {
           // 原定日当天并没做完（完成日更晚），显示未完成；已完成归到 completedAt 那天
-          result.push(asStillOwed(task));
+          result.push(asStillOwed(task, date));
+        } else if (!options?.forCalendar && unfinished(task.status) && date < todayKey()) {
+          // 还没整体做完的任务翻历史日：小项也按当天回放（今天看的是实时状态，不过滤——
+          // 老数据小项没有 completedDate，过滤会把今天的真实勾选也抹掉）
+          result.push({ ...task, checklistItems: checklistAsOf(task.checklistItems, date) });
         } else {
           result.push(task);
         }
@@ -323,11 +331,13 @@ export const taskRepository = {
           if (date === completedKey) result.push({ ...task, rolledFromDate: task.date });
           else if (date < completedKey) {
             const limit = await dateLimitFor(task, tasks);
-            if (!limit || date <= limit) result.push({ ...asStillOwed(task), rolledFromDate: task.date });
+            if (!limit || date <= limit) result.push({ ...asStillOwed(task, date), rolledFromDate: task.date });
           }
         } else if (unfinished(task.status)) {
           const limit = await dateLimitFor(task, tasks);
-          if (!limit || date <= limit) result.push({ ...task, rolledFromDate: task.date });
+          // 进行中的顺延任务翻历史日同样按天回放小项；今天看实时状态
+          const replay = !options?.forCalendar && date < todayKey();
+          if (!limit || date <= limit) result.push({ ...task, checklistItems: replay ? checklistAsOf(task.checklistItems, date) : task.checklistItems, rolledFromDate: task.date });
         }
       }
     }
@@ -592,7 +602,7 @@ export const taskRepository = {
         date, status: "todo", rolloverMode: parent.rolloverMode, allowRollover: parent.allowRollover,
         sortOrder: parent.sortOrder, childVisible: parent.childVisible, note: parent.note,
         amountPerSession: perSession, amountUnit: parent.weeklyQuota?.unit ?? parent.amountUnit,
-        checklistItems: parent.checklistItems?.map((item, itemIndex) => ({ ...item, id: makeId(), done: false, sortOrder: itemIndex })),
+        checklistItems: parent.checklistItems?.map((item, itemIndex) => ({ ...item, id: makeId(), done: false, completedDate: undefined, sortOrder: itemIndex })),
         parentTaskId: parent.id, allocationWeekStart, sessionIndex: completed.length + index + 1, planPeriodId: parent.planPeriodId, applicablePeriodType: parent.applicablePeriodType,
         startTime: parent.startTime, endTime: parent.endTime, estimatedMinutes: parent.estimatedMinutes, createdAt: now, updatedAt: now,
       })));
@@ -696,7 +706,7 @@ export const taskRepository = {
       // 复制出的任务不继承打卡身份：源任务若是打卡项目，副本被强制成 singleDate 后
       // 不再是 recurring，enableStreak 残留会变成"月历有卡但管理弹窗看不到"的孤儿
       enableStreak: undefined, streakStartDate: undefined,
-      checklistItems: source.checklistItems?.map((item, index) => ({ ...item, id: makeId(), done: false, sortOrder: index, actualMinutes: undefined })),
+      checklistItems: source.checklistItems?.map((item, index) => ({ ...item, id: makeId(), done: false, completedDate: undefined, sortOrder: index, actualMinutes: undefined })),
       createdAt: now, updatedAt: now,
     });
     await db.transaction("rw", db.tasks, db.activityLogs, async () => {
@@ -831,7 +841,13 @@ export const taskRepository = {
     await db.transaction("rw", db.tasks, db.activityLogs, async () => {
       // checklistItems 必须以 before（刚查询的最新库内数据）为准，不能用调用方传入的 task 快照——
       // 否则计时器/手填实际用时落库后紧接着点整体完成，会被这里的旧快照覆盖回去，实际用时静默丢失（2026-07-19 修复回归）
-      await db.tasks.update(task.id, { status, completedAt: status === "done" ? now : undefined, checklistItems: before?.checklistItems?.map((item) => ({ ...item, done: status === "done" ? true : status === "todo" ? false : item.done })), updatedAt: now });
+      // 整体勾完成：还没勾的小项补上今天的 completedDate，已勾的保留原日期；整体退回 todo：全部清空
+      const stampedItems = before?.checklistItems?.map((item) => {
+        if (status === "done") return item.done ? item : { ...item, done: true, completedDate: toLocalDateKey(now) };
+        if (status === "todo") return { ...item, done: false, completedDate: undefined };
+        return item;
+      });
+      await db.tasks.update(task.id, { status, completedAt: status === "done" ? now : undefined, checklistItems: stampedItems, updatedAt: now });
       await writeLog(status === "done" ? "complete" : "uncomplete", "task", { entityId: task.id, entityTitle: task.title, beforeSnapshot: before, afterSnapshot: { status } });
       parentId = await syncParentCompletion(task.id);
     });
@@ -860,9 +876,12 @@ export const taskRepository = {
   async toggleChecklistItem(taskId: string, itemId: string, occurrenceDate?: string): Promise<SyncResult> {
     const task = await db.tasks.get(taskId);
     if (!task?.checklistItems) return { synced: true };
-    const items = task.checklistItems.map((item) => item.id === itemId ? { ...item, done: !item.done } : item);
-    const allDone = items.every((item) => item.done);
     const now = new Date().toISOString();
+    // completedDate 记"哪天勾的"（本地日期）：历史日展示按它过滤，取消勾选即清空
+    const items = task.checklistItems.map((item) => item.id !== itemId ? item : (item.done
+      ? { ...item, done: false, completedDate: undefined }
+      : { ...item, done: true, completedDate: toLocalDateKey(now) }));
+    const allDone = items.every((item) => item.done);
     let parentId: string | undefined;
 
     if (isOccurrenceSchedule(task)) {

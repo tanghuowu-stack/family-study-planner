@@ -20,6 +20,23 @@ export interface CloudPreviewResult {
   recentTasks: Task[];
 }
 
+/**
+ * task_checklist_items 行 → ChecklistItem。三个读侧映射面（cloudRepository 拉取 / cloudRead 预览 /
+ * cloudDownload 强制下载）共用这一份，杜绝 §3.1 说的"内联三份、漏一处静默丢字段"。
+ * 加小项字段时：这里加一行 + cloudRepository.checklistItemRows / cloudUpload 写侧各加一行 + parity 测试加对照。
+ */
+export function rowToChecklistItem(row: any): ChecklistItem {
+  return {
+    id: row.id,
+    title: row.title,
+    done: row.done,
+    completedDate: row.completed_date ?? undefined,
+    sortOrder: row.sort_order,
+    estimatedMinutes: row.estimated_minutes ?? undefined,
+    actualMinutes: row.actual_minutes ?? undefined,
+  };
+}
+
 export function rowToTask(row: any): Task {
   return {
     id: row.id,
@@ -116,16 +133,7 @@ export async function fetchCloudDataPreview(familyId: string): Promise<CloudPrev
 
   checklistItems.forEach(row => {
     const task = taskMap.get(row.task_id);
-    if (task) {
-      task.checklistItems!.push({
-        id: row.id,
-        title: row.title,
-        done: row.done,
-        sortOrder: row.sort_order,
-        estimatedMinutes: row.estimated_minutes ?? undefined,
-        actualMinutes: row.actual_minutes ?? undefined,
-      });
-    }
+    if (task) task.checklistItems!.push(rowToChecklistItem(row));
   });
 
   // 统计有效和已删除任务

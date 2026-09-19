@@ -10,9 +10,9 @@
  * 是另一类"整体缺失"问题而非本测试要防的"单向漏映射"，已记入 PROJECT_GUIDE 待办。）
  */
 import { describe, expect, it } from "vitest";
-import { taskToRow } from "../../data/cloudRepository";
-import { rowToTask } from "../cloudRead";
-import type { Task } from "../../types/task";
+import { checklistItemRows, taskToRow } from "../../data/cloudRepository";
+import { rowToChecklistItem, rowToTask } from "../cloudRead";
+import type { ChecklistItem, Task } from "../../types/task";
 
 const FAMILY_ID = "fam-parity-test";
 
@@ -97,5 +97,51 @@ describe("taskToRow / rowToTask 字段逐一对照（2026-07-19，防 actualMinu
   it("id 与 family_id 独立于上述循环，另行确认", () => {
     expect(row.family_id).toBe(FAMILY_ID);
     expect(roundTripped.id).toBe(task.id);
+  });
+});
+
+// ─── 小项：checklistItemRows ↔ rowToChecklistItem（2026-09-19，随 completedDate 列一起纳入 parity）────
+// 读侧三个映射面（cloudRepository 拉取 / cloudRead 预览 / cloudDownload 强制下载）已收敛为
+// rowToChecklistItem 一个定义，所以这一对覆盖住就等于三处都覆盖住；写侧 cloudUpload 仍是独立内联，改它时手动核对。
+function fullChecklistItem(): ChecklistItem {
+  return {
+    id: "ci-parity-1",
+    title: "板块五P35：词语成语听写",
+    done: true,
+    completedDate: "2026-09-08",
+    sortOrder: 3,
+    estimatedMinutes: 15,
+    actualMinutes: 12,
+  };
+}
+
+const CHECKLIST_FIELD_PAIRS: [keyof ChecklistItem, unknown][] = (() => {
+  const c = fullChecklistItem();
+  return [
+    ["title", c.title], ["done", c.done], ["completedDate", c.completedDate],
+    ["sortOrder", c.sortOrder], ["estimatedMinutes", c.estimatedMinutes], ["actualMinutes", c.actualMinutes],
+  ];
+})();
+
+describe("checklistItemRows / rowToChecklistItem 字段逐一对照", () => {
+  const item = fullChecklistItem();
+  const task = { ...fullTask(), checklistItems: [item] };
+  const [row] = checklistItemRows(task, FAMILY_ID);
+  const roundTripped = rowToChecklistItem(row);
+
+  it.each(CHECKLIST_FIELD_PAIRS)("小项字段 %s 上传后能从云端行正确读回", (field, expected) => {
+    expect(roundTripped[field]).toEqual(expected);
+  });
+
+  it("id / family_id / task_id 另行确认", () => {
+    expect(roundTripped.id).toBe(item.id);
+    expect(row.family_id).toBe(FAMILY_ID);
+    expect(row.task_id).toBe(task.id);
+  });
+
+  it("取消勾选后 completedDate=undefined 必须上传为 null（否则云端旧日期清不掉）", () => {
+    const [r] = checklistItemRows({ ...task, checklistItems: [{ ...item, done: false, completedDate: undefined }] }, FAMILY_ID);
+    expect(r.completed_date).toBeNull();
+    expect(rowToChecklistItem(r).completedDate).toBeUndefined();
   });
 });

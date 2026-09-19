@@ -3,7 +3,7 @@
  * 只测本地数据层逻辑，IndexedDB 用 fake-indexeddb 模拟，不碰真实 Supabase。
  */
 import "fake-indexeddb/auto";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "../db";
 import { taskRepository, scheduleOccursOn } from "../taskRepository";
 import { lwwMerge } from "../cloudRepository";
@@ -423,6 +423,108 @@ describe("R6 dateRange 整体任务语义", () => {
     expect((await taskRepository.getTasksForDate(dayOffset(1))).find((t) => t.id === task.id)).toBeFalsy();
     expect((await db.tasks.get(task.id))?.status).toBe("todo");
     expect((await db.taskOccurrenceStatuses.get(`${task.id}:${origin}`))?.status).toBe("done");
+  });
+
+  // ── 小项按天记录（2026-09-19，ChecklistItem.completedDate）────────────────────────
+  // 只伪造 Date（toFake:["Date"]），计时器保持真实——fake-indexeddb 内部靠 setTimeout 驱动
+  const onDay = async (dateKey: string, fn: () => Promise<unknown>) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(`${dateKey}T12:00:00`));
+    try { await fn(); } finally { vi.useRealTimers(); }
+  };
+  const sevenItems = () => Array.from({ length: 7 }, (_, i) => ({ id: `c${i}`, title: `小项${i + 1}`, done: false, sortOrder: i }));
+  const shown = async (date: string, id: string) => {
+    const t = (await taskRepository.getTasksForDate(date)).find((x) => x.id === id);
+    return t ? { status: t.status, done: t.checklistItems!.filter((i) => i.done).map((i) => i.id), rolled: t.rolledFromDate } : null;
+  };
+
+  it("11j. 跨天勾选：第1天勾2项、第3天勾3项、第7天勾完最后2项——各历史日回放累计到当天为止的真实进度", async () => {
+    const D = (n: number) => dayOffset(n - 7); // 第 n 天；第 7 天 = 今天
+    const { task } = await taskRepository.create(baseDraft({
+      title: "跨天作业", date: D(1), rolloverMode: "autoNextDay", allowRollover: true, checklistItems: sevenItems(),
+    }));
+    await onDay(D(1), async () => { for (const id of ["c0", "c1"]) await taskRepository.toggleChecklistItem(task.id, id); });
+    await onDay(D(3), async () => { for (const id of ["c2", "c3", "c4"]) await taskRepository.toggleChecklistItem(task.id, id); });
+    await onDay(D(7), async () => { for (const id of ["c5", "c6"]) await taskRepository.toggleChecklistItem(task.id, id); });
+
+    // 库内：每个小项记住了自己被勾的那天；整体在第 7 天完成
+    const body = (await db.tasks.get(task.id))!;
+    expect(body.status).toBe("done");
+    expect(toLocalDateKey(body.completedAt!)).toBe(D(7));
+    expect(body.checklistItems!.map((i) => i.completedDate)).toEqual([D(1), D(1), D(3), D(3), D(3), D(7), D(7)]);
+
+    // 展示：翻到哪天，就是那天为止累计勾了的
+    expect(await shown(D(1), task.id)).toEqual({ status: "todo", done: ["c0", "c1"], rolled: undefined });
+    expect(await shown(D(2), task.id)).toEqual({ status: "todo", done: ["c0", "c1"], rolled: D(1) });
+    expect(await shown(D(3), task.id)).toEqual({ status: "todo", done: ["c0", "c1", "c2", "c3", "c4"], rolled: D(1) });
+    expect(await shown(D(5), task.id)).toEqual({ status: "todo", done: ["c0", "c1", "c2", "c3", "c4"], rolled: D(1) }); // 第5天没勾，累计不变
+    expect(await shown(D(7), task.id)).toEqual({ status: "done", done: ["c0", "c1", "c2", "c3", "c4", "c5", "c6"], rolled: D(1) });
+    expect(await shown(dayOffset(1), task.id)).toBeNull(); // 完成日之后不再出现
+
+    // 展示层回放没写回库
+    expect((await db.tasks.get(task.id))!.checklistItems!.every((i) => i.done)).toBe(true);
+  });
+
+  it("11j2. 取消勾选清空 completedDate；再勾回去记新日期", async () => {
+    const D = (n: number) => dayOffset(n - 7);
+    const { task } = await taskRepository.create(baseDraft({
+      title: "改来改去", date: D(1), rolloverMode: "autoNextDay", allowRollover: true,
+      checklistItems: [{ id: "a", title: "a", done: false, sortOrder: 0 }, { id: "b", title: "b", done: false, sortOrder: 1 }],
+    }));
+    await onDay(D(2), () => taskRepository.toggleChecklistItem(task.id, "a"));
+    expect((await db.tasks.get(task.id))!.checklistItems![0].completedDate).toBe(D(2));
+    await onDay(D(4), () => taskRepository.toggleChecklistItem(task.id, "a")); // 取消
+    expect((await db.tasks.get(task.id))!.checklistItems![0].completedDate).toBeUndefined();
+    await onDay(D(6), () => taskRepository.toggleChecklistItem(task.id, "a")); // 再勾
+    expect((await db.tasks.get(task.id))!.checklistItems![0].completedDate).toBe(D(6));
+    // 回放：第 3 天看到 a 已勾（那时勾着），第 5 天看到 a 未勾（已取消、还没重勾）
+    expect((await shown(D(3), task.id))!.done).toEqual([]);   // 注：回放只认当前 completedDate=D6，D3 时它"曾经"勾过但已被取消覆盖——这是按天记录的已知边界，不做历史版本
+    expect((await shown(D(5), task.id))!.done).toEqual([]);
+    expect((await shown(D(6), task.id))!.done).toEqual(["a"]);
+  });
+
+  it("11j3. 整体勾完成：未勾小项补今天日期、已勾小项保留原日期；整体退回 todo 全部清空", async () => {
+    const D = (n: number) => dayOffset(n - 7);
+    const { task } = await taskRepository.create(baseDraft({
+      title: "整体勾", date: D(1), rolloverMode: "autoNextDay", allowRollover: true,
+      checklistItems: [{ id: "a", title: "a", done: false, sortOrder: 0 }, { id: "b", title: "b", done: false, sortOrder: 1 }],
+    }));
+    await onDay(D(2), () => taskRepository.toggleChecklistItem(task.id, "a"));
+    await onDay(D(7), () => taskRepository.setDisplayStatus(task as TaskDisplay, "done"));
+    let items = (await db.tasks.get(task.id))!.checklistItems!;
+    expect(items.map((i) => i.completedDate)).toEqual([D(2), D(7)]); // a 保留第 2 天，b 补第 7 天
+    await taskRepository.setDisplayStatus(task as TaskDisplay, "todo");
+    items = (await db.tasks.get(task.id))!.checklistItems!;
+    expect(items.every((i) => !i.done && i.completedDate === undefined)).toBe(true);
+  });
+
+  it("11k. 老数据兜底：没有 completedDate 的已勾小项，历史日按未勾展示、完成当天照实显示，不报错、不回填", async () => {
+    const origin = dayOffset(-5);
+    // 模拟迁移前落库的老任务：小项 done=true 但没有 completedDate
+    const { task } = await taskRepository.create(baseDraft({
+      title: "老任务", date: origin, rolloverMode: "autoNextDay", allowRollover: true, status: "done",
+      checklistItems: [{ id: "x", title: "x", done: true, sortOrder: 0 }, { id: "y", title: "y", done: true, sortOrder: 1 }],
+    }));
+    expect((await db.tasks.get(task.id))!.checklistItems!.every((i) => i.completedDate === undefined)).toBe(true);
+    for (const date of [origin, dayOffset(-2)]) {
+      const s = await shown(date, task.id);
+      expect(s?.status, date).toBe("todo");
+      expect(s?.done, `${date} 完成日未知，历史日一律按未勾`).toEqual([]);
+    }
+    expect(await shown(today, task.id)).toEqual({ status: "done", done: ["x", "y"], rolled: origin });
+    // 没有被回填假日期
+    expect((await db.tasks.get(task.id))!.checklistItems!.every((i) => i.completedDate === undefined)).toBe(true);
+  });
+
+  it("11l. 复制任务（copyToDate）到新日期：小项重置为未勾且不带上旧的 completedDate", async () => {
+    const { task } = await taskRepository.create(baseDraft({
+      title: "模板", date: dayOffset(-3), checklistItems: [{ id: "a", title: "a", done: false, sortOrder: 0 }],
+    }));
+    await taskRepository.toggleChecklistItem(task.id, "a");
+    const copied = await taskRepository.copyToDate(task.id, dayOffset(2));
+    const item = (await db.tasks.get(copied.id))!.checklistItems![0];
+    expect(item.done).toBe(false);
+    expect(item.completedDate).toBeUndefined();
   });
 });
 

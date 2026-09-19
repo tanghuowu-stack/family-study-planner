@@ -195,6 +195,7 @@ export async function uploadLocalDataToCloud(familyId: string): Promise<UploadRe
         task_id: task.id,
         title: item.title ?? "",
         done: item.done ?? false,
+        completed_date: toDateOrNull(item.completedDate),
         sort_order: item.sortOrder ?? idx,
         estimated_minutes: item.estimatedMinutes ?? null,
         actual_minutes: item.actualMinutes ?? null,

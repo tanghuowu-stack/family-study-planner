@@ -2,6 +2,20 @@
 
 此文件只记录简短变更摘要。以后每次完成项目修改后，在顶部日期下追加一条记录，不需要复制完整需求或实现细节。
 
+## 2026-09-19
+
+- **小项按天记录：`ChecklistItem.completedDate`（数据模型改动）**。用户验证 09-12 的"历史日 checklist 一刀切显示未勾选"方案后不接受——要的是真正的历史准确性：哪天勾的小项，从那天起就显示已完成。此前被推迟的数据模型改动正式落地。
+  - **字段**：`ChecklistItem.completedDate?: string`（YYYY-MM-DD，本地时区，遵守铁律二日期格式）。云端 `task_checklist_items.completed_date date`。
+  - **写入口（全部 4 处）**：`toggleChecklistItem` 勾选写 `toLocalDateKey(now)`、取消勾选置 `undefined`；`setDisplayStatus` 整体勾完成 → 还没勾的小项补今天、已勾的保留原日期，整体退回 todo → 全部清空；两处复制任务的路径（`allocateTask` 子任务生成、`copyToDate`）小项重置时同步清掉 `completedDate`——它们用 `...item` 展开，不显式清会把旧任务的日期带到新任务上。
+  - **展示**：`checklistAsOf(items, date)` = 看某天时 `completedDate <= 当天` 的显示已勾、之后才勾的显示未勾。应用在三类历史日：已完成任务的完成日之前（原 `asStillOwed`，status 覆盖 todo + checklist 回放）、**进行中任务的历史日**（原本直接推原始 task、显示当前实时状态——这是实施中发现的漏洞，用例 11j2 抓出来的）、dateRange 完成日前。**今天和完成当天不过滤**，显示真实状态——一是语义上就该如此，二是老数据小项没有 `completedDate`，过滤会把今天的真实勾选也抹掉。月历（`forCalendar`）不参与。
+  - **老数据兜底**：没有 `completedDate` 的小项（迁移前落库的全部历史数据）历史日按未勾处理、完成当天照实显示；不回填假日期（真实完成日拿不到）。用例 11k。
+  - **云端同步（§3.5 + §3.1）**：新增 `docs/supabase-migration-checklist-completed-date.sql`（`add column if not exists`，幂等、不改数据），`supabase-schema.sql` 同步补列。四个映射面：写侧 `cloudRepository.checklistItemRows`（改为 export 供测试）与 `cloudUpload` 各加 `completed_date: toDateOrNull(...)`——取消勾选时必须写 `null` 才能清掉云端旧日期；读侧三处（`cloudRepository` 拉取 / `cloudRead` 预览 / `cloudDownload` 强制下载）原本各内联一份完全相同的 row→item 代码，**收敛为 `cloudRead.rowToChecklistItem` 一个定义**，从结构上杜绝"三处漏一处静默丢字段"。`cloudFieldParity.test.ts` 新增小项 `checklistItemRows ↔ rowToChecklistItem` 逐字段对照（6 字段 + id/family_id/task_id + "取消勾选上传为 null"）。
+  - **影响范围（按 R1 说明）**：本改动只影响**非 occurrence 类**任务（singleDate / dateRange，权威源是本体 status+completedAt）翻历史日的展示——即此前诊断的那个 bug 家族。**recurring（occurrence 类）不受影响、也不需要同样处理**：其完成权威源是 `task_occurrence_statuses` 按天行，展示分支（pending / 当日 / 顺延当天完成）完全不经过 `checklistAsOf`；小项在 `toggleChecklistItem` 里同样会被盖上 `completedDate`（写入口在分叉之前，无害），但 recurring 的 checklist 本身是跨所有 occurrence 共享的一份（09-12 已记录的既有限制），要做按 occurrence 的小项回放得先把 checklist 拆成按 occurrence 存，那是另一个量级的模型改动，本次不碰。
+  - **已知边界**：`completedDate` 只存最新一次勾选日期，不存勾/取消的历史序列。一个小项 D2 勾、D4 取消、D6 再勾，回放 D3 时显示未勾（当前值是 D6）——用例 11j2 明确固化了这个行为。
+  - **测试**：+5 回归（11j 跨天勾选第1/3/7天、各历史日回放累计进度；11j2 取消清空/再勾记新日期；11j3 整体勾选补日期/保留原日期/退回清空；11k 老数据兜底；11l 复制任务不带旧日期）+8 parity。157 例全绿，`tsc -b` 通过（`--noEmit` 不含测试文件、比 `-b` 松，以后以 `npm run build` 为准）。
+  - **真实浏览器验证**（本地预览、本地模式、不联网；导入 09-12 备份 259 条真实任务）：① 老数据兜底——已完成的"大增语文课后作业"99932636 翻 9/5~9/11 全 0/5、9/12 完成当天 ☑ 5/5；进行中的 c7a44310 9/12~9/19 每天以 0/6 顺延出现。② 新字段端到端——在真实 UI 里对 c7a44310 勾小项，库内立刻带上 `completedDate: 2026-09-19`；翻回 9/12~9/18 全 0/6、9/19 显示 5/6 且逐项标记与库内一致；翻看后库内未被写回，老任务 99932636 仍无日期（未回填）。操作中我的选择器误把整体勾选框当第一个小项点了，反倒顺手验证了 `setDisplayStatus` 的日期戳与清空逻辑在真实 UI 里正确。**多天真实回放只能等上线后自然形成**——新字段上线前不可能存在于真实数据里。
+  - **顺带发现的既有 §3.5 漂移（已另立任务，本次不混入）**：代码一直在往 `task_checklist_items` 写 `estimated_minutes` / `actual_minutes`，但受控 SQL 里没有这两列；`supabase-migration-actual-minutes.sql` 头部"小项表结构本就完整"的说法是错的。
+
 ## 2026-09-12
 
 - **修复顺延任务"小项 5/5 但整体勾选框未完成"——这是 08-16 那次修复自己引入的回归**（用户反馈"大增语文课后作业"由 09-05 顺延而来、5 个小项全勾、进度 5/5、勾选框却是空的）。

@@ -1,7 +1,7 @@
 import { supabase } from "./supabase";
 import { db } from "../data/db";
 import type { Task, TaskOccurrenceStatus, PlanPeriod } from "../types/task";
-import { rowToTask } from "./cloudRead";
+import { rowToChecklistItem, rowToTask } from "./cloudRead";
 
 export interface DownloadResult {
   tasks: number;
@@ -43,16 +43,7 @@ export async function downloadCloudDataToLocal(familyId: string): Promise<Downlo
   const checklistItems = checklistData || [];
   checklistItems.forEach(row => {
     const task = taskMap.get(row.task_id);
-    if (task) {
-      task.checklistItems!.push({
-        id: row.id,
-        title: row.title,
-        done: row.done,
-        sortOrder: row.sort_order,
-        estimatedMinutes: row.estimated_minutes ?? undefined,
-        actualMinutes: row.actual_minutes ?? undefined,
-      });
-    }
+    if (task) task.checklistItems!.push(rowToChecklistItem(row));
   });
 
   // 对于空 checklistItems，可以保留空数组，前端会适配

@@ -87,6 +87,8 @@ export interface ChecklistItem {
   id: string;
   title: string;
   done: boolean;
+  /** 勾选完成的那一天（YYYY-MM-DD，本地时区）；取消勾选时清除。历史遗留小项可能没有。 */
+  completedDate?: string;
   sortOrder?: number;
   estimatedMinutes?: number;
   actualMinutes?: number;

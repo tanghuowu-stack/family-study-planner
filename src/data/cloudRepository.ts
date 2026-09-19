@@ -7,7 +7,7 @@
  */
 import { supabase } from "../lib/supabase";
 import { db } from "./db";
-import { rowToTask } from "../lib/cloudRead";
+import { rowToChecklistItem, rowToTask } from "../lib/cloudRead";
 import type {
   Task,
   TaskDraft,
@@ -89,6 +89,27 @@ function buildMetadata(task: Task): Record<string, unknown> | null {
   return Object.keys(meta).length > 0 ? meta : null;
 }
 
+// 导出供测试用：checklistItemRows ↔ rowToChecklistItem 的字段逐一对照（§3.1 四个映射面之一）
+export function checklistItemRows(task: Task, familyId: string): Record<string, unknown>[] {
+  if (!Array.isArray(task.checklistItems) || task.checklistItems.length === 0) return [];
+  return task.checklistItems.map((item, idx) =>
+    stripUndefined({
+      id: item.id ?? `${task.id}:ci:${idx}`,
+      family_id: familyId,
+      task_id: task.id,
+      title: item.title ?? "",
+      done: item.done ?? false,
+      // 取消勾选时 completedDate 为 undefined → 这里写 null，才能把云端已有的日期清掉（铁律二：date 只传 YYYY-MM-DD 或 null）
+      completed_date: toDateOrNull(item.completedDate),
+      sort_order: item.sortOrder ?? idx,
+      estimated_minutes: item.estimatedMinutes ?? null,
+      actual_minutes: item.actualMinutes ?? null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+  );
+}
+
 // 导出供测试用：taskToRow/rowToTask 的字段逐一对照（防止再出现 actualMinutes 那类单向漏映射）
 export function taskToRow(task: Task, familyId: string): Record<string, unknown> {
   return stripUndefined({
@@ -140,24 +161,6 @@ export function taskToRow(task: Task, familyId: string): Record<string, unknown>
     created_at: toTimestampOrNull(task.createdAt) ?? new Date().toISOString(),
     updated_at: toTimestampOrNull(task.updatedAt) ?? new Date().toISOString(),
   });
-}
-
-function checklistItemRows(task: Task, familyId: string): Record<string, unknown>[] {
-  if (!Array.isArray(task.checklistItems) || task.checklistItems.length === 0) return [];
-  return task.checklistItems.map((item, idx) =>
-    stripUndefined({
-      id: item.id ?? `${task.id}:ci:${idx}`,
-      family_id: familyId,
-      task_id: task.id,
-      title: item.title ?? "",
-      done: item.done ?? false,
-      sort_order: item.sortOrder ?? idx,
-      estimated_minutes: item.estimatedMinutes ?? null,
-      actual_minutes: item.actualMinutes ?? null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-  );
 }
 
 /** upsert task to Supabase and sync checklist items */
@@ -346,16 +349,7 @@ async function fetchAndCacheTasks(familyId: string): Promise<Task[]> {
 
   (checklistData || []).forEach((row) => {
     const task = taskMap.get(row.task_id);
-    if (task) {
-      task.checklistItems!.push({
-        id: row.id,
-        title: row.title,
-        done: row.done,
-        sortOrder: row.sort_order,
-        estimatedMinutes: row.estimated_minutes ?? undefined,
-        actualMinutes: row.actual_minutes ?? undefined,
-      });
-    }
+    if (task) task.checklistItems!.push(rowToChecklistItem(row));
   });
 
   // cache to local IndexedDB（LWW：本地更新的记录不被云端旧值覆盖）

@@ -162,6 +162,7 @@ create table if not exists public.task_checklist_items (
   task_id    text not null references public.tasks(id) on delete cascade,
   title      text not null default '',
   done       boolean not null default false,
+  completed_date date,            -- 勾选完成的本地日期；取消勾选置 null（2026-09-19，见 migration-checklist-completed-date）
   sort_order integer not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

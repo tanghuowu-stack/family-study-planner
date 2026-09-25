@@ -12,10 +12,11 @@ import { TASK_SUBJECT_GROUPS, taskSubjectGroup } from "../utils/taskGrouping";
 const makeId = () => crypto.randomUUID();
 const isActiveTask = (task: Task) => !task.deletedAt;
 const unfinished = (status: TaskStatus | OccurrenceStatus) => !["done", "cancelled"].includes(status);
-// 无时间任务两级排序：跨学科分组（今日页语文/数学/英语/其他的合并口径，现算）按分组序，
-// 同分组内按 sortOrder（今日页/管理页拖拽都写这个字段，写 0..n-1）——两处拖拽共用同一个排序空间，
-// 分组口径必须对齐今日页的合并粒度（taskSubjectGroup），而不是管理页更细的 mainCategory:subCategory，
-// 否则今日页合并显示的语文分组里，管理页按更细粒度写的 sortOrder 会被这里的粗粒度默认序悄悄压回原位
+// 无时间任务两级排序：学科（taskSubjectGroup）→ sortOrder → createdAt。getTasksForDate 的返回顺序，
+// 月历格子、逾期列表直接用它。
+// 今日页主清单（2026-09-25 起按"上课 / 作业"分组）不依赖这里的学科级：它在 groupDayTasks 里
+// 按自己的桶重排（utils/taskGrouping.ts dayBucketSort）——上课组混着各学科，若沿用学科级，
+// 跨学科拖拽会被压回学科默认序。sortOrder 仍是今日页与管理页共用的同一个字段（两处拖拽都写 0..n-1）。
 const subjectRank = (task: Task) => TASK_SUBJECT_GROUPS.findIndex((group) => group.key === taskSubjectGroup(task));
 const taskSort = (a: Task, b: Task) => {
   const aTime = a.startTime ?? a.time;

@@ -9,7 +9,7 @@ import { getRepository } from "../data/repositoryProvider";
 import { taskRepository } from "../data/taskRepository";
 import type { PlanOverviewItem, TaskDisplay, TaskStatus } from "../types/task";
 import { formatFullDate, fromDateKey, toDateKey, todayKey } from "../utils/date";
-import { TASK_SUBJECT_GROUPS, taskSubjectGroup, type TaskSubjectGroup } from "../utils/taskGrouping";
+import { TASK_SUBJECT_GROUPS, groupDayTasks, normalizeSubjectOrder, type TaskSubjectGroup } from "../utils/taskGrouping";
 import { useGroupOrder } from "../hooks/useGroupOrder";
 import { itemSyncKey, taskSyncKey } from "../utils/taskMeta";
 
@@ -103,13 +103,13 @@ function GroupedTaskGrid({
   const [dragKey, setDragKey] = useState<TaskSubjectGroup | null>(null);
   const [dragOverKey, setDragOverKey] = useState<TaskSubjectGroup | null>(null);
 
-  const orderedGroups = order
-    .map((key) => TASK_SUBJECT_GROUPS.find((g) => g.key === key)!)
-    .filter(Boolean);
+  // 上课 / 作业两组（规则见 utils/taskGrouping.ts groupDayTasks）；作业组内的学科分组仍可整组拖拽排序
+  const { classes, homework } = groupDayTasks(tasks, order);
 
   function handleDrop(targetKey: TaskSubjectGroup) {
     if (!dragKey || dragKey === targetKey) return;
-    const next = [...order];
+    // 在规整后的完整学科序上挪动：存储值若缺某个学科，indexOf 得 -1，splice(-1) 会误删最后一科
+    const next = normalizeSubjectOrder(order);
     const fromIdx = next.indexOf(dragKey);
     const toIdx = next.indexOf(targetKey);
     next.splice(fromIdx, 1);
@@ -118,30 +118,43 @@ function GroupedTaskGrid({
   }
 
   return (
-    <div className="mt-4 space-y-3">
-      {orderedGroups.map((group) => {
-        const groupTasks = tasks.filter((task) => taskSubjectGroup(task) === group.key);
-        if (!groupTasks.length) return null;
-        const isDragging = dragKey === group.key;
-        const isOver = dragOverKey === group.key && dragKey !== group.key;
-        return (
-          <section
-            key={group.key}
-            draggable
-            onDragStart={() => setDragKey(group.key)}
-            onDragEnd={() => { setDragKey(null); setDragOverKey(null); }}
-            onDragOver={(e) => { e.preventDefault(); setDragOverKey(group.key); }}
-            onDrop={(e) => { e.preventDefault(); handleDrop(group.key); setDragKey(null); setDragOverKey(null); }}
-            className={`w-full overflow-visible rounded-xl border bg-mint/40 transition-all ${isOver ? "border-primary" : "border-mint"} ${isDragging ? "opacity-40" : ""}`}
-          >
-            <h3 className="flex cursor-grab items-center gap-1.5 border-b border-mint px-3 py-2.5 text-xs font-semibold text-ink active:cursor-grabbing">
-              <GripVertical className="h-3 w-3 shrink-0 text-stone-300" />
-              {group.label}
-            </h3>
-            <SortableTaskList tasks={groupTasks} renderTask={renderTask} onReorder={onTaskReorder} />
+    <div className="mt-4 space-y-5">
+      {classes.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="px-1 text-sm font-semibold text-ink">上课</h3>
+          <section className="w-full overflow-visible rounded-xl border border-mint bg-mint/40">
+            <SortableTaskList tasks={classes} renderTask={renderTask} onReorder={onTaskReorder} />
           </section>
-        );
-      })}
+        </div>
+      )}
+      {homework.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="px-1 text-sm font-semibold text-ink">作业</h3>
+          <div className="space-y-3">
+            {homework.map((group) => {
+              const isDragging = dragKey === group.key;
+              const isOver = dragOverKey === group.key && dragKey !== group.key;
+              return (
+                <section
+                  key={group.key}
+                  draggable
+                  onDragStart={() => setDragKey(group.key)}
+                  onDragEnd={() => { setDragKey(null); setDragOverKey(null); }}
+                  onDragOver={(e) => { e.preventDefault(); setDragOverKey(group.key); }}
+                  onDrop={(e) => { e.preventDefault(); handleDrop(group.key); setDragKey(null); setDragOverKey(null); }}
+                  className={`w-full overflow-visible rounded-xl border bg-mint/40 transition-all ${isOver ? "border-primary" : "border-mint"} ${isDragging ? "opacity-40" : ""}`}
+                >
+                  <h4 className="flex cursor-grab items-center gap-1.5 border-b border-mint px-3 py-2.5 text-xs font-semibold text-ink active:cursor-grabbing">
+                    <GripVertical className="h-3 w-3 shrink-0 text-stone-300" />
+                    {group.label}
+                  </h4>
+                  <SortableTaskList tasks={group.tasks} renderTask={renderTask} onReorder={onTaskReorder} />
+                </section>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

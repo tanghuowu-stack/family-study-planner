@@ -14,7 +14,7 @@ import { MonthPage } from "./pages/MonthPage";
 import { TaskManagementPage } from "./pages/TaskManagementPage";
 import type { Task, TaskDisplay, TaskDraft, TaskStatus } from "./types/task";
 import { fromDateKey, todayKey, toDateKey } from "./utils/date";
-import { itemSyncKey, taskSyncKey } from "./utils/taskMeta";
+import { isOccurrenceSchedule, itemSyncKey, taskSyncKey } from "./utils/taskMeta";
 
 type Page = "today" | "month" | "tasks" | "stats";
 const navItems = [
@@ -95,20 +95,28 @@ export default function App() {
     if (synced) { clearUnsynced(setUnsyncedTasks, key); notify(isEdit ? "任务已更新" : "任务已添加"); }
     else { markUnsynced(setUnsyncedTasks, key); notifyFailure("⚠️ 已保存到本地，未同步云端，点任务旁的标记可重试"); }
   };
-  const changeStatus = async (task: TaskDisplay, status: TaskStatus) => {
+  // 过去日补勾：非重复任务记为查看日完成，提示用户记到了哪天（重复类的完成本来就记在它自己那天，不提示）
+  const backdatedLabel = (task: TaskDisplay, asOfDate?: string) =>
+    asOfDate && asOfDate < todayKey() && !isOccurrenceSchedule(task) ? `已记为 ${Number(asOfDate.slice(5, 7))}/${Number(asOfDate.slice(8, 10))} 完成` : null;
+  const changeStatus = async (task: TaskDisplay, status: TaskStatus, asOfDate?: string) => {
     const key = taskSyncKey(task);
     try {
-      const result = await repo().setDisplayStatus(task, status);
+      const result = await repo().setDisplayStatus(task, status, asOfDate);
       refresh();
-      if (result.synced) { clearUnsynced(setUnsyncedTasks, key); notify(status === "done" ? "已完成" : "状态已更新"); }
-      else { markUnsynced(setUnsyncedTasks, key); notifyFailure("⚠️ 未同步到云端，点击任务旁的标记可重试"); }
+      const backdated = status === "done" ? backdatedLabel(task, asOfDate) : null;
+      if (result.synced) { clearUnsynced(setUnsyncedTasks, key); notify(backdated ?? (status === "done" ? "已完成" : "状态已更新")); }
+      else { markUnsynced(setUnsyncedTasks, key); if (backdated) notify(backdated); notifyFailure("⚠️ 未同步到云端，点击任务旁的标记可重试"); }
     } catch { refresh(); markUnsynced(setUnsyncedTasks, key); notifyFailure("⚠️ 保存失败，请检查网络"); }
   };
-  const toggleChecklist = async (task: TaskDisplay, itemId: string) => {
+  const toggleChecklist = async (task: TaskDisplay, itemId: string, asOfDate?: string) => {
     const key = itemSyncKey(task.id, itemId);
+    // 目标状态按"界面上看到的"取反：历史日回放会把之后才勾的小项显示为未勾，点它是要补记为那天完成，不是取消
+    const done = !task.checklistItems?.find((item) => item.id === itemId)?.done;
     try {
-      const result = await repo().toggleChecklistItem(task.id, itemId, task.occurrenceDate);
+      const result = await repo().toggleChecklistItem(task.id, itemId, task.occurrenceDate, { asOfDate, done });
       refresh();
+      const backdated = done ? backdatedLabel(task, asOfDate) : null;
+      if (backdated) notify(backdated);
       if (result.synced) clearUnsynced(setUnsyncedItems, key);
       else { markUnsynced(setUnsyncedItems, key); notifyFailure("⚠️ 未同步到云端，点击小项旁的标记可重试"); }
     } catch { refresh(); markUnsynced(setUnsyncedItems, key); notifyFailure("⚠️ 保存失败，请检查网络"); }

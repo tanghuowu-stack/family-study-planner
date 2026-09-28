@@ -15,7 +15,7 @@ const memStore = new Map<string, string>();
   clear: () => memStore.clear(),
 };
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "../db";
 import { taskRepository } from "../taskRepository";
 import { getHabitCandidates, setHabitEnabled, setHabitStartDate, getHabitCalendars, toggleRestDay, hideHabitCandidate, unhideHabitCandidate, getHiddenHabitCandidates } from "../statsRepository";
@@ -423,3 +423,51 @@ describe("occurrence completedAt 写入路径 + 休息日切换", () => {
     expect(await toggleRestDay("2026-07-20")).toEqual([]);
   });
 });
+
+describe("过去日补勾的统计归因（2026-09-28）", () => {
+  // 钢琴分组：练习（recurring，已勾选打卡）+ 单次钢琴课（singleDate，自动入组）
+  const practice = () => makeTask("practice", {
+    enableStreak: true, streakStartDate: "2026-07-01", mainCategory: "interestClass", subCategory: "pianoPractice",
+    timeType: "recurring", schedulePattern: "dailyRecurring", date: undefined,
+    startDate: "2026-06-01", recurrence: { frequency: "daily", startDate: "2026-06-01" },
+  });
+  const pianoClass = (over: Partial<Task> = {}) => makeTask("class0714", { mainCategory: "interestClass", subCategory: "piano", date: "2026-07-14", ...over });
+  // 实际操作发生在 07-15 晚上
+  const onJul15 = async (fn: () => Promise<unknown>) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-07-15T20:00:00+08:00"));
+    try { return await fn(); } finally { vi.useRealTimers(); }
+  };
+  const day14 = async () => statusMap((await getHabitCalendars("2026-07", "2026-07-15"))[0])["2026-07-14"];
+
+  beforeEach(async () => {
+    await db.tasks.bulkAdd([practice(), pianoClass()]);
+    // 07-14 那天没练琴、只上了课：练习的 occurrence 取消，是否打卡全看钢琴课
+    await db.taskOccurrenceStatuses.bulkAdd([occRow("practice", "2026-07-14", "cancelled")]);
+  });
+
+  it("在 07-14 页面上点钢琴课完成：07-14 计入打卡", async () => {
+    const cls = (await db.tasks.get("class0714"))!;
+    await onJul15(() => taskRepository.setDisplayStatus(cls, "done", "2026-07-14"));
+    expect(toLocalDateKeyForTest((await db.tasks.get("class0714"))!.completedAt!)).toBe("2026-07-14");
+    expect(await day14()).toBe("done");
+  });
+
+  it("对照（旧行为）：不带查看日 → 记为操作当天 07-15 → 07-14 漏卡", async () => {
+    const cls = (await db.tasks.get("class0714"))!;
+    await onJul15(() => taskRepository.setDisplayStatus(cls, "done"));
+    expect(await day14()).not.toBe("done");
+  });
+
+  it("钢琴课带小项：在 07-14 页面上勾完最后一项，07-14 同样计入", async () => {
+    await db.tasks.put(pianoClass({ checklistItems: [{ id: "a", title: "回课曲目", done: false, sortOrder: 0 }] }));
+    await onJul15(() => taskRepository.toggleChecklistItem("class0714", "a", undefined, { asOfDate: "2026-07-14", done: true }));
+    expect(await day14()).toBe("done");
+  });
+});
+
+// 本文件时区固定 Asia/Shanghai，直接用本地日期换算
+function toLocalDateKeyForTest(iso: string) {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}

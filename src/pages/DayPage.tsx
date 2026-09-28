@@ -29,9 +29,9 @@ function ProgressCircle({ completed, total }: { completed: number; total: number
 
 interface Props {
   date: string; refreshKey: number; onDateChange: (date: string) => void;
-  onStatusChange: (task: TaskDisplay, status: TaskStatus) => void; onEdit: (task: TaskDisplay) => void;
+  onStatusChange: (task: TaskDisplay, status: TaskStatus, asOfDate?: string) => void; onEdit: (task: TaskDisplay) => void;
   onDelete: (task: TaskDisplay) => void; onEnd: (task: TaskDisplay) => void; onExtend: (task: TaskDisplay) => void; onOccurrenceCancel: (task: TaskDisplay) => void;
-  onOccurrencePostpone: (task: TaskDisplay) => void; onChecklistToggle: (task: TaskDisplay, itemId: string) => void;
+  onOccurrencePostpone: (task: TaskDisplay) => void; onChecklistToggle: (task: TaskDisplay, itemId: string, asOfDate?: string) => void;
   onCopy: (task: TaskDisplay) => void; onOpenMonth: () => void;
   onSaveActualTime?: (taskId: string, itemId: string | null, minutes: number) => Promise<void>;
   onSaveActualTimeManual?: (taskId: string, itemId: string | null, minutes: number | undefined) => void;
@@ -55,7 +55,8 @@ export function DayPage(props: Props) {
     () => move(1),   // left swipe → next day
     () => move(-1),  // right swipe → prev day
   );
-  const rowProps = { compact: true, onStatusChange: props.onStatusChange, onEdit: props.onEdit, onDelete: props.onDelete, onEnd: props.onEnd, onExtend: props.onExtend, onOccurrenceCancel: props.onOccurrenceCancel, onOccurrencePostpone: props.onOccurrencePostpone, onChecklistToggle: props.onChecklistToggle, onCopy: props.onCopy, onSaveActualTime: props.onSaveActualTime, onSaveActualTimeManual: props.onSaveActualTimeManual, onSaveEstimatedMinutes: props.onSaveEstimatedMinutes };
+  // 勾选动作带上本页的查看日：过去日补勾记为那天完成（数据层保证不晚于今天）
+  const rowProps = { compact: true, onStatusChange: (task: TaskDisplay, status: TaskStatus) => props.onStatusChange(task, status, props.date), onEdit: props.onEdit, onDelete: props.onDelete, onEnd: props.onEnd, onExtend: props.onExtend, onOccurrenceCancel: props.onOccurrenceCancel, onOccurrencePostpone: props.onOccurrencePostpone, onChecklistToggle: (task: TaskDisplay, itemId: string) => props.onChecklistToggle(task, itemId, props.date), onCopy: props.onCopy, onSaveActualTime: props.onSaveActualTime, onSaveActualTimeManual: props.onSaveActualTimeManual, onSaveEstimatedMinutes: props.onSaveEstimatedMinutes };
   const annotation = getCalendarAnnotation(props.date);
   const annotationLabels = [...annotation.solarTerms, ...annotation.festivals];
   const isToday = props.date === todayKey();

@@ -655,8 +655,8 @@ export const cloudRepository = {
     return count;
   },
 
-  async setDisplayStatus(task: TaskDisplay, status: TaskStatus): Promise<SyncResult> {
-    const { parentId } = await taskRepository.setDisplayStatus(task, status);
+  async setDisplayStatus(task: TaskDisplay, status: TaskStatus, asOfDate?: string): Promise<SyncResult> {
+    const { parentId } = await taskRepository.setDisplayStatus(task, status, asOfDate);
     let synced = true;
     if (_familyId) {
       const updated = await db.tasks.get(task.id);
@@ -700,8 +700,8 @@ export const cloudRepository = {
     }
   },
 
-  async toggleChecklistItem(taskId: string, itemId: string, occurrenceDate?: string): Promise<SyncResult> {
-    const { parentId } = await taskRepository.toggleChecklistItem(taskId, itemId, occurrenceDate);
+  async toggleChecklistItem(taskId: string, itemId: string, occurrenceDate?: string, opts?: { asOfDate?: string; done?: boolean }): Promise<SyncResult> {
+    const { parentId } = await taskRepository.toggleChecklistItem(taskId, itemId, occurrenceDate, opts);
     let synced = true;
     if (_familyId) {
       const updated = await db.tasks.get(taskId);

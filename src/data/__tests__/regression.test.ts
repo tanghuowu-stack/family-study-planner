@@ -528,6 +528,166 @@ describe("R6 dateRange 整体任务语义", () => {
   });
 });
 
+// ── 过去日补勾记查看日（2026-09-28，真实反馈"语文中秋家庭作业"：在 9/27 页面上勾第 2 项，勾上又自己回退）──
+describe("过去日补勾：记为查看日完成", () => {
+  const two = () => [
+    { id: "i1", title: "阅读手册4页", done: false, sortOrder: 0 },
+    { id: "i2", title: "背诵126页", done: false, sortOrder: 1 },
+  ];
+  const onDayAt = async (dateKey: string, fn: () => Promise<unknown>) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(`${dateKey}T19:00:00`));
+    try { return await fn(); } finally { vi.useRealTimers(); }
+  };
+  const view = async (date: string, id: string) => {
+    const t = (await taskRepository.getTasksForDate(date)).find((x) => x.id === id);
+    return t ? `${t.status === "done" ? "☑" : "☐"}${(t.checklistItems ?? []).map((i) => i.done ? "✓" : "○").join("")}` : "不出现";
+  };
+  const Y = dayOffset(-1); // "查看的过去日"
+  // 用户在某天页面上点击时，App 按"界面上看到的"取反得到目标状态，并带上查看日
+  const clickItem = async (id: string, itemId: string, asOfDate: string) => {
+    const shown = (await taskRepository.getTasksForDate(asOfDate)).find((x) => x.id === id);
+    const done = !shown?.checklistItems?.find((i) => i.id === itemId)?.done;
+    return taskRepository.toggleChecklistItem(id, itemId, shown?.occurrenceDate, { asOfDate, done });
+  };
+
+  it.each([
+    ["单日·自动顺延", { date: dayOffset(-3), rolloverMode: "autoNextDay", allowRollover: true }],
+    ["日期范围", { timeType: "dateRange", date: undefined, startDate: dayOffset(-3), endDate: dayOffset(4) }],
+    ["单日·逾期保留（当天就是原定日）", { date: Y }],
+  ] as [string, Partial<Task>][])("%s：在过去日页面补勾最后一项，那天保持已勾、整体在那天完成", async (_label, over) => {
+    const { task } = await onDayAt(dayOffset(-3), () => taskRepository.create(baseDraft({ title: "中秋作业", checklistItems: two(), ...over }))) as { task: Task };
+    await onDayAt(Y, () => taskRepository.toggleChecklistItem(task.id, "i1")); // 第 1 项：那天当天勾的
+    expect(await view(Y, task.id)).toBe("☐✓○");
+
+    await clickItem(task.id, "i2", Y); // 今天，在 Y 那页上补勾第 2 项
+
+    const body = (await db.tasks.get(task.id))!;
+    expect(body.checklistItems!.map((i) => i.completedDate)).toEqual([Y, Y]); // 记的是查看日，不是今天
+    expect(body.status).toBe("done");
+    expect(toLocalDateKey(body.completedAt!)).toBe(Y); // 整体完成日对齐查看日
+    expect(await view(Y, task.id), "修复前这里是 ☐✓○（勾上又回退）").toBe("☑✓✓");
+    expect(await view(today, task.id), "那天已经做完，今天不再出现").toBe("不出现");
+  });
+
+  it("补勾的不是最后一项：那天保持已勾，任务仍未完成", async () => {
+    const three = [...two(), { id: "i3", title: "第三项", done: false, sortOrder: 2 }];
+    const { task } = await taskRepository.create(baseDraft({ title: "三项", date: Y, checklistItems: three }));
+    await clickItem(task.id, "i2", Y);
+    expect((await db.tasks.get(task.id))!.checklistItems![1].completedDate).toBe(Y);
+    expect(await view(Y, task.id)).toBe("☐○✓○");
+  });
+
+  it("未来日期页面上勾：记今天", async () => {
+    const { task } = await taskRepository.create(baseDraft({ title: "提前做", date: dayOffset(2), checklistItems: two() }));
+    await clickItem(task.id, "i1", dayOffset(2));
+    expect((await db.tasks.get(task.id))!.checklistItems![0].completedDate).toBe(today);
+  });
+
+  it("不传 asOfDate（其他入口、老调用方）：仍记今天，行为不变", async () => {
+    const { task } = await taskRepository.create(baseDraft({ title: "默认", date: Y, checklistItems: two() }));
+    await taskRepository.toggleChecklistItem(task.id, "i1");
+    expect((await db.tasks.get(task.id))!.checklistItems![0].completedDate).toBe(today);
+  });
+
+  it("今天勾了、再到过去日页面上点它：补记为那天完成，而不是被当成取消", async () => {
+    const { task } = await taskRepository.create(baseDraft({ title: "先今天后补", date: dayOffset(-3), rolloverMode: "autoNextDay", allowRollover: true, checklistItems: two() }));
+    await taskRepository.toggleChecklistItem(task.id, "i1"); // 今天勾
+    expect(await view(Y, task.id)).toBe("☐○○");           // 回放：昨天那页看不到
+    await clickItem(task.id, "i1", Y);                     // 在昨天那页上点它
+    const item = (await db.tasks.get(task.id))!.checklistItems![0];
+    expect(item.done, "按库内状态翻转会把它取消掉").toBe(true);
+    expect(item.completedDate).toBe(Y);
+    expect(await view(Y, task.id)).toBe("☐✓○");
+  });
+
+  it("已完成的任务在更早那天页面上补勾：整体完成日跟着挪到那天", async () => {
+    const { task } = await taskRepository.create(baseDraft({ title: "挪完成日", date: dayOffset(-3), rolloverMode: "autoNextDay", allowRollover: true, checklistItems: two() }));
+    await taskRepository.toggleChecklistItem(task.id, "i1");
+    await taskRepository.toggleChecklistItem(task.id, "i2"); // 今天全部勾完
+    expect(toLocalDateKey((await db.tasks.get(task.id))!.completedAt!)).toBe(today);
+    await clickItem(task.id, "i1", Y);
+    await clickItem(task.id, "i2", Y);                       // 在昨天那页把两项都补记为昨天
+    const body = (await db.tasks.get(task.id))!;
+    expect(body.status).toBe("done");
+    expect(toLocalDateKey(body.completedAt!)).toBe(Y);
+    expect(await view(Y, task.id)).toBe("☑✓✓");
+  });
+
+  it("小项分两天完成：整体完成日取最后一项那天，不会被早的那项拉前", async () => {
+    const { task } = await taskRepository.create(baseDraft({ title: "两天做完", date: dayOffset(-3), rolloverMode: "autoNextDay", allowRollover: true, checklistItems: two() }));
+    await clickItem(task.id, "i1", dayOffset(-2));
+    await clickItem(task.id, "i2", Y);
+    const body = (await db.tasks.get(task.id))!;
+    expect(toLocalDateKey(body.completedAt!)).toBe(Y);
+    expect(await view(dayOffset(-2), task.id)).toBe("☐✓○");
+    expect(await view(Y, task.id)).toBe("☑✓✓");
+  });
+
+  it("整体勾选框（setDisplayStatus）在过去日页面上点：记为那天完成，之后才勾的小项改记为那天", async () => {
+    const { task } = await taskRepository.create(baseDraft({ title: "整体补勾", date: dayOffset(-3), rolloverMode: "autoNextDay", allowRollover: true, checklistItems: two() }));
+    await onDayAt(dayOffset(-2), () => taskRepository.toggleChecklistItem(task.id, "i1")); // 前天勾了第 1 项
+    await taskRepository.toggleChecklistItem(task.id, "i2");                                  // 今天勾了第 2 项
+    await taskRepository.setDisplayStatus({ ...(await db.tasks.get(task.id))! } as TaskDisplay, "done", Y);
+    const body = (await db.tasks.get(task.id))!;
+    expect(toLocalDateKey(body.completedAt!)).toBe(Y);
+    expect(body.checklistItems!.map((i) => i.completedDate)).toEqual([dayOffset(-2), Y]); // 更早的保留，之后的改记为 Y
+    expect(await view(Y, task.id)).toBe("☑✓✓");
+  });
+
+  it("整体勾选框在未来日期页面上点：记今天", async () => {
+    const { task } = await taskRepository.create(baseDraft({ title: "未来整体", date: dayOffset(3) }));
+    await taskRepository.setDisplayStatus(task as TaskDisplay, "done", dayOffset(3));
+    expect(toLocalDateKey((await db.tasks.get(task.id))!.completedAt!)).toBe(today);
+  });
+
+  it("重复类不受影响：完成记在被勾那天的 occurrence 上，本体仍是 todo（R1）", async () => {
+    const { task } = await taskRepository.create(recurringDraft({ title: "每日", checklistItems: two(), recurrence: { frequency: "daily", startDate: dayOffset(-3) } }));
+    await clickItem(task.id, "i1", Y);
+    await clickItem(task.id, "i2", Y);
+    expect((await db.taskOccurrenceStatuses.get(`${task.id}:${Y}`))?.status).toBe("done");
+    expect((await db.tasks.get(task.id))!.status).toBe("todo");
+    expect(await view(Y, task.id)).toBe("☑✓✓");
+    // setDisplayStatus 对重复类忽略 asOfDate：只按传入的 occurrenceDate 写
+    await taskRepository.setDisplayStatus({ ...task, occurrenceDate: today } as TaskDisplay, "done", Y);
+    expect((await db.taskOccurrenceStatuses.get(`${task.id}:${today}`))?.status).toBe("done");
+  });
+});
+
+describe("逾期保留任务：在逾期区补完后，完成当天仍可见", () => {
+  it("原定昨天、今天在逾期区补完：今天出现在已完成里；昨天那页显示未完成", async () => {
+    const { task } = await taskRepository.create(baseDraft({ title: "逾期补完", date: yesterday, rolloverMode: "keepOverdue", allowRollover: false }));
+    expect((await taskRepository.getOverdueTasks(today)).map((t) => t.id)).toContain(task.id);
+    // 用户在今天页面的逾期区点完成（查看日 = 今天）
+    await taskRepository.setDisplayStatus(task as TaskDisplay, "done", today);
+    const todayEntry = (await taskRepository.getTasksForDate(today)).find((t) => t.id === task.id);
+    expect(todayEntry, "修复前：主清单、逾期区、已完成区都没有，整条消失").toBeTruthy();
+    expect(todayEntry?.status).toBe("done");
+    expect((await taskRepository.getOverdueTasks(today)).map((t) => t.id)).not.toContain(task.id);
+    expect((await taskRepository.getTasksForDate(yesterday)).find((t) => t.id === task.id)?.status).toBe("todo");
+    expect((await taskRepository.getTasksForDate(dayOffset(1))).find((t) => t.id === task.id)).toBeFalsy();
+  });
+
+  it("带小项的逾期任务：逾期区勾完最后一项，同样在今天可见", async () => {
+    const { task } = await taskRepository.create(baseDraft({
+      title: "逾期小项", date: dayOffset(-2), rolloverMode: "keepOverdue", allowRollover: false,
+      checklistItems: [{ id: "a", title: "a", done: false, sortOrder: 0 }],
+    }));
+    await taskRepository.toggleChecklistItem(task.id, "a", undefined, { asOfDate: today, done: true });
+    const e = (await taskRepository.getTasksForDate(today)).find((t) => t.id === task.id);
+    expect(e?.status).toBe("done");
+    expect(e?.checklistItems?.[0].done).toBe(true);
+  });
+
+  it("月历不变：逾期补完的任务只在原定日格子里", async () => {
+    // 月历只显示课程/兴趣班课/临时事项，校内作业本来就不进月历——用临时事项才能验证这条
+    const { task } = await taskRepository.create(baseDraft({ title: "月历", mainCategory: "temporary", subCategory: "other", date: yesterday, rolloverMode: "keepOverdue", allowRollover: false, calendarVisibility: "show" }));
+    await taskRepository.setDisplayStatus(task as TaskDisplay, "done", today);
+    expect((await taskRepository.getTasksForDate(today, { forCalendar: true })).find((t) => t.id === task.id)).toBeFalsy();
+    expect((await taskRepository.getTasksForDate(yesterday, { forCalendar: true })).find((t) => t.id === task.id)).toBeTruthy();
+  });
+});
+
 describe("checklist 联动", () => {
   const items = [
     { id: "i1", title: "小项1", done: false, sortOrder: 0 },

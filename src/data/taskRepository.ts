@@ -212,10 +212,25 @@ function findPendingOccurrenceDate(task: Task, date: string, byTaskAndDate: Map<
 // occurrence，而"原定日之后的日子能显示"唯一依赖顺延分支。一旦置 done，顺延分支的 unfinished 前提
 // 失效，任务会从原定日之后的每一天同时消失——连完成当天都找不到，只剩原定日显示已完成
 // （2026-08-16 修复，真实数据 ea0ba064 复现）。所以完成日归属必须在展示层按日推导。
-const rolledOverCompletedLate = (task: Task) =>
-  task.timeType === "singleDate" && task.allowRollover && task.rolloverMode === "autoNextDay"
-  && task.status === "done" && !!task.completedAt && !!task.date
+// 单日任务晚于原定日才完成：不论是顺延中做完，还是逾期保留、在逾期区补完（2026-09-28 扩展到后者——
+// 此前只认顺延，逾期保留任务补完后完成当天从今日页彻底消失：主清单、逾期区、已完成区都没有）
+const completedAfterDate = (task: Task) =>
+  task.timeType === "singleDate" && task.status === "done" && !!task.completedAt && !!task.date
   && toLocalDateKey(task.completedAt) > task.date;
+const rolledOverCompletedLate = (task: Task) =>
+  completedAfterDate(task) && !!task.allowRollover && task.rolloverMode === "autoNextDay";
+
+// 过去日补勾（2026-09-28）：在哪天的页面上勾，就记为哪天完成——页面日期是用户明确选的上下文，
+// 若记今天，回放按查看日过滤会立刻把它判成"那天还没勾"，表现为勾上又自己回退。
+// 不晚于今天：未来日期页面上勾仍记今天（不可能提前完成）。
+const recordDateFor = (asOfDate?: string) => {
+  const today = todayKey();
+  return asOfDate && asOfDate < today ? asOfDate : today;
+};
+// 某天完成的时间戳：今天用真实时刻；过去日取当天本地 12:00——toLocalDateKey 换算回来必须落在同一天，
+// 取零点附近的时刻在时区换算时有跨日风险
+const completionStampFor = (dateKey: string, nowIso: string) =>
+  dateKey === toLocalDateKey(nowIso) ? nowIso : new Date(`${dateKey}T12:00:00`).toISOString();
 
 // "那天还欠着"的展示副本：status 覆盖为 todo，checklist 按 completedDate 回放到那一天。
 // 演进：08-16 只覆盖 status → 历史日"未勾选但 5/5"自相矛盾；09-12 改成 checklist 一刀切未勾选 →
@@ -266,10 +281,21 @@ async function recomputeStatusFromChecklist(taskId: string, beforeSnapshot?: Tas
   if (!items.length) return { task, parentId: await syncParentCompletion(taskId) };
   const allDone = items.every((item) => item.done);
   const status: TaskStatus = allDone ? "done" : task.status === "done" ? "todo" : task.status;
-  if (status !== task.status) {
-    const now = new Date().toISOString();
-    await db.tasks.update(taskId, { status, completedAt: status === "done" ? now : undefined, updatedAt: now });
-    await writeLog(status === "done" ? "complete" : "uncomplete", "task", { entityId: task.id, entityTitle: task.title, beforeSnapshot: beforeSnapshot ?? task, afterSnapshot: { status, checklistItems: items } });
+  const now = new Date().toISOString();
+  // 小项驱动的整体完成：完成日 = 最后一个小项的完成日。过去日补勾时它早于今天，
+  // 若仍记 now，回放会出现"小项全勾、整体却未完成"。即使 status 没变（已完成的任务在更早的
+  // 那天页面上被重新补勾），完成日也要跟着挪；已对齐则保留原时间戳不改动。
+  // 老数据小项都没有 completedDate：沿用原规则（变 done 时记 now，已 done 保持原值）。
+  let completedAt = status === "done" ? task.completedAt : undefined;
+  if (status === "done") {
+    const latest = items.map((item) => item.completedDate).filter((d): d is string => !!d).sort().at(-1);
+    if (latest) {
+      if (task.status !== "done" || !task.completedAt || toLocalDateKey(task.completedAt) !== latest) completedAt = completionStampFor(latest, now);
+    } else if (task.status !== "done") completedAt = now;
+  }
+  if (status !== task.status || completedAt !== task.completedAt) {
+    await db.tasks.update(taskId, { status, completedAt, updatedAt: now });
+    if (status !== task.status) await writeLog(status === "done" ? "complete" : "uncomplete", "task", { entityId: task.id, entityTitle: task.title, beforeSnapshot: beforeSnapshot ?? task, afterSnapshot: { status, checklistItems: items } });
   }
   const parentId = await syncParentCompletion(taskId);
   return { task: await db.tasks.get(taskId), parentId };
@@ -312,8 +338,8 @@ export const taskRepository = {
         // 月历例外（forCalendar）：旅游等跨天安排要整块高亮，维持原有"整体完成"视觉不变。
         if (!options?.forCalendar && task.timeType === "dateRange" && task.status === "done" && task.completedAt && date < toLocalDateKey(task.completedAt)) {
           result.push(asStillOwed(task, date));
-        } else if (!options?.forCalendar && rolledOverCompletedLate(task)) {
-          // 原定日当天并没做完（完成日更晚），显示未完成；已完成归到 completedAt 那天
+        } else if (!options?.forCalendar && completedAfterDate(task)) {
+          // 原定日当天并没做完（完成日更晚——顺延中做完或逾期区补完），显示未完成；已完成归到 completedAt 那天
           result.push(asStillOwed(task, date));
         } else if (!options?.forCalendar && unfinished(task.status) && date < todayKey()) {
           // 还没整体做完的任务翻历史日：小项也按当天回放（今天看的是实时状态，不过滤——
@@ -340,6 +366,12 @@ export const taskRepository = {
           const replay = !options?.forCalendar && date < todayKey();
           if (!limit || date <= limit) result.push({ ...task, checklistItems: replay ? checklistAsOf(task.checklistItems, date) : task.checklistItems, rolledFromDate: task.date });
         }
+      }
+
+      // 非顺延的单日任务（逾期保留等）晚于原定日才补完：完成当天照实显示在已完成里。
+      // 顺延任务上面那段已处理；这里补的是"在逾期区补完后，完成当天整条消失"的缺口（2026-09-28）
+      if (!options?.forCalendar && completedAfterDate(task) && !rolledOverCompletedLate(task) && date === toLocalDateKey(task.completedAt!)) {
+        result.push(task);
       }
     }
 
@@ -829,7 +861,11 @@ export const taskRepository = {
     });
   },
 
-  async setDisplayStatus(task: TaskDisplay, status: TaskStatus): Promise<SyncResult> {
+  /**
+   * asOfDate：今日页当前查看的日期——整体标记完成时记为那天完成（不晚于今天）。不传则记今天。
+   * 重复类任务不看 asOfDate：它的完成本来就记在被勾的那一天的 occurrence 行上。
+   */
+  async setDisplayStatus(task: TaskDisplay, status: TaskStatus, asOfDate?: string): Promise<SyncResult> {
     // R1：按排期类型（而非展示字段）决定权威源——occurrence 类写单日状态表，其余写任务本体。
     // 被历史 bug 污染了 occurrenceDate 的非重复任务因此也能正确回到本体写入路径。
     if (isOccurrenceSchedule(task)) {
@@ -838,17 +874,23 @@ export const taskRepository = {
     }
     const before = await db.tasks.get(task.id);
     const now = new Date().toISOString();
+    const recordDate = recordDateFor(asOfDate);
     let parentId: string | undefined;
     await db.transaction("rw", db.tasks, db.activityLogs, async () => {
       // checklistItems 必须以 before（刚查询的最新库内数据）为准，不能用调用方传入的 task 快照——
       // 否则计时器/手填实际用时落库后紧接着点整体完成，会被这里的旧快照覆盖回去，实际用时静默丢失（2026-07-19 修复回归）
-      // 整体勾完成：还没勾的小项补上今天的 completedDate，已勾的保留原日期；整体退回 todo：全部清空
+      // 整体勾完成：已在记录日当天或更早勾过的小项保留原日期；还没勾的、之后才勾的一律记为记录日
+      // （在那天页面上点整体完成＝声明"那天全做完了"）；老数据已勾无日期的不动，不编造日期。
+      // 整体退回 todo：全部清空
       const stampedItems = before?.checklistItems?.map((item) => {
-        if (status === "done") return item.done ? item : { ...item, done: true, completedDate: toLocalDateKey(now) };
+        if (status === "done") {
+          if (item.done && (!item.completedDate || item.completedDate <= recordDate)) return item;
+          return { ...item, done: true, completedDate: recordDate };
+        }
         if (status === "todo") return { ...item, done: false, completedDate: undefined };
         return item;
       });
-      await db.tasks.update(task.id, { status, completedAt: status === "done" ? now : undefined, checklistItems: stampedItems, updatedAt: now });
+      await db.tasks.update(task.id, { status, completedAt: status === "done" ? completionStampFor(recordDate, now) : undefined, checklistItems: stampedItems, updatedAt: now });
       await writeLog(status === "done" ? "complete" : "uncomplete", "task", { entityId: task.id, entityTitle: task.title, beforeSnapshot: before, afterSnapshot: { status } });
       parentId = await syncParentCompletion(task.id);
     });
@@ -874,14 +916,26 @@ export const taskRepository = {
     }
   },
 
-  async toggleChecklistItem(taskId: string, itemId: string, occurrenceDate?: string): Promise<SyncResult> {
+  /**
+   * opts.asOfDate：今日页当前查看的日期——勾上时记为那天完成（不晚于今天）。不传则记今天。
+   * opts.done：用户想要的目标状态（界面上看到的状态取反）。不传则翻转库内状态。
+   * 必须以"看到的"为准：历史日回放会把之后才勾的小项显示成未勾，用户在那天页面上点它是想"补记为那天完成"，
+   * 若按库内状态（已勾）翻转，反而会把它取消掉。
+   */
+  async toggleChecklistItem(taskId: string, itemId: string, occurrenceDate?: string, opts?: { asOfDate?: string; done?: boolean }): Promise<SyncResult> {
     const task = await db.tasks.get(taskId);
     if (!task?.checklistItems) return { synced: true };
     const now = new Date().toISOString();
+    const recordDate = recordDateFor(opts?.asOfDate);
     // completedDate 记"哪天勾的"（本地日期）：历史日展示按它过滤，取消勾选即清空
-    const items = task.checklistItems.map((item) => item.id !== itemId ? item : (item.done
-      ? { ...item, done: false, completedDate: undefined }
-      : { ...item, done: true, completedDate: toLocalDateKey(now) }));
+    const items = task.checklistItems.map((item) => {
+      if (item.id !== itemId) return item;
+      const target = opts?.done ?? !item.done;
+      if (!target) return { ...item, done: false, completedDate: undefined };
+      // 已在更早（或同一天）勾过的保持原样；之后才勾的、或老数据没日期的，改记为这一天
+      if (item.done && item.completedDate && item.completedDate <= recordDate) return item;
+      return { ...item, done: true, completedDate: recordDate };
+    });
     const allDone = items.every((item) => item.done);
     let parentId: string | undefined;
 

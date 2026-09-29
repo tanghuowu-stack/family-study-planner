@@ -91,6 +91,7 @@ export const SUB_CATEGORY_META: Record<SubCategory | ExtraContentType, { icon: s
   swimming: { icon: "🏊", color: "#0891B2", bgColor: "#E0F2FE", label: "游泳课" },
   rollerSkating: { icon: "🛼", color: "#F59E0B", bgColor: "#FEF3C7", label: "轮滑课" },
   pianoPractice: { icon: "🎹", color: "#EC4899", bgColor: "#FCE7F3", label: "钢琴练习" },
+  otherInterest: { icon: "🏅", color: "#7C3AED", bgColor: "#F3E8FF", label: "其他兴趣班" },
   chineseReading: { icon: "📚", color: "#C65D3B", bgColor: "#F5E6E0", label: "中文阅读" },
   englishReading: { icon: "📖", color: "#7C3AED", bgColor: "#F3E8FF", label: "英文阅读" },
   examCompetition: { icon: "🏆", color: "#DC2626", bgColor: "#FEE2E2", label: "考试或比赛" },
@@ -125,6 +126,7 @@ export const SUB_CATEGORY_OPTIONS: Record<MainCategory, { value: string; label: 
   interestClass: [
     { value: "piano", label: "钢琴课" }, { value: "swimming", label: "游泳课" },
     { value: "rollerSkating", label: "轮滑课" }, { value: "pianoPractice", label: "钢琴练习" },
+    { value: "otherInterest", label: "其他兴趣班" },
   ],
   readingPlan: [
     { value: "chineseReading", label: "中文阅读" }, { value: "englishReading", label: "英文阅读" },
@@ -196,17 +198,48 @@ export const taskShortName = (task: { mainCategory: MainCategory; subCategory: s
   return subCategoryLabel(task.mainCategory, task.subCategory);
 };
 
+/** 固定算"上课"的兴趣班二级类型（历史口径，维持不变） */
+export const FIXED_CLASS_INTEREST_SUBS = ["piano", "swimming", "rollerSkating"];
+
+/**
+ * 是否算"上课"——今日页上课/作业分组、上课标签、月计划显示、周/月汇总、课程统计全部共用这一个判定。
+ * - 课外：内容类型 = 上课；
+ * - 兴趣班：钢琴课/游泳课/轮滑课固定算上课（历史口径不变），
+ *   或者任务本身标记了"算作上课"（extraContentType = "class"，来自课程的 isClass 或表单勾选）。
+ *   钢琴练习、未勾"算作上课"的其他兴趣班不算。
+ * 2026-09-29 起兴趣班不再是纯二级类型硬编码，新增的"其他兴趣班"靠任务级标记判定。
+ */
 export const isCourseTask = (task: { mainCategory: MainCategory; subCategory: string; extraContentType?: ExtraContentType }) =>
   (task.mainCategory === "extraHomework" && task.extraContentType === "class")
-  || (task.mainCategory === "interestClass" && ["piano", "swimming", "rollerSkating"].includes(task.subCategory));
+  || (task.mainCategory === "interestClass" && (FIXED_CLASS_INTEREST_SUBS.includes(task.subCategory) || task.extraContentType === "class"));
 
+/** 兴趣班任务应写入的内容类型：勾了"算作上课"记 class，否则不写（钢琴/游泳/轮滑不依赖它，照样算上课） */
+export const interestContentType = (isClass: boolean): ExtraContentType | undefined => isClass ? "class" : undefined;
+
+// 新增键一律追加在末尾：插在中间会让后面各分类的默认序号整体 +1，打乱已有任务的相对顺序
 const SORT_KEYS = [
   "school:chinese", "school:math", "school:english", "school:other",
   "extraHomework:chinese", "extraHomework:math", "extraHomework:english", "extraHomework:reading",
   "readingPlan:chineseReading", "readingPlan:englishReading", "interestClass:pianoPractice",
   "interestClass:piano", "interestClass:swimming", "interestClass:rollerSkating",
   "temporary:examCompetition", "temporary:travel", "temporary:leisure", "temporary:other",
+  "interestClass:otherInterest",
 ];
+
+/**
+ * 新建任务「选择课程」下拉框的选项文字：同名课程带"（分类·二级类型）"后缀以便区分，
+ * 不重名的照旧只显示课程名。
+ */
+export const courseOptionLabel = (
+  course: { id: string; name: string; mainCategory: MainCategory; subCategory: string },
+  all: { id: string; name: string }[],
+) => all.some((other) => other.id !== course.id && other.name === course.name)
+  ? `${course.name}（${MAIN_CATEGORY_META[course.mainCategory]?.label ?? "其他"}·${subCategoryLabel(course.mainCategory, course.subCategory)}）`
+  : course.name;
+
+/** 二级类型是否为该分类下的合法选项（切换分类后置空，未手动选择时不允许保存） */
+export const isValidSubCategory = (main: MainCategory, sub: string) =>
+  SUB_CATEGORY_OPTIONS[main]?.some((item) => item.value === sub) ?? false;
 
 export const defaultSortOrder = (main: MainCategory, sub: string) => {
   const index = SORT_KEYS.indexOf(`${main}:${sub}`);

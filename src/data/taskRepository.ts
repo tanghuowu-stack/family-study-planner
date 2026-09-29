@@ -148,9 +148,10 @@ const inferCalendarVisibility = (task: Partial<Task>) => {
   return task.mainCategory === "extraHomework" && (task.extraContentType === "dictation" || (task.extraContentType === "practice" && /每日|计算|口算/.test(title)) || (task.extraContentType === "recitation" && daily)) ? "hide" : "show";
 };
 
+// 兴趣班：钢琴练习不上月计划；"其他兴趣班"跟随"算作上课"（与 isCourseTask 同口径）；其余二级类型维持原样上月计划
 const isCalendarPlanTask = (task: Task) =>
   (task.mainCategory === "extraHomework" && task.extraContentType === "class")
-  || (task.mainCategory === "interestClass" && task.subCategory !== "pianoPractice")
+  || (task.mainCategory === "interestClass" && (task.subCategory === "otherInterest" ? isCourseTask(task) : task.subCategory !== "pianoPractice"))
   || task.mainCategory === "temporary";
 
 export const scheduleOccursOn = (task: Task, date: string) => {

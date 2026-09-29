@@ -7,7 +7,7 @@ export type SchoolHomeworkType = "chinese" | "math" | "english" | "other";
 export type ExtraHomeworkType = "chinese" | "math" | "english" | "other";
 export type ExtraContentType = "class" | "homework" | "practice" | "dictation" | "recitation" | "other" | "reading";
 export type InterestClassType =
-  | "piano" | "swimming" | "rollerSkating" | "pianoPractice";
+  | "piano" | "swimming" | "rollerSkating" | "pianoPractice" | "otherInterest";
 export type ReadingPlanType = "chineseReading" | "englishReading";
 export type TemporaryType = "examCompetition" | "travel" | "leisure" | "other";
 export type SubCategory = SchoolHomeworkType | ExtraHomeworkType | InterestClassType | ReadingPlanType | TemporaryType;

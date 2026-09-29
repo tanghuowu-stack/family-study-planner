@@ -4,7 +4,7 @@ import { taskRepository } from "../data/taskRepository";
 import { getRepository } from "../data/repositoryProvider";
 import type { Course, CourseStatus, ExtraContentType, MainCategory, PlanPeriod, Task } from "../types/task";
 import { fmtDate, formatSpecificDates, getWeekEndKey, todayKey } from "../utils/date";
-import { COURSE_MAIN_OPTIONS, COURSE_STATUS_META, MAIN_CATEGORY_META, SUB_CATEGORY_OPTIONS, WEEKDAY_LABELS, canEndRecurring, canExtendRecurring, extraContentLabel, isCourseTask, isEndedRecurring, subCategoryLabel, taskShortName } from "../utils/taskMeta";
+import { COURSE_MAIN_OPTIONS, COURSE_STATUS_META, MAIN_CATEGORY_META, SUB_CATEGORY_OPTIONS, WEEKDAY_LABELS, canEndRecurring, canExtendRecurring, extraContentLabel, interestContentType, isCourseTask, isEndedRecurring, isValidSubCategory, subCategoryLabel, taskShortName } from "../utils/taskMeta";
 
 interface Props { refreshKey: number; onRefresh: () => void; notify: (text: string) => void; onEdit: (task: Task) => void; onDelete: (task: Task) => void; onEnd: (task: Task) => void; onExtend: (task: Task) => void; onCopy: (task: Task) => void; }
 const order: MainCategory[] = ["school", "extraHomework", "interestClass", "temporary"];
@@ -119,12 +119,13 @@ function CourseManager({ courses, onChanged, notify }: { courses: Course[]; onCh
   const subOptions = SUB_CATEGORY_OPTIONS[draft.mainCategory];
   const set = <K extends keyof CourseDraft>(key: K, value: CourseDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
   const reset = () => { setDraft(emptyCourseDraft()); setEditingId(null); };
-  const changeMain = (mainCategory: MainCategory) => setDraft((current) => ({ ...current, mainCategory, subCategory: SUB_CATEGORY_OPTIONS[mainCategory][0].value }));
+  // 切换分类后二级类型置空、必须手动选：不能静默落到第一项（曾把"跳绳课"默默存成"兴趣班·钢琴课"）
+  const changeMain = (mainCategory: MainCategory) => setDraft((current) => ({ ...current, mainCategory, subCategory: "" }));
   const toggleDay = (day: number) => setDraft((current) => ({ ...current, weekdays: current.weekdays.includes(day) ? current.weekdays.filter((d) => d !== day) : [...current.weekdays, day] }));
 
   const buildInput = (d: CourseDraft) => ({
     name: d.name.trim(), mainCategory: d.mainCategory, subCategory: d.subCategory,
-    extraContentType: (d.mainCategory === "extraHomework" ? (d.isClass ? "class" : "homework") : undefined) as ExtraContentType | undefined,
+    extraContentType: (d.mainCategory === "extraHomework" ? (d.isClass ? "class" : "homework") : d.mainCategory === "interestClass" ? interestContentType(d.isClass) : undefined) as ExtraContentType | undefined,
     isClass: d.isClass, status: d.status,
     startDate: d.startDate || undefined, endDate: d.endDate || undefined,
     schedule: (d.weekdays.length || d.startTime || d.endTime) ? { weekdays: d.weekdays.length ? d.weekdays : undefined, startTime: d.startTime || undefined, endTime: d.endTime || undefined } : undefined,
@@ -133,6 +134,7 @@ function CourseManager({ courses, onChanged, notify }: { courses: Course[]; onCh
 
   const save = async () => {
     if (!draft.name.trim()) return notify("请填写课程名称");
+    if (!isValidSubCategory(draft.mainCategory, draft.subCategory)) return notify("请选择二级类型");
     if (draft.startDate && draft.endDate && draft.startDate > draft.endDate) return notify("起止日期不正确");
     if (editingId) { const { sortOrder: _s, ...changes } = buildInput(draft); await getRepository().updateCourse(editingId, changes); notify("课程已更新"); }
     else { await getRepository().createCourse(buildInput(draft)); notify("课程已添加"); }
@@ -160,7 +162,7 @@ function CourseManager({ courses, onChanged, notify }: { courses: Course[]; onCh
         <div className="grid gap-2 sm:grid-cols-2">
           <input value={draft.name} onChange={(e) => set("name", e.target.value)} placeholder="课程名称，如 游泳课 / FCE精讲" className={field} />
           <select value={draft.mainCategory} onChange={(e) => changeMain(e.target.value as MainCategory)} className={field}>{COURSE_MAIN_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
-          <select value={draft.subCategory} onChange={(e) => set("subCategory", e.target.value)} className={field}>{subOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
+          <select value={draft.subCategory} onChange={(e) => set("subCategory", e.target.value)} className={field}><option value="" disabled>请选择二级类型</option>{subOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
           <select value={draft.status} onChange={(e) => set("status", e.target.value as CourseStatus)} className={field}>{(Object.keys(COURSE_STATUS_META) as CourseStatus[]).map((s) => <option key={s} value={s}>{COURSE_STATUS_META[s].label}</option>)}</select>
           <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={draft.isClass} onChange={(e) => set("isClass", e.target.checked)} className="h-4 w-4 rounded" />算作“上课”（钢琴练习等不勾）</label>
         </div>
@@ -179,5 +181,5 @@ const courseScheduleText = (course: Course) => { const days = course.schedule?.w
 function timeLabel(task: Task) { if (task.timeType === "weekGoal") return `${task.weeklyQuota?.isWeeklyRecurring ? "每周执行｜" : ""}本周目标${task.weekStart ? `｜${fmtDate(task.weekStart)} 至 ${fmtDate(getWeekEndKey(task.weekStart))}` : ""}`; if (task.timeType === "assignmentWindow") return `作业周期：${fmtDate(task.assignmentWindow?.startDate)}～${fmtDate(task.assignmentWindow?.endDate)}`; if (task.timeType === "dateRange") return `${fmtDate(task.startDate)}～${fmtDate(task.endDate)}`; if (task.timeType === "recurring" && task.schedulePattern === "specificDates") return `指定日期 ${formatSpecificDates(task.specificDates ?? [])}`; if (task.timeType === "recurring" && task.schedulePattern === "dailyRecurring") return `每日重复｜${fmtDate(task.recurrence?.startDate)} 至 ${task.recurrence?.endDate ? fmtDate(task.recurrence.endDate) : "长期"}`; if (task.timeType === "recurring" && task.schedulePattern === "dateRangeDaily") return `${fmtDate(task.startDate)}～${fmtDate(task.endDate)} 每天`; if (task.timeType === "recurring" && task.schedulePattern === "dateRangeWeekdays") return `${fmtDate(task.startDate)}～${fmtDate(task.endDate)}｜每周${weekdayText(task.rangeWeekdays)}`; if (task.timeType === "recurring") return `每周${weekdayText(task.recurrence?.weekdays)}｜${fmtDate(task.recurrence?.startDate)} 至 ${task.recurrence?.endDate ? fmtDate(task.recurrence.endDate) : "长期"}`; return task.date ? fmtDate(task.date) : "未设置日期"; }
 const weekdayText = (days?: number[]) => [1, 2, 3, 4, 5, 6, 0].filter((day) => days?.includes(day)).map((day) => WEEKDAY_LABELS[day].replace("周", "")).join("");
 const formatTime = (task: Task) => { const start = task.startTime ?? task.time; return start ? `${start}${task.endTime ? `-${task.endTime}` : ""}${task.estimatedMinutes ? `｜预计${task.estimatedMinutes}分钟` : ""}` : ""; };
-function subjectTagClass(task: Task) { if (task.mainCategory === "readingPlan") return "bg-cyan-50 text-cyan-700"; if (task.mainCategory === "interestClass") return task.subCategory === "swimming" ? "bg-teal-50 text-teal-700" : task.subCategory === "rollerSkating" ? "bg-indigo-50 text-indigo-700" : "bg-fuchsia-50 text-fuchsia-700"; if (task.mainCategory === "temporary") return task.subCategory === "examCompetition" ? "bg-red-50 text-red-700" : task.subCategory === "travel" ? "bg-rose-50 text-rose-700" : "bg-stone-100 text-stone-600"; return task.subCategory === "chinese" ? "bg-pink-50 text-pink-700" : task.subCategory === "math" ? "bg-blue-50 text-blue-700" : task.subCategory === "english" ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-600"; }
+function subjectTagClass(task: Task) { if (task.mainCategory === "readingPlan") return "bg-cyan-50 text-cyan-700"; if (task.mainCategory === "interestClass") return task.subCategory === "swimming" ? "bg-teal-50 text-teal-700" : task.subCategory === "rollerSkating" ? "bg-indigo-50 text-indigo-700" : task.subCategory === "otherInterest" ? "bg-violet-50 text-violet-700" : "bg-fuchsia-50 text-fuchsia-700"; if (task.mainCategory === "temporary") return task.subCategory === "examCompetition" ? "bg-red-50 text-red-700" : task.subCategory === "travel" ? "bg-rose-50 text-rose-700" : "bg-stone-100 text-stone-600"; return task.subCategory === "chinese" ? "bg-pink-50 text-pink-700" : task.subCategory === "math" ? "bg-blue-50 text-blue-700" : task.subCategory === "english" ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-600"; }
 function contentTagClass(task: Task) { return task.extraContentType === "class" ? "bg-mint text-primary" : task.extraContentType === "homework" ? "bg-orange-50 text-orange-700" : task.extraContentType === "practice" ? "bg-indigo-50 text-indigo-700" : task.extraContentType === "dictation" ? "bg-violet-50 text-violet-700" : task.extraContentType === "recitation" ? "bg-amber-50 text-amber-800" : "bg-stone-100 text-stone-600"; }

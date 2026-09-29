@@ -5,7 +5,7 @@ import { taskRepository } from "../data/taskRepository";
 import { getRepository } from "../data/repositoryProvider";
 import type { Course, ExtraContentType, MainCategory, PlanPeriod, RolloverMode, SchedulePattern, Task, TaskDisplay, TaskDraft, TaskStatus, TaskTimeType, WeeklyQuota } from "../types/task";
 import { fromDateKey, getWeekStartKey, todayKey, toDateKey } from "../utils/date";
-import { EXTRA_CONTENT_OPTIONS_SIMPLE, MAIN_CATEGORY_META, ROLLOVER_META, STATUS_META, SUB_CATEGORY_OPTIONS, TIME_TYPE_META, WEEKDAY_LABELS, defaultSortOrder, isCourseTask, isOccurrenceSchedule } from "../utils/taskMeta";
+import { EXTRA_CONTENT_OPTIONS_SIMPLE, MAIN_CATEGORY_META, ROLLOVER_META, STATUS_META, SUB_CATEGORY_OPTIONS, TIME_TYPE_META, WEEKDAY_LABELS, courseOptionLabel, defaultSortOrder, interestContentType, isCourseTask, isOccurrenceSchedule, isValidSubCategory } from "../utils/taskMeta";
 
 // "事项"分类或"上课"内容类型默认在月计划中显示，不受上次使用偏好影响
 const forceCalendarVisible = (draft: Pick<TaskDraft, "mainCategory" | "subCategory" | "extraContentType">) =>
@@ -27,7 +27,8 @@ function newDraft(date: string): TaskDraft {
     const sub = SUB_CATEGORY_OPTIONS[main].some((item) => item.value === saved.subCategory) ? saved.subCategory! : SUB_CATEGORY_OPTIONS[main][0].value;
     const reading = main === "readingPlan";
     const timeType = reading ? "weekGoal" : (["singleDate", "dateRange", "weekGoal", "assignmentWindow", "recurring"].includes(saved.timeType ?? "") ? saved.timeType! : "singleDate");
-    const extraContentType = main === "extraHomework" ? saved.extraContentType ?? "homework" : undefined;
+    const extraContentType = main === "extraHomework" ? saved.extraContentType ?? "homework"
+      : main === "interestClass" && sub === "otherInterest" ? interestContentType(saved.extraContentType === "class") : undefined;
     const schedulePattern = reading ? "singleDate" : saved.schedulePattern ?? (timeType === "recurring" ? "weeklyRecurring" : "singleDate");
     return {
       ...base, mainCategory: main, subCategory: sub, title: defaultTitle(main, sub, extraContentType), timeType,
@@ -91,7 +92,9 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
       courseId,
       mainCategory: course.mainCategory,
       subCategory: course.subCategory,
-      extraContentType: course.mainCategory === "extraHomework" ? (course.isClass ? "class" : (["class", "homework"].includes(course.extraContentType ?? "") ? course.extraContentType : "homework")) : undefined,
+      // 兴趣班课程：课程勾了"算作上课"，绑定的任务就记为上课（钢琴/游泳/轮滑不依赖这个标记也算上课）
+      extraContentType: course.mainCategory === "extraHomework" ? (course.isClass ? "class" : (["class", "homework"].includes(course.extraContentType ?? "") ? course.extraContentType : "homework"))
+        : course.mainCategory === "interestClass" ? interestContentType(course.isClass) : undefined,
       title: current.title.trim() ? current.title : course.name,
       sortOrder: defaultSortOrder(course.mainCategory, course.subCategory),
       startTime: course.schedule?.startTime ?? current.startTime,
@@ -175,15 +178,16 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
   }, [draft.timeType, draft.schedulePattern, draft.date, draft.startDate, draft.endDate, draft.specificDates, draft.weekStart, draft.assignmentWindow, draft.recurrence, periods, periodTouched]);
 
   const changeMain = (mainCategory: MainCategory) => {
-    const subCategory = SUB_CATEGORY_OPTIONS[mainCategory][0].value;
+    // 切换分类后二级类型置空、必须手动选择，不静默落到第一项（选中后由 changeSub 补齐标题/顺延/排序）
+    const subCategory = "";
     const reading = mainCategory === "readingPlan";
-    const auto = mainCategory === "extraHomework" || reading || subCategory === "pianoPractice";
+    const auto = mainCategory === "extraHomework" || reading;
     setDraft((current) => ({
-      ...current, mainCategory, subCategory, courseId: undefined, title: titleTouched ? current.title : defaultTitle(mainCategory, subCategory, mainCategory === "extraHomework" ? "homework" : undefined),
+      ...current, mainCategory, subCategory, courseId: undefined, title: titleTouched ? current.title : "",
       timeType: reading ? "weekGoal" : current.timeType, weekStart: reading ? getWeekStartKey(initialDate) : current.weekStart,
       schedulePattern: reading ? "singleDate" : current.schedulePattern, specificDates: reading ? undefined : current.specificDates,
       weeklyQuota: reading ? { enabled: true, targetCount: 1, unit: "本", isWeeklyRecurring: true, allowAutoDistribute: true, allowRollover: true } : undefined,
-      extraContentType: mainCategory === "extraHomework" && subCategory !== "reading" ? "homework" : undefined,
+      extraContentType: mainCategory === "extraHomework" ? "homework" : undefined,
       rolloverMode: auto ? "autoNextDay" : "keepOverdue", allowRollover: auto, sortOrder: defaultSortOrder(mainCategory, subCategory),
     }));
   };
@@ -192,7 +196,12 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
     const isReading = draft.mainCategory === "extraHomework" && subCategory === "reading";
     setDraft((current) => ({
       ...current, subCategory, courseId: undefined,
-      extraContentType: isReading ? undefined : (draft.mainCategory === "extraHomework" ? (current.extraContentType ?? "homework") : current.extraContentType),
+      // 兴趣班：只有"其他兴趣班"用任务级"算作上课"标记（默认勾上）；换到其他二级类型必须清掉，
+      // 否则钢琴练习会带着残留的 class 标记被算成上课
+      extraContentType: isReading ? undefined
+        : draft.mainCategory === "extraHomework" ? (current.extraContentType ?? "homework")
+        : draft.mainCategory === "interestClass" ? (subCategory === "otherInterest" ? interestContentType(true) : undefined)
+        : current.extraContentType,
       title: isReading ? "" : (titleTouched ? current.title : defaultTitle(current.mainCategory, subCategory, current.extraContentType)),
       rolloverMode: auto ? "autoNextDay" : "keepOverdue", allowRollover: auto,
       sortOrder: defaultSortOrder(current.mainCategory, subCategory),
@@ -230,6 +239,8 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
 
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setError("");
+    // 切换分类后未选二级类型（空值）一律拦下；编辑历史任务时放行旧版遗留的二级类型值，避免连改都改不了
+    if (!draft.subCategory || (!task && !isValidSubCategory(draft.mainCategory, draft.subCategory))) return setError("请选择二级类型");
     if (!draft.title.trim() && draft.mainCategory !== "interestClass" && !(draft.mainCategory === "extraHomework" && draft.subCategory === "reading")) return setError("请填写任务标题");
     if (draft.endTime && (!draft.startTime || draft.endTime <= draft.startTime)) return setError("结束时间必须晚于开始时间");
     if ((draft.timeType === "dateRange" || (draft.timeType === "recurring" && ["dateRangeDaily", "dateRangeWeekdays"].includes(draft.schedulePattern ?? ""))) && (!draft.startDate || !draft.endDate || draft.startDate > draft.endDate)) return setError("日期范围不正确");
@@ -262,11 +273,13 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
     <div className="space-y-5 px-5 py-6 sm:px-7">
 
       {/* ── 快速区 ── */}
-      {selectableCourses.length > 0 && <label className={label}>选择课程（可选）<select value={draft.courseId ?? ""} onChange={(e) => selectCourse(e.target.value)} className={input}><option value="">不关联课程（自由输入）</option>{selectableCourses.map((course) => <option key={course.id} value={course.id}>{course.name}</option>)}</select><span className="mt-1 block text-xs text-stone-400">选择课程会自动带出分类与上课时间；改动下方分类会解除绑定</span></label>}
+      {selectableCourses.length > 0 && <label className={label}>选择课程（可选）<select value={draft.courseId ?? ""} onChange={(e) => selectCourse(e.target.value)} className={input}><option value="">不关联课程（自由输入）</option>{selectableCourses.map((course) => <option key={course.id} value={course.id}>{courseOptionLabel(course, selectableCourses)}</option>)}</select><span className="mt-1 block text-xs text-stone-400">选择课程会自动带出分类与上课时间；改动下方分类会解除绑定</span></label>}
 
       <div><p className={label}>分类</p><div className="mt-1.5 flex flex-wrap gap-2">{Object.entries(MAIN_CATEGORY_META).filter(([value]) => value !== "readingPlan").map(([value, meta]) => <button key={value} type="button" onClick={() => changeMain(value as MainCategory)} className={`rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${meta.className} ${draft.mainCategory === value ? "ring-2 ring-current shadow-sm" : "opacity-60 hover:opacity-90"}`}>{meta.label}</button>)}</div></div>
 
-      <label className={label}>二级类型<select value={draft.subCategory} onChange={(e) => changeSub(e.target.value)} className={input}>{SUB_CATEGORY_OPTIONS[draft.mainCategory].map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+      <label className={label}>二级类型<select value={draft.subCategory} onChange={(e) => changeSub(e.target.value)} className={input}><option value="" disabled>请选择二级类型</option>{SUB_CATEGORY_OPTIONS[draft.mainCategory].map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+
+      {draft.mainCategory === "interestClass" && draft.subCategory === "otherInterest" && <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={draft.extraContentType === "class"} onChange={(e) => set("extraContentType", interestContentType(e.target.checked))} className="h-4 w-4 rounded" />算作"上课"（进今日页上课组、统计上课次数）</label>}
 
       {draft.mainCategory === "extraHomework" && draft.subCategory !== "reading" && <label className={label}>内容类型<select value={draft.extraContentType ?? "homework"} onChange={(e) => changeExtraContent(e.target.value as ExtraContentType)} className={input}>{EXTRA_CONTENT_OPTIONS_SIMPLE.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>}
 

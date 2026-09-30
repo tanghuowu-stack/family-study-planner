@@ -19,7 +19,7 @@ import { isOccurrenceSchedule, itemSyncKey, taskSyncKey } from "./utils/taskMeta
 type Page = "today" | "month" | "tasks" | "stats" | "timetable";
 const navItems = [
   { page: "today" as const, label: "今日", icon: Home },
-  { page: "month" as const, label: "月计划", icon: CalendarDays }, { page: "tasks" as const, label: "任务管理", icon: ClipboardList },
+  { page: "month" as const, label: "月视图", icon: CalendarDays }, { page: "tasks" as const, label: "任务管理", icon: ClipboardList },
   { page: "stats" as const, label: "统计", icon: BarChart3 },
   { page: "timetable" as const, label: "课表", icon: Table2 },
 ];

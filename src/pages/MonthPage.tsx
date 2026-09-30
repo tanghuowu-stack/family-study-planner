@@ -1,5 +1,5 @@
 import { addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, isSameMonth, startOfMonth, startOfWeek } from "date-fns";
-import { Plus, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSwipe } from "../hooks/useSwipe";
 import { taskRepository } from "../data/taskRepository";
@@ -40,21 +40,19 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask
   };
 
   return (
-    <main className="mx-auto w-full max-w-7xl overflow-x-hidden px-3 pb-content pt-6 sm:px-6">
-      <div className="mb-5 text-center">
-        <p className="text-xs font-semibold tracking-widest text-sage-700">MONTH PLAN</p>
-        <h1 className="mt-1 text-3xl font-semibold text-ink sm:text-4xl">{format(monthDate, "yyyy年M月")}</h1>
-      </div>
+    <main className="mx-auto w-full max-w-7xl overflow-x-hidden px-3 pb-content pt-5 sm:px-7 sm:pt-8 lg:px-10">
+      <header className="mb-4 flex items-center justify-between gap-4 border-b border-ink/10 pb-4">
+        <h1 className="text-2xl font-bold text-ink sm:text-3xl">{format(monthDate, "yyyy年M月")}</h1>
+        <div className="flex shrink-0 items-center gap-1 rounded-lg border border-ink/10 bg-white p-1">
+          <button onClick={() => move(-1)} aria-label="上一月" className="flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-stone-100 hover:text-ink"><ChevronLeft className="h-4 w-4" /></button>
+          <button onClick={() => onDateChange(todayKey())} className="px-2 py-1 text-xs font-semibold text-primary">本月</button>
+          <button onClick={() => move(1)} aria-label="下一月" className="flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-stone-100 hover:text-ink"><ChevronRight className="h-4 w-4" /></button>
+        </div>
+      </header>
 
-      <div className="mb-5 grid grid-cols-3 rounded-2xl border border-stone-100 bg-white p-1.5 text-sm">
-        <button onClick={() => move(-1)} className="rounded-xl px-2 py-2 text-stone-500 hover:bg-stone-50">← 上一月</button>
-        <button onClick={() => onDateChange(todayKey())} className="rounded-xl px-2 py-2 font-medium text-sage-700 hover:bg-sage-50">回到本月</button>
-        <button onClick={() => move(1)} className="rounded-xl px-2 py-2 text-stone-500 hover:bg-stone-50">下一月 →</button>
-      </div>
-
-      <div ref={swipeRef} className="grid grid-cols-7 overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-card">
+      <div ref={swipeRef} className="grid grid-cols-7 overflow-hidden rounded-lg border border-ink/15 bg-white shadow-card">
         {["一", "二", "三", "四", "五", "六", "日"].map((day) => (
-          <div key={day} className="border-b bg-stone-50 px-2 py-2 text-center text-xs font-semibold text-stone-500">周{day}</div>
+          <div key={day} className="border-b border-ink/10 bg-ink px-2 py-2.5 text-center text-[10px] font-semibold uppercase tracking-wider text-white/65"><span className="hidden sm:inline">周</span>{day}</div>
         ))}
         {gridDates.map((key) => {
           const tasks = items[key] ?? [];
@@ -67,17 +65,17 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask
             <button
               key={key}
               onClick={() => handleDayClick(key)}
-              className={`min-h-16 border-b border-r p-1.5 text-left align-top sm:min-h-28 sm:p-2 ${
+              className={`min-h-20 border-b border-r border-ink/[0.08] p-1.5 text-left align-top sm:min-h-28 sm:p-2.5 ${
                 !isSameMonth(fromDateKey(key), monthDate)
-                  ? "bg-stone-50/70 text-stone-300"
+                  ? "bg-stone-50/70 text-stone-300 opacity-65"
                   : isSelected
-                  ? "bg-sage-50"
-                  : "hover:bg-sage-50/30"
+                  ? "bg-mint/70"
+                  : "hover:bg-mint/25"
               }`}
             >
               {/* Date number row */}
               <div className="flex min-w-0 items-center gap-0.5 sm:gap-1">
-                <span className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs sm:h-6 sm:w-6 ${key === todayKey() ? "bg-ink text-white" : ""}`}>
+                <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-semibold ${key === todayKey() ? "bg-alert text-white" : ""}`}>
                   {fromDateKey(key).getDate()}
                 </span>
                 {annotation.holidayStatus && (
@@ -139,7 +137,7 @@ function DayPanel({ day, tasks, onOpenDay, onAddTask, onClose }: { day: string; 
   const d = fromDateKey(day);
 
   return (
-    <div className="mt-3 rounded-2xl border border-stone-200 bg-white p-4 shadow-card sm:hidden">
+      <div className="surface mt-3 p-4 sm:hidden">
       <div className="flex items-start justify-between">
         <div>
           <span className="font-semibold text-ink">
@@ -175,13 +173,13 @@ function DayPanel({ day, tasks, onOpenDay, onAddTask, onClose }: { day: string; 
       <div className="mt-4 grid grid-cols-2 gap-2">
         <button
           onClick={() => onAddTask(day)}
-          className="flex items-center justify-center gap-1.5 rounded-xl bg-primary py-2.5 text-sm font-medium text-white"
+          className="flex items-center justify-center gap-1.5 rounded-lg bg-alert py-2.5 text-sm font-semibold text-white"
         >
           <Plus className="h-4 w-4" />新建任务
         </button>
         <button
           onClick={() => onOpenDay(day)}
-          className="rounded-xl border border-sage-100 bg-sage-50/50 py-2.5 text-sm font-medium text-sage-700"
+          className="rounded-lg border border-ink/10 bg-white py-2.5 text-sm font-semibold text-primary"
         >
           查看当日页 →
         </button>

@@ -46,7 +46,7 @@ function courseClass(course: string): string {
 function CourseName({ course }: { course: string }) {
   const match = course.match(/^(.*?)(（(?:葫芦丝|课本)）)$/);
   if (!match) return <>{course || "-"}</>;
-  return <>{match[1]}<span className="ml-0.5 inline-block text-[10px] font-semibold opacity-75">{match[2]}</span></>;
+  return <>{match[1]}<span className="timetable-course-note ml-0.5 inline-block text-[10px] font-semibold opacity-75">{match[2]}</span></>;
 }
 
 const displayTime = (value: string) => value.replace("-", "–");
@@ -134,16 +134,16 @@ export function TimetablePage() {
   const mergeMondayTuesdayBreak = !mergedDays.has("monday") && !mergedDays.has("tuesday");
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
-      <header className="mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-ink/10 pb-4">
+    <main className={`school-timetable-page ${editing ? "is-editing" : ""} mx-auto w-full max-w-6xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10`}>
+      <header className="timetable-header mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-ink/10 pb-4">
         <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-4 gap-y-1"><h1 className="text-xl font-bold text-ink sm:text-2xl">课表</h1><p className="text-sm font-semibold text-ink sm:text-base">{formatFullDate(today)}</p></div>{editing ? <input aria-label="学期名称" value={draft.term} onChange={(event) => setDraft({ ...draft, term: event.target.value })} className="mt-1 w-full max-w-sm rounded-md border px-2 py-1 text-xs text-muted" /> : <p className="mt-1 text-xs text-muted">{saved?.term}</p>}</div>
         <div className="flex items-center gap-2">
           {savedHint && <span className="text-xs font-medium text-primary">已保存</span>}
-          {editing ? <><button type="button" onClick={cancelEdit} className="flex h-9 items-center gap-1.5 rounded-lg border border-ink/10 bg-white px-3 text-xs font-semibold text-muted hover:text-ink"><X className="h-4 w-4" />取消</button><button type="button" disabled={saving} onClick={() => void save()} className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-white hover:bg-[#1c493b] disabled:opacity-50"><Check className="h-4 w-4" />{saving ? "保存中" : "保存"}</button></> : <button type="button" onClick={beginEdit} className="flex h-9 items-center gap-1.5 rounded-lg bg-ink px-3 text-xs font-semibold text-white hover:bg-primary"><Pencil className="h-4 w-4" />编辑课表</button>}
+          {editing ? <><button type="button" onClick={cancelEdit} className="flex h-9 items-center gap-1.5 rounded-lg border border-ink/10 bg-white px-3 text-xs font-semibold text-muted hover:text-ink"><X className="h-4 w-4" />取消</button><button type="button" disabled={saving} onClick={() => void save()} className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-white hover:bg-[#1c493b] disabled:opacity-50"><Check className="h-4 w-4" />{saving ? "保存中" : "保存"}</button></> : <button type="button" aria-label="编辑课表" title="编辑课表" onClick={beginEdit} className="timetable-edit-button flex h-9 items-center gap-1.5 rounded-lg bg-ink px-3 text-xs font-semibold text-white hover:bg-primary"><Pencil className="h-4 w-4" /><span>编辑课表</span></button>}
         </div>
       </header>
 
-      <section className="surface overflow-hidden border border-ink/10 bg-white shadow-sm"><div className="overflow-x-auto"><table className="w-full min-w-[760px] table-fixed border-separate border-spacing-0">
+      <section className="timetable-surface surface overflow-hidden border border-ink/10 bg-white shadow-sm"><div className="timetable-scroll overflow-x-auto"><table className="w-full min-w-[760px] table-fixed border-separate border-spacing-0">
         <colgroup><col className="w-[132px]" />{TIMETABLE_DAYS.map((day) => <col key={day} />)}</colgroup>
         <thead><tr className="bg-ink text-white"><th className="sticky left-0 z-30 bg-ink px-3 py-3 text-left text-xs font-semibold">节次·时间</th>{TIMETABLE_DAYS.map((day) => <th key={day} className={`px-2 py-3 text-center text-sm font-bold ${tomorrow === day ? "bg-alert" : ""}`}>{DAY_LABELS[day]}{tomorrow === day && <span className="ml-1 text-[9px] font-medium text-white/80">明天</span>}</th>)}</tr></thead>
         <tbody>{draft.slots.map((slot, index) => {
@@ -152,18 +152,18 @@ export function TimetablePage() {
           const breakMeta = BREAK_AFTER[slot.id];
           return [
             <tr key={slot.id} className={firstOfSection && index > 0 ? "[&>*]:border-t-2 [&>*]:border-t-ink/15" : ""}>
-              <th className="sticky left-0 z-20 border-b border-r border-ink/[0.08] bg-[#FAF9F6] px-3 py-2.5 text-left font-normal"><div className="flex items-center gap-2"><span className={`w-7 shrink-0 text-[10px] font-bold ${section.className}`}>{firstOfSection ? section.label : ""}</span><div className="min-w-0"><div className="text-xs font-bold text-ink">{slot.label}</div>{editing ? <input aria-label={`${section.label}${slot.label}时间`} value={slot.time} onChange={(event) => updateTime(slot.id, event.target.value)} className="mt-1 w-[82px] rounded border px-1 py-0.5 font-mono text-[9px] text-muted" /> : <div className="mt-0.5 whitespace-nowrap font-mono text-[10px] font-medium text-muted">{displayTime(slot.time)}</div>}</div></div></th>
+              <th className="timetable-slot sticky left-0 z-20 border-b border-r border-ink/[0.08] bg-[#FAF9F6] px-3 py-2.5 text-left font-normal"><div className="flex items-center gap-2"><span className={`timetable-section-label w-7 shrink-0 text-[10px] font-bold ${section.className}`}>{firstOfSection ? section.label : ""}</span><div className="min-w-0"><div className="timetable-slot-label text-xs font-bold text-ink"><span className={`timetable-section-inline hidden ${section.className}`}>{firstOfSection ? `${section.label} ` : ""}</span>{slot.label}</div>{editing ? <input aria-label={`${section.label}${slot.label}时间`} value={slot.time} onChange={(event) => updateTime(slot.id, event.target.value)} className="mt-1 w-[82px] rounded border px-1 py-0.5 font-mono text-[9px] text-muted" /> : <div className="timetable-slot-time mt-0.5 whitespace-nowrap font-mono text-[10px] font-medium text-muted">{displayTime(slot.time)}</div>}</div></div></th>
               {TIMETABLE_DAYS.map((day) => {
                 if (slot.id === "extended-2" && mergedDays.has(day)) return null;
                 const merged = slot.id === "extended-1" && mergedDays.has(day);
-                return <td key={day} rowSpan={merged ? 3 : 1} className={`border-b border-r border-ink/[0.08] px-2 py-3.5 text-center align-middle last:border-r-0 ${tomorrow === day ? "bg-alert/[0.035]" : "bg-white"}`}>{editing ? <input aria-label={`${DAY_LABELS[day]}${slot.label}`} value={slot.courses[day]} onChange={(event) => updateCourse(merged ? ["extended-1", "extended-2"] : [slot.id], day, event.target.value)} className="w-full rounded-md border px-1.5 py-2 text-center text-base font-bold text-ink" /> : <span className={`text-[17px] font-extrabold leading-tight ${courseClass(slot.courses[day])}`}><CourseName course={slot.courses[day]} /></span>}</td>;
+                return <td key={day} rowSpan={merged ? 3 : 1} className={`timetable-course border-b border-r border-ink/[0.08] px-2 py-3.5 text-center align-middle last:border-r-0 ${tomorrow === day ? "bg-alert/[0.035]" : "bg-white"}`}>{editing ? <input aria-label={`${DAY_LABELS[day]}${slot.label}`} value={slot.courses[day]} onChange={(event) => updateCourse(merged ? ["extended-1", "extended-2"] : [slot.id], day, event.target.value)} className="w-full rounded-md border px-1.5 py-2 text-center text-base font-bold text-ink" /> : <span className={`text-[17px] font-extrabold leading-tight ${courseClass(slot.courses[day])}`}><CourseName course={slot.courses[day]} /></span>}</td>;
               })}
             </tr>,
-            breakMeta && (breakMeta.splitByDay ? <tr key={`${slot.id}-break`} className="bg-[#F5F4F1]"><th aria-hidden="true" className="sticky left-0 z-20 border-b border-r border-ink/[0.08] bg-[#F5F4F1] px-3 py-1" />{TIMETABLE_DAYS.map((day) => {
+            breakMeta && (breakMeta.splitByDay ? <tr key={`${slot.id}-break`} className="timetable-break timetable-break-split bg-[#F5F4F1]"><th aria-hidden="true" className="sticky left-0 z-20 border-b border-r border-ink/[0.08] bg-[#F5F4F1] px-3 py-1" />{TIMETABLE_DAYS.map((day) => {
               if (mergedDays.has(day) || (day === "tuesday" && mergeMondayTuesdayBreak)) return null;
               const colSpan = day === "monday" && mergeMondayTuesdayBreak ? 2 : 1;
               return <td key={day} colSpan={colSpan} className="border-b border-r border-ink/[0.08] px-1.5 py-1.5 text-center text-[10px] font-semibold text-muted last:border-r-0">{breakMeta.label}<span className="ml-1 whitespace-nowrap font-mono text-[9px] font-normal text-muted/80">({displayTime(breakMeta.time)})</span></td>;
-            })}</tr> : <tr key={`${slot.id}-break`} className={breakMeta.long ? "bg-amber-50/75" : "bg-[#F5F4F1]"}><th aria-hidden="true" className={`sticky left-0 z-20 border-b border-r border-ink/[0.08] px-3 py-1 ${breakMeta.long ? "bg-amber-50" : "bg-[#F5F4F1]"}`} /><td colSpan={5} className="border-b border-ink/[0.08] px-2 py-1.5 text-center"><span className={`text-[11px] font-bold ${breakMeta.long ? "text-amber-800" : "text-muted"}`}>{breakMeta.label}</span><span className="ml-1.5 whitespace-nowrap font-mono text-[10px] text-muted/80">({displayTime(breakMeta.time)})</span></td></tr>),
+            })}</tr> : <tr key={`${slot.id}-break`} className={`timetable-break ${breakMeta.long ? "bg-amber-50/75" : "bg-[#F5F4F1]"}`}><th aria-hidden="true" className={`sticky left-0 z-20 border-b border-r border-ink/[0.08] px-3 py-1 ${breakMeta.long ? "bg-amber-50" : "bg-[#F5F4F1]"}`} /><td colSpan={5} className="border-b border-ink/[0.08] px-2 py-1.5 text-center"><span className={`text-[11px] font-bold ${breakMeta.long ? "text-amber-800" : "text-muted"}`}>{breakMeta.label}</span><span className="ml-1.5 whitespace-nowrap font-mono text-[10px] text-muted/80">({displayTime(breakMeta.time)})</span></td></tr>),
           ];
         })}</tbody>
       </table></div></section>

@@ -98,6 +98,79 @@ body::before {
 }
 
 @media (max-width: 639px) {
+  /* Reserve the app bars and safe areas; the read-only timetable fills one screen. */
+  .school-timetable-page:not(.is-editing) {
+    display: flex;
+    flex-direction: column;
+    height: calc(100svh - 113px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    padding: 8px 8px 6px;
+  }
+  .school-timetable-page:not(.is-editing) .timetable-header {
+    flex-wrap: nowrap;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+  }
+  .school-timetable-page:not(.is-editing) .timetable-header h1 { font-size: 18px; }
+  .school-timetable-page:not(.is-editing) .timetable-header p { font-size: 11px; }
+  .school-timetable-page:not(.is-editing) .timetable-header > div:first-child > div {
+    column-gap: 8px;
+  }
+  .school-timetable-page:not(.is-editing) .timetable-edit-button {
+    width: 32px;
+    height: 32px;
+    justify-content: center;
+    padding: 0;
+  }
+  .school-timetable-page:not(.is-editing) .timetable-edit-button > span { display: none; }
+  .school-timetable-page:not(.is-editing) .timetable-surface { flex: 1; min-height: 0; }
+  .school-timetable-page:not(.is-editing) .timetable-scroll { height: 100%; overflow: visible; }
+  .school-timetable-page:not(.is-editing) table { height: 100%; min-width: 0; }
+  .school-timetable-page:not(.is-editing) col:first-child { width: 64px; }
+  .school-timetable-page:not(.is-editing) thead { height: 28px; }
+  .school-timetable-page:not(.is-editing) thead th {
+    padding: 2px;
+    font-size: 12px;
+    line-height: 1.1;
+  }
+  .school-timetable-page:not(.is-editing) thead th:first-child { font-size: 9px; }
+  .school-timetable-page:not(.is-editing) thead th > span {
+    display: block;
+    margin-left: 0;
+    font-size: 8px;
+  }
+  .school-timetable-page:not(.is-editing) .timetable-slot {
+    padding: 2px 3px;
+    line-height: 1.2;
+  }
+  .school-timetable-page:not(.is-editing) .timetable-section-label { display: none; }
+  .school-timetable-page:not(.is-editing) .timetable-section-inline { display: inline; }
+  .school-timetable-page:not(.is-editing) .timetable-slot-label { font-size: 9px; }
+  .school-timetable-page:not(.is-editing) .timetable-slot-time { margin-top: 2px; font-size: 8px; }
+  .school-timetable-page:not(.is-editing) .timetable-course { padding: 2px; overflow-wrap: anywhere; }
+  .school-timetable-page:not(.is-editing) .timetable-course > span { font-size: 14px; line-height: 1.15; }
+  .school-timetable-page:not(.is-editing) .timetable-course-note {
+    display: block;
+    margin-left: 0;
+    font-size: 8px;
+    line-height: 1.2;
+  }
+  .school-timetable-page:not(.is-editing) .timetable-break { height: 18px; }
+  .school-timetable-page:not(.is-editing) .timetable-break > th,
+  .school-timetable-page:not(.is-editing) .timetable-break > td { padding: 1px 2px; line-height: 1.1; }
+  .school-timetable-page:not(.is-editing) .timetable-break span { font-size: 9px; }
+  .school-timetable-page:not(.is-editing) .timetable-break-split { height: 30px; }
+  .school-timetable-page:not(.is-editing) .timetable-break-split td { font-size: 9px; }
+  .school-timetable-page:not(.is-editing) .timetable-break-split span {
+    display: block;
+    margin-left: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-size: 8px;
+  }
+
   .task-management button[aria-label="复制"] { display: none; }
   .task-management button[aria-label="结束"],
   .task-management button[aria-label="延长"] {

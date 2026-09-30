@@ -1,5 +1,21 @@
-import type { CourseStatus, ExtraContentType, MainCategory, RolloverMode, SchedulePattern, TaskStatus, TaskTimeType, SubCategory } from "../types/task";
+import type { CourseStatus, ExtraContentType, MainCategory, PlanPeriod, RolloverMode, SchedulePattern, TaskDraft, TaskStatus, TaskTimeType, SubCategory } from "../types/task";
 import { todayKey } from "./date";
+
+export function schoolHomeworkTitle(subCategory: string): string {
+  const subject = ({ chinese: "语文", math: "数学", english: "英语" } as Record<string, string>)[subCategory];
+  return subject ? `${subject}家庭作业` : "";
+}
+
+export function regularSchoolHomeworkTitle(
+  draft: Pick<TaskDraft, "mainCategory" | "subCategory" | "timeType" | "date" | "applicablePeriodType">,
+  periods: Pick<PlanPeriod, "type" | "startDate" | "endDate">[],
+  dayOff = false,
+): string {
+  if (draft.mainCategory !== "school" || draft.timeType !== "singleDate" || !draft.date
+    || draft.applicablePeriodType === "holiday" || dayOff
+    || periods.some((period) => period.type === "holiday" && draft.date! >= period.startDate && draft.date! <= period.endDate)) return "";
+  return schoolHomeworkTitle(draft.subCategory);
+}
 
 /**
  * R1 完成状态权威源判定（PROJECT_GUIDE 6.5 数据层铁律）：

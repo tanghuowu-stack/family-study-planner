@@ -41,12 +41,12 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask
 
   return (
     <main className="mx-auto w-full max-w-7xl overflow-x-hidden px-3 pb-content pt-5 sm:px-7 sm:pt-8 lg:px-10">
-      <header className="mb-4 flex items-center justify-between gap-4 border-b border-ink/10 pb-4">
+      <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-ink/10 pb-4">
         <h1 className="text-2xl font-bold text-ink sm:text-3xl">{format(monthDate, "yyyy年M月")}</h1>
         <div className="flex shrink-0 items-center gap-1 rounded-lg border border-ink/10 bg-white p-1">
-          <button onClick={() => move(-1)} aria-label="上一月" className="flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-stone-100 hover:text-ink"><ChevronLeft className="h-4 w-4" /></button>
-          <button onClick={() => onDateChange(todayKey())} className="px-2 py-1 text-xs font-semibold text-primary">本月</button>
-          <button onClick={() => move(1)} aria-label="下一月" className="flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-stone-100 hover:text-ink"><ChevronRight className="h-4 w-4" /></button>
+          <button onClick={() => move(-1)} aria-label={`上一月：${format(addMonths(monthDate, -1), "yyyy年M月")}`} className="flex h-11 min-w-20 items-center justify-center gap-1 rounded-md px-3 text-sm font-semibold text-muted hover:bg-stone-100 hover:text-ink"><ChevronLeft className="h-5 w-5" />{format(addMonths(monthDate, -1), "M月")}</button>
+          <button onClick={() => onDateChange(todayKey())} className="h-11 min-w-20 rounded-md bg-primary/10 px-4 text-base font-bold text-primary hover:bg-primary/15">本月</button>
+          <button onClick={() => move(1)} aria-label={`下一月：${format(addMonths(monthDate, 1), "yyyy年M月")}`} className="flex h-11 min-w-20 items-center justify-center gap-1 rounded-md px-3 text-sm font-semibold text-muted hover:bg-stone-100 hover:text-ink">{format(addMonths(monthDate, 1), "M月")}<ChevronRight className="h-5 w-5" /></button>
         </div>
       </header>
 

@@ -11,7 +11,30 @@
  * 覆盖"已结束/未结束"边界，防止再次漏某一种模式。
  */
 import { describe, expect, it } from "vitest";
-import { canEndRecurring, canExtendRecurring, isEndedRecurring } from "../taskMeta";
+import { canEndRecurring, canExtendRecurring, isEndedRecurring, regularSchoolHomeworkTitle, schoolHomeworkTitle } from "../taskMeta";
+
+describe("学校家庭作业默认标题", () => {
+  const draft = { mainCategory: "school" as const, subCategory: "chinese", timeType: "singleDate" as const, date: "2026-09-29" };
+  it.each([["chinese", "语文家庭作业"], ["math", "数学家庭作业"], ["english", "英语家庭作业"]])("平时 %s 自动带出标题", (subCategory, title) => {
+    expect(regularSchoolHomeworkTitle({ ...draft, subCategory }, [])).toBe(title);
+  });
+  it("自定义学科不套用语数英标题", () => expect(schoolHomeworkTitle("custom:writing")).toBe(""));
+  it("寒暑假内不自动套用家庭作业标题（含边界日期）", () => {
+    const periods = [{ type: "holiday" as const, startDate: "2026-07-01", endDate: "2026-08-31" }];
+    for (const date of ["2026-07-01", "2026-08-12", "2026-08-31"]) expect(regularSchoolHomeworkTitle({ ...draft, date }, periods)).toBe("");
+    expect(regularSchoolHomeworkTitle({ ...draft, date: "2026-09-01" }, periods)).toBe("语文家庭作业");
+  });
+  it("手动选择假期阶段或法定休息日不套用", () => {
+    expect(regularSchoolHomeworkTitle({ ...draft, applicablePeriodType: "holiday" }, [])).toBe("");
+    expect(regularSchoolHomeworkTitle(draft, [], true)).toBe("");
+  });
+  it("课外、日期段、重复和未选日期仍自由填写", () => {
+    expect(regularSchoolHomeworkTitle({ ...draft, mainCategory: "extraHomework" }, [])).toBe("");
+    expect(regularSchoolHomeworkTitle({ ...draft, timeType: "dateRange" }, [])).toBe("");
+    expect(regularSchoolHomeworkTitle({ ...draft, timeType: "recurring" }, [])).toBe("");
+    expect(regularSchoolHomeworkTitle({ ...draft, date: undefined }, [])).toBe("");
+  });
+});
 
 describe("dailyRecurring/weeklyRecurring：canEndRecurring / isEndedRecurring 互斥边界", () => {
   const dailyTask = (endDate?: string) => ({

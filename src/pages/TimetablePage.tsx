@@ -1,5 +1,6 @@
 import { Check, Pencil, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { formatFullDate, fromDateKey, todayKey } from "../utils/date";
 import {
   cloneSchoolTimetable,
   loadSchoolTimetable,
@@ -51,11 +52,19 @@ function CourseName({ course }: { course: string }) {
 const displayTime = (value: string) => value.replace("-", "–");
 
 export function TimetablePage() {
+  const [today, setToday] = useState(todayKey);
   const [saved, setSaved] = useState<SchoolTimetable | null>(null);
   const [draft, setDraft] = useState<SchoolTimetable | null>(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedHint, setSavedHint] = useState(false);
+
+  useEffect(() => {
+    const updateDate = () => setToday(todayKey());
+    const timer = window.setInterval(updateDate, 60_000);
+    document.addEventListener("visibilitychange", updateDate);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", updateDate); };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -68,11 +77,11 @@ export function TimetablePage() {
   }, []);
 
   const tomorrow = useMemo(() => {
-    const date = new Date();
+    const date = fromDateKey(today);
     date.setDate(date.getDate() + 1);
     const index = date.getDay();
     return index >= 1 && index <= 5 ? TIMETABLE_DAYS[index - 1] : null;
-  }, []);
+  }, [today]);
 
   const beginEdit = () => {
     if (!saved) return;
@@ -127,7 +136,7 @@ export function TimetablePage() {
   return (
     <main className="mx-auto w-full max-w-6xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
       <header className="mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-ink/10 pb-4">
-        <div className="min-w-0"><h1 className="text-xl font-bold text-ink sm:text-2xl">课表</h1>{editing ? <input aria-label="学期名称" value={draft.term} onChange={(event) => setDraft({ ...draft, term: event.target.value })} className="mt-1 w-full max-w-sm rounded-md border px-2 py-1 text-xs text-muted" /> : <p className="mt-1 text-xs text-muted">{saved?.term}</p>}</div>
+        <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-4 gap-y-1"><h1 className="text-xl font-bold text-ink sm:text-2xl">课表</h1><p className="text-sm font-semibold text-ink sm:text-base">{formatFullDate(today)}</p></div>{editing ? <input aria-label="学期名称" value={draft.term} onChange={(event) => setDraft({ ...draft, term: event.target.value })} className="mt-1 w-full max-w-sm rounded-md border px-2 py-1 text-xs text-muted" /> : <p className="mt-1 text-xs text-muted">{saved?.term}</p>}</div>
         <div className="flex items-center gap-2">
           {savedHint && <span className="text-xs font-medium text-primary">已保存</span>}
           {editing ? <><button type="button" onClick={cancelEdit} className="flex h-9 items-center gap-1.5 rounded-lg border border-ink/10 bg-white px-3 text-xs font-semibold text-muted hover:text-ink"><X className="h-4 w-4" />取消</button><button type="button" disabled={saving} onClick={() => void save()} className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-white hover:bg-[#1c493b] disabled:opacity-50"><Check className="h-4 w-4" />{saving ? "保存中" : "保存"}</button></> : <button type="button" onClick={beginEdit} className="flex h-9 items-center gap-1.5 rounded-lg bg-ink px-3 text-xs font-semibold text-white hover:bg-primary"><Pencil className="h-4 w-4" />编辑课表</button>}

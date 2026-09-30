@@ -1,8 +1,10 @@
 import { ArrowDown, ArrowUp, ChevronDown, Plus, Trash2, X } from "lucide-react";
 import { addDays, addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, isSameMonth, startOfMonth, startOfWeek } from "date-fns";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { taskRepository } from "../data/taskRepository";
 import { getRepository } from "../data/repositoryProvider";
+import { getCalendarAnnotation } from "../data/calendarAnnotations";
+import { regularSchoolHomeworkTitle, schoolHomeworkTitle } from "../utils/taskMeta";
 import { loadCustomTaskCategories, saveCustomTaskCategories, type CustomTaskCategories } from "../data/appSettingsRepository";
 import type { Course, ExtraContentType, MainCategory, PlanPeriod, SchedulePattern, Task, TaskDisplay, TaskDraft, TaskStatus, TaskTimeType, WeeklyQuota } from "../types/task";
 import { fromDateKey, getWeekStartKey, todayKey, toDateKey } from "../utils/date";
@@ -56,6 +58,10 @@ const strip = (task: Task): TaskDraft => { const { id: _id, createdAt: _createdA
 export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Props) {
   const [draft, setDraft] = useState<TaskDraft>(task ? strip(task) : newDraft(initialDate));
   const [periods, setPeriods] = useState<PlanPeriod[]>([]);
+  const [periodsLoaded, setPeriodsLoaded] = useState(false);
+  const checklistInputs = useRef<Record<string, HTMLInputElement | null>>({});
+  const titleInput = useRef<HTMLInputElement>(null);
+  const [checklistFocusId, setChecklistFocusId] = useState<string>();
   const [courses, setCourses] = useState<Course[]>([]);
   const [titleTouched, setTitleTouched] = useState(!!task?.title);
   const [periodTouched, setPeriodTouched] = useState(!!task?.id);
@@ -74,7 +80,18 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
   const detailInput = "mt-1 w-full rounded-md border border-ink/15 bg-white px-3 py-1.5 text-sm text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/10";
   const label = "text-xs font-bold uppercase tracking-wide text-muted";
 
-  useEffect(() => { taskRepository.listPlanPeriods().then(setPeriods); getRepository().listCourses().then(setCourses); loadCustomTaskCategories().then(setCustomCategories); const handler = (event: KeyboardEvent) => event.key === "Escape" && onClose(); window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler); }, [onClose]);
+  useEffect(() => { taskRepository.listPlanPeriods().then((value) => { setPeriods(value); setPeriodsLoaded(true); }).catch(() => setError("读取假期设置失败，请手动填写标题")); getRepository().listCourses().then(setCourses); loadCustomTaskCategories().then(setCustomCategories); const handler = (event: KeyboardEvent) => event.key === "Escape" && onClose(); window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler); }, [onClose]);
+  const regularSchoolTitle = regularSchoolHomeworkTitle(draft, periods, getCalendarAnnotation(draft.date ?? initialDate).holidayStatus === "休");
+  useEffect(() => {
+    if (task || titleTouched || !periodsLoaded || draft.mainCategory !== "school") return;
+    const firstItemId = crypto.randomUUID();
+    setDraft((current) => ({ ...current, title: regularSchoolTitle,
+      checklistItems: regularSchoolTitle && !current.checklistItems?.length
+        ? [{ id: firstItemId, title: "", done: false, sortOrder: 0 }] : current.checklistItems,
+    }));
+    if (regularSchoolTitle && !draft.checklistItems?.length) setChecklistFocusId(firstItemId);
+  }, [task, titleTouched, periodsLoaded, draft.mainCategory, regularSchoolTitle]);
+  useEffect(() => { if (checklistFocusId) checklistInputs.current[checklistFocusId]?.focus(); }, [checklistFocusId]);
   useEffect(() => { if (!calendarVisibilityTouched && forceCalendarVisible(draft) && draft.calendarVisibility !== "show") set("calendarVisibility", "show"); }, [draft.mainCategory, draft.subCategory, draft.extraContentType, calendarVisibilityTouched]);
 
   // 可选课程：进行中且在有效期内；编辑时始终保留已绑定的课程，避免结课后选项消失
@@ -209,7 +226,9 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
         : draft.mainCategory === "extraHomework" ? (current.extraContentType ?? "homework")
         : draft.mainCategory === "interestClass" ? (["otherInterest"].includes(subCategory) || isCustomSubCategory(subCategory) ? interestContentType(true) : undefined)
         : current.extraContentType,
-      title: isReading ? "" : (titleTouched ? current.title : defaultTitle(current.mainCategory, subCategory, current.extraContentType)),
+      title: isReading ? "" : (titleTouched ? current.title : current.mainCategory === "school"
+        ? regularSchoolHomeworkTitle({ ...current, subCategory }, periods, getCalendarAnnotation(current.date ?? initialDate).holidayStatus === "休")
+        : defaultTitle(current.mainCategory, subCategory, current.extraContentType)),
       rolloverMode: auto ? "autoNextDay" : "keepOverdue", allowRollover: auto,
       sortOrder: defaultSortOrder(current.mainCategory, subCategory),
     }));
@@ -255,7 +274,11 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
     if (field === "recurrence") set("recurrence", { ...draft.recurrence!, weekdays: next }); else set(field, next);
   };
   const updateQuota = (changes: Partial<WeeklyQuota>) => set("weeklyQuota", { enabled: true, targetCount: 1, unit: "本", isWeeklyRecurring: true, allowAutoDistribute: true, allowRollover: true, ...draft.weeklyQuota, ...changes });
-  const addChecklist = () => set("checklistItems", [...(draft.checklistItems ?? []), { id: crypto.randomUUID(), title: "", done: false, sortOrder: draft.checklistItems?.length ?? 0 }]);
+  const addChecklist = () => {
+    const id = crypto.randomUUID();
+    setDraft((current) => ({ ...current, checklistItems: [...(current.checklistItems ?? []), { id, title: "", done: false, sortOrder: current.checklistItems?.length ?? 0 }] }));
+    setChecklistFocusId(id);
+  };
   const moveChecklist = (index: number, direction: -1 | 1) => { const items = [...(draft.checklistItems ?? [])]; const target = index + direction; if (target < 0 || target >= items.length) return; [items[index], items[target]] = [items[target], items[index]]; set("checklistItems", items.map((item, order) => ({ ...item, sortOrder: order }))); };
 
   const submit = async (event: FormEvent) => {
@@ -304,9 +327,15 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
 
       {draft.mainCategory === "extraHomework" && draft.subCategory !== "reading" && <div><p className={label}>内容</p><div className="mt-2 flex gap-1.5">{EXTRA_CONTENT_OPTIONS_SIMPLE.map((item) => <button key={item.value} type="button" onClick={() => changeExtraContent(item.value)} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${draft.extraContentType === item.value ? "bg-primary text-white" : "bg-white text-muted ring-1 ring-inset ring-ink/10"}`}>{item.label}</button>)}</div></div>}
 
-      <label className={label}>任务标题{draft.mainCategory === "interestClass" || (draft.mainCategory === "extraHomework" && draft.subCategory === "reading") ? "（可选）" : " *"}<input autoFocus value={draft.title} onChange={(e) => { setTitleTouched(true); setDraft((current) => ({ ...current, title: e.target.value })); }} className={input} placeholder={draft.mainCategory === "interestClass" || (draft.mainCategory === "extraHomework" && draft.subCategory === "reading") ? "可留空，填写时用于补充具体内容" : "输入具体任务内容"} /></label>
+      <div>
+        {draft.mainCategory === "school" && schoolHomeworkTitle(draft.subCategory) && <div className="mb-2 flex gap-1.5">
+          <button type="button" onClick={() => { setTitleTouched(!regularSchoolTitle || !!task); set("title", schoolHomeworkTitle(draft.subCategory)); if (!draft.checklistItems?.length) addChecklist(); else checklistInputs.current[draft.checklistItems[0].id]?.focus(); }} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${draft.title === schoolHomeworkTitle(draft.subCategory) ? "bg-primary text-white" : "bg-white text-muted ring-1 ring-inset ring-ink/10"}`}>家庭作业</button>
+          <button type="button" onClick={() => { setTitleTouched(true); set("title", ""); titleInput.current?.focus(); }} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${titleTouched && draft.title !== schoolHomeworkTitle(draft.subCategory) ? "bg-primary text-white" : "bg-white text-muted ring-1 ring-inset ring-ink/10"}`}>自定义标题</button>
+        </div>}
+        <label className={label}>任务标题{draft.mainCategory === "interestClass" || (draft.mainCategory === "extraHomework" && draft.subCategory === "reading") ? "（可选）" : " *"}<input ref={titleInput} autoFocus value={draft.title} onChange={(e) => { setTitleTouched(true); setDraft((current) => ({ ...current, title: e.target.value })); }} className={input} placeholder={draft.mainCategory === "interestClass" || (draft.mainCategory === "extraHomework" && draft.subCategory === "reading") ? "可留空，填写时用于补充具体内容" : "输入具体任务内容"} /></label>
+      </div>
 
-      {homework && <div className="border-y border-ink/10 py-2.5"><div className="flex items-center justify-between"><div><p className="text-sm font-semibold text-ink">任务小项</p>{!draft.checklistItems?.length && <p className="mt-0.5 text-[11px] text-muted">把一项作业拆成几步完成</p>}</div><button type="button" onClick={addChecklist} className="inline-flex items-center gap-1 rounded-md bg-ink px-2.5 py-1.5 text-xs font-semibold text-white"><Plus className="h-3.5 w-3.5" />添加小项</button></div>{!!draft.checklistItems?.length && <div className="mt-2 space-y-1.5">{draft.checklistItems.map((item, index) => <div key={item.id} className="flex items-center gap-1.5"><input value={item.title} onChange={(e) => set("checklistItems", draft.checklistItems?.map((value) => value.id === item.id ? { ...value, title: e.target.value } : value))} className="min-w-0 flex-1 rounded-md border border-ink/15 bg-white px-3 py-1.5 text-sm" placeholder="小项内容" /><button type="button" aria-label="上移" title="上移" onClick={() => moveChecklist(index, -1)} className="p-1 text-muted"><ArrowUp className="h-4 w-4" /></button><button type="button" aria-label="下移" title="下移" onClick={() => moveChecklist(index, 1)} className="p-1 text-muted"><ArrowDown className="h-4 w-4" /></button><button type="button" aria-label="删除小项" title="删除小项" onClick={() => set("checklistItems", draft.checklistItems?.filter((value) => value.id !== item.id))} className="p-1"><Trash2 className="h-4 w-4 text-rose-400" /></button></div>)}</div>}</div>}
+      {homework && <div className="border-y border-ink/10 py-2.5"><div className="flex items-center justify-between"><p className="text-sm font-semibold text-ink">任务小项</p><button type="button" onClick={addChecklist} className="inline-flex items-center gap-1 rounded-md bg-ink px-2.5 py-1.5 text-xs font-semibold text-white"><Plus className="h-3.5 w-3.5" />添加小项</button></div>{!!draft.checklistItems?.length && <div className="mt-2 space-y-1.5">{draft.checklistItems.map((item, index) => <div key={item.id} className="flex items-center gap-1.5"><input ref={(node) => { checklistInputs.current[item.id] = node; }} aria-label={`小项 ${index + 1}`} value={item.title} onChange={(e) => set("checklistItems", draft.checklistItems?.map((value) => value.id === item.id ? { ...value, title: e.target.value } : value))} onKeyDown={(event) => { if (event.key !== "Enter" || event.nativeEvent.isComposing) return; event.preventDefault(); if (!item.title.trim()) return; const next = draft.checklistItems?.[index + 1]; if (next) checklistInputs.current[next.id]?.focus(); else addChecklist(); }} className="min-w-0 flex-1 rounded-md border border-ink/15 bg-white px-3 py-1.5 text-sm" placeholder="小项内容" /><button type="button" aria-label="上移" title="上移" onClick={() => moveChecklist(index, -1)} className="p-1 text-muted"><ArrowUp className="h-4 w-4" /></button><button type="button" aria-label="下移" title="下移" onClick={() => moveChecklist(index, 1)} className="p-1 text-muted"><ArrowDown className="h-4 w-4" /></button><button type="button" aria-label="删除小项" title="删除小项" onClick={() => set("checklistItems", draft.checklistItems?.filter((value) => value.id !== item.id))} className="p-1"><Trash2 className="h-4 w-4 text-rose-400" /></button></div>)}</div>}</div>}
 
       <div><p className={label}>未完成时</p><div className="mt-2 grid grid-cols-3 gap-1.5">{([['autoNextDay', '顺延'], ['skipIfMissed', '跳过'], ['keepOverdue', '标记逾期']] as const).map(([value, text]) => <button key={value} type="button" onClick={() => { set("rolloverMode", value); set("allowRollover", value === "autoNextDay"); }} className={`rounded-md border px-2 py-2 text-xs font-semibold transition-colors ${draft.rolloverMode === value ? "border-primary bg-primary text-white" : "border-ink/10 bg-white text-muted hover:border-primary/30 hover:text-ink"}`}>{text}</button>)}</div></div>
 
@@ -329,7 +358,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
         <div className="grid items-start gap-2 lg:grid-cols-[minmax(180px,0.8fr)_minmax(260px,1.2fr)]"><label className={label}>适用阶段<select value={draft.applicablePeriodType === "regular" ? "regular" : draft.planPeriodId ?? "all"} onChange={(e) => { const value = e.target.value; setPeriodTouched(true); setAutoBoundHint(""); setDraft((current) => ({ ...current, applicablePeriodType: value === "all" ? "all" : value === "regular" ? "regular" : "holiday", planPeriodId: value === "all" || value === "regular" ? undefined : value })); }} className={detailInput}><option value="all">全部阶段</option><option value="regular">平时（假期外自动适用）</option>{periods.filter((period) => period.type === "holiday").map((period) => <option key={period.id} value={period.id}>{period.name}</option>)}</select>{autoBoundHint && <div className="mt-1 text-xs normal-case tracking-normal text-sage-600">{autoBoundHint}</div>}</label>
         <div className="grid grid-cols-[36px_minmax(132px,1fr)_24px] items-center gap-x-2 gap-y-1.5 rounded-md bg-ink/[0.035] px-3 py-2"><span className="col-span-3 text-xs font-bold text-muted">时间（可选）</span><label htmlFor="task-start-time" className="text-xs font-medium text-muted">开始</label><input id="task-start-time" aria-label="开始时间" type="time" value={draft.startTime ?? ""} onChange={(event) => set("startTime", event.target.value || undefined)} className="w-full rounded-md border border-ink/15 bg-white px-2.5 py-1.5 text-sm text-ink outline-none focus:border-primary" />{draft.startTime ? <button type="button" aria-label="清除开始时间" title="清除开始时间" onClick={() => set("startTime", undefined)} className="rounded p-1 text-muted hover:bg-white hover:text-ink"><X className="h-3.5 w-3.5" /></button> : <span />}<label htmlFor="task-end-time" className="text-xs font-medium text-muted">结束</label><input id="task-end-time" aria-label="结束时间" type="time" value={draft.endTime ?? ""} onChange={(event) => set("endTime", event.target.value || undefined)} className="w-full rounded-md border border-ink/15 bg-white px-2.5 py-1.5 text-sm text-ink outline-none focus:border-primary" />{draft.endTime ? <button type="button" aria-label="清除结束时间" title="清除结束时间" onClick={() => set("endTime", undefined)} className="rounded p-1 text-muted hover:bg-white hover:text-ink"><X className="h-3.5 w-3.5" /></button> : <span />}</div></div>
         <label className={label}>备注<textarea rows={1} value={draft.note ?? ""} onChange={(e) => set("note", e.target.value)} className="mt-1.5 min-h-11 w-full resize-y rounded-md border border-ink/15 bg-white px-3 py-2 text-sm font-normal normal-case tracking-normal text-ink outline-none focus:border-primary" /></label>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-ink/10 pt-3"><Check label="显示在今日清单" checked={draft.childVisible} onChange={(value) => set("childVisible", value)} /><Check label="在月计划中显示" checked={draft.calendarVisibility !== "hide"} onChange={(value) => { setCalendarVisibilityTouched(true); setDraft((current) => ({ ...current, calendarVisibility: value ? "show" : "hide", ...(!value ? { rolloverMode: "skipIfMissed" as const, allowRollover: false } : {}) })); }} />{!isOccurrenceSchedule(draft) &&<label className={label}>状态<select value={draft.status} onChange={(e) => set("status", e.target.value as TaskStatus)} className="ml-2 rounded-md border px-2 py-1 text-xs normal-case tracking-normal">{Object.entries(STATUS_META).filter(([value]) => value !== "overdue").map(([value, meta]) => <option key={value} value={value}>{meta.label}</option>)}</select></label>}</div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-ink/10 pt-3"><Check label="显示在今日清单" checked={draft.childVisible} onChange={(value) => set("childVisible", value)} /><Check label="在月视图中显示" checked={draft.calendarVisibility !== "hide"} onChange={(value) => { setCalendarVisibilityTouched(true); setDraft((current) => ({ ...current, calendarVisibility: value ? "show" : "hide", ...(!value ? { rolloverMode: "skipIfMissed" as const, allowRollover: false } : {}) })); }} />{!isOccurrenceSchedule(draft) &&<label className={label}>状态<select value={draft.status} onChange={(e) => set("status", e.target.value as TaskStatus)} className="ml-2 rounded-md border px-2 py-1 text-xs normal-case tracking-normal">{Object.entries(STATUS_META).filter(([value]) => value !== "overdue").map(([value, meta]) => <option key={value} value={value}>{meta.label}</option>)}</select></label>}</div>
       </div>}
 
       {pendingConflict && <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><p>该时间与已有任务"{conflictTitle}"重叠，是否仍然添加？</p><div className="mt-3 flex gap-2"><button type="button" onClick={() => setPendingConflict(undefined)} className="rounded-lg border border-amber-300 bg-white px-3 py-1.5">返回修改</button><button type="button" onClick={async () => { setSaving(true); try { await onSave(pendingConflict, true); onClose(); } catch (reason) { setError(reason instanceof Error ? reason.message : "保存失败"); setSaving(false); } }} className="rounded-lg bg-primary px-3 py-1.5 font-semibold text-white">仍然添加</button></div></div>}

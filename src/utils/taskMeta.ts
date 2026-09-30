@@ -126,7 +126,6 @@ export const SUB_CATEGORY_OPTIONS: Record<MainCategory, { value: string; label: 
   interestClass: [
     { value: "piano", label: "钢琴课" }, { value: "swimming", label: "游泳课" },
     { value: "rollerSkating", label: "轮滑课" }, { value: "pianoPractice", label: "钢琴练习" },
-    { value: "otherInterest", label: "其他兴趣班" },
   ],
   readingPlan: [
     { value: "chineseReading", label: "中文阅读" }, { value: "englishReading", label: "英文阅读" },
@@ -179,8 +178,19 @@ export const EXTRA_CONTENT_OPTIONS_SIMPLE: { value: ExtraContentType; label: str
 ];
 export const extraContentLabel = (value?: ExtraContentType) => EXTRA_CONTENT_OPTIONS.find((item) => item.value === value)?.label ?? "其他";
 
+const CUSTOM_SUB_PREFIX = "custom:";
+export const customSubCategoryValue = (label: string) => `${CUSTOM_SUB_PREFIX}${encodeURIComponent(label.trim())}`;
+export const isCustomSubCategory = (value: string) => value.startsWith(CUSTOM_SUB_PREFIX) && value.length > CUSTOM_SUB_PREFIX.length;
+const customSubCategoryLabel = (value: string) => {
+  if (!isCustomSubCategory(value)) return undefined;
+  try { return decodeURIComponent(value.slice(CUSTOM_SUB_PREFIX.length)); } catch { return value.slice(CUSTOM_SUB_PREFIX.length); }
+};
+
 export const subCategoryLabel = (main: MainCategory, sub: string) =>
-  SUB_CATEGORY_OPTIONS[main]?.find((item) => item.value === sub)?.label ?? "其他";
+  SUB_CATEGORY_OPTIONS[main]?.find((item) => item.value === sub)?.label
+  ?? customSubCategoryLabel(sub)
+  ?? SUB_CATEGORY_META[sub as keyof typeof SUB_CATEGORY_META]?.label
+  ?? "其他";
 
 export const taskDisplayName = (task: { mainCategory: MainCategory; subCategory: string; title: string; extraContentType?: ExtraContentType }) => {
   const showContentType = task.mainCategory === "extraHomework" && task.subCategory !== "reading";
@@ -239,7 +249,8 @@ export const courseOptionLabel = (
 
 /** 二级类型是否为该分类下的合法选项（切换分类后置空，未手动选择时不允许保存） */
 export const isValidSubCategory = (main: MainCategory, sub: string) =>
-  SUB_CATEGORY_OPTIONS[main]?.some((item) => item.value === sub) ?? false;
+  isCustomSubCategory(sub) || (main === "interestClass" && sub === "otherInterest")
+  || (SUB_CATEGORY_OPTIONS[main]?.some((item) => item.value === sub) ?? false);
 
 export const defaultSortOrder = (main: MainCategory, sub: string) => {
   const index = SORT_KEYS.indexOf(`${main}:${sub}`);

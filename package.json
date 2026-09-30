@@ -4,8 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "vite --config vite.config.ts",
+    "build": "tsc -b && vite build --config vite.config.ts",
+    "preview:file": "tsc -b && vite build --config vite.config.ts --mode local-preview --outDir dist-preview && node scripts/build-local-preview.mjs",
     "preview": "vite preview",
     "test": "vitest run"
   },

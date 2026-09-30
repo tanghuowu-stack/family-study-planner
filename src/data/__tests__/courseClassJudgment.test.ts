@@ -12,7 +12,7 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "../db";
 import { taskRepository } from "../taskRepository";
-import { courseOptionLabel, interestContentType, isCourseTask, isValidSubCategory, SUB_CATEGORY_OPTIONS } from "../../utils/taskMeta";
+import { courseOptionLabel, customSubCategoryValue, interestContentType, isCourseTask, isValidSubCategory, subCategoryLabel, SUB_CATEGORY_OPTIONS } from "../../utils/taskMeta";
 import { groupDayTasks, type DayGroupable } from "../../utils/taskGrouping";
 import type { ExtraContentType, MainCategory, Task, TaskDraft } from "../../types/task";
 
@@ -167,10 +167,17 @@ describe("数据层消费方（fake-indexeddb 端到端）", () => {
 });
 
 describe("课程表单 / 新建任务表单辅助", () => {
-  it("二级类型校验：空值（切换分类后未选）不合法；其他兴趣班在兴趣班下合法；跨分类的值不合法", () => {
+  it("二级类型校验：空值不合法，隐藏旧选项后仍兼容已有课程，跨分类的值不合法", () => {
     expect(isValidSubCategory("interestClass", "")).toBe(false);
     expect(isValidSubCategory("interestClass", "otherInterest")).toBe(true);
+    expect(SUB_CATEGORY_OPTIONS.interestClass.some((item) => item.value === "otherInterest")).toBe(false);
     expect(isValidSubCategory("extraHomework", "piano")).toBe(false);
+  });
+
+  it("自定义分类可保存并能从 value 还原显示名", () => {
+    const value = customSubCategoryValue("跳绳课");
+    expect(isValidSubCategory("interestClass", value)).toBe(true);
+    expect(subCategoryLabel("interestClass", value)).toBe("跳绳课");
   });
 
   it("同名课程下拉框带'（分类·二级类型）'后缀，不重名的只显示课程名", () => {

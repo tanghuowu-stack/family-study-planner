@@ -40,10 +40,10 @@ export function HabitSection() {
   const shiftMonth = (delta: number) => setMonth(toDateKey(addMonths(parseISO(`${month}-01`), delta)).slice(0, 7));
 
   return (
-    <section className="mt-5">
+    <section className="mt-6">
       {/* 顶部：标题 + 入口 */}
-      <div className="flex items-center justify-between px-1">
-        <h2 className="text-base font-bold text-ink">打卡</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+        <div><p className="section-heading">Habit tracker</p><h2 className="mt-1 text-lg font-bold text-ink">打卡月历</h2></div>
         <div className="flex gap-2">
           <button onClick={() => setManageOpen(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-600 hover:bg-mint/40">
             <ListChecks className="h-3.5 w-3.5" />管理打卡项目
@@ -78,7 +78,7 @@ export function HabitSection() {
 
 function HabitCard({ cal, month, onPrevMonth, onNextMonth }: { cal: HabitCalendar; month: string; onPrevMonth: () => void; onNextMonth: () => void }) {
   return (
-    <div className="rounded-2xl border border-stone-100 bg-white p-4 shadow-card">
+    <div className="surface p-4 sm:p-5">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate text-sm font-semibold text-ink">{cal.title}</span>

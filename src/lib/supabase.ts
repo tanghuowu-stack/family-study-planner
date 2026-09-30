@@ -10,7 +10,7 @@ const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
 /** 是否已在 .env 中配置 Supabase 连接信息 */
-export const supabaseConfigured = Boolean(url && anonKey);
+export const supabaseConfigured = import.meta.env.MODE !== "local-preview" && Boolean(url && anonKey);
 
 /** Supabase 客户端实例（未配置时为 null） */
 export const supabase: SupabaseClient | null = supabaseConfigured

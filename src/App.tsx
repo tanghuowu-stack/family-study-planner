@@ -1,5 +1,4 @@
-import { BarChart3, CalendarCheck2, CalendarDays, Cloud, ClipboardList, Home, Plus } from "lucide-react";
-import { TimerProvider } from "./context/TimerContext";
+import { BarChart3, CalendarCheck2, CalendarDays, Cloud, ClipboardList, Home, Plus, Table2 } from "lucide-react";
 import { addDays } from "date-fns";
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { TaskForm } from "./components/TaskForm";
@@ -12,15 +11,17 @@ import { StatsPage } from "./pages/StatsPage";
 import { DayPage } from "./pages/DayPage";
 import { MonthPage } from "./pages/MonthPage";
 import { TaskManagementPage } from "./pages/TaskManagementPage";
+import { TimetablePage } from "./pages/TimetablePage";
 import type { Task, TaskDisplay, TaskDraft, TaskStatus } from "./types/task";
 import { fromDateKey, todayKey, toDateKey } from "./utils/date";
 import { isOccurrenceSchedule, itemSyncKey, taskSyncKey } from "./utils/taskMeta";
 
-type Page = "today" | "month" | "tasks" | "stats";
+type Page = "today" | "month" | "tasks" | "stats" | "timetable";
 const navItems = [
   { page: "today" as const, label: "今日", icon: Home },
   { page: "month" as const, label: "月计划", icon: CalendarDays }, { page: "tasks" as const, label: "任务管理", icon: ClipboardList },
   { page: "stats" as const, label: "统计", icon: BarChart3 },
+  { page: "timetable" as const, label: "课表", icon: Table2 },
 ];
 
 export default function App() {
@@ -148,40 +149,32 @@ export default function App() {
   };
   const cancelOccurrence = async (task: TaskDisplay) => { if (!task.occurrenceDate || !confirm("只取消这一次课程吗？")) return; await repo().setOccurrence(task.id, task.occurrenceDate, "cancelled"); refresh(); notify("本次课程已取消"); };
   const postponeOccurrence = async (task: TaskDisplay) => { if (!task.occurrenceDate) return; const date = prompt("延期到哪一天？请输入 YYYY-MM-DD", task.overrideDate ?? task.occurrenceDate); if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return; const note = prompt("调整备注（可选）", task.overrideNote ?? "") ?? ""; await repo().setOccurrence(task.id, task.occurrenceDate, "postponed", date, note); refresh(); notify(`已延期到 ${date}`); };
-  const saveActualTime = async (taskId: string, itemId: string | null, minutes: number) => { await repo().saveActualMinutes(taskId, itemId, minutes); refresh(); };
-  const saveActualMinutesManual = async (taskId: string, itemId: string | null, minutes: number | undefined) => {
-    if (itemId) {
-      const task = (await repo().listAll()).find(t => t.id === taskId);
-      if (!task) return;
-      const items = (task.checklistItems ?? []).map(i => i.id === itemId ? { ...i, actualMinutes: minutes } : i);
-      await repo().update(taskId, { checklistItems: items });
-    } else {
-      await repo().update(taskId, { actualMinutes: minutes });
-    }
-    refresh();
-  };
-  const saveEstimatedMinutes = async (taskId: string, itemId: string | null, minutes: number | undefined) => {
-    if (itemId) {
-      const task = (await repo().listAll()).find(t => t.id === taskId);
-      if (!task) return;
-      const items = (task.checklistItems ?? []).map(i => i.id === itemId ? { ...i, estimatedMinutes: minutes } : i);
-      await repo().update(taskId, { checklistItems: items });
-    } else {
-      await repo().update(taskId, { estimatedMinutes: minutes });
-    }
-    refresh();
-  };
   const openDay = (date: string) => { setSelectedDate(date); setPage("today"); window.scrollTo({ top: 0, behavior: "smooth" }); };
-  const actions = { onStatusChange: changeStatus, onChecklistToggle: toggleChecklist, onCopy: copyTask, onEdit: (task: Task) => setForm({ open: true, task }), onDelete: deleteTask, onEnd: endTask, onExtend: extendTask, onOccurrenceCancel: cancelOccurrence, onOccurrencePostpone: postponeOccurrence, onSaveActualTime: saveActualTime, onSaveActualTimeManual: saveActualMinutesManual, onSaveEstimatedMinutes: saveEstimatedMinutes, unsyncedTasks, unsyncedItems, onRetrySync: retryTaskSync, onRetryItemSync: retryItemSync };
-  return <TimerProvider><div className="min-h-screen bg-paper text-ink"><header className="pt-safe sticky top-0 z-40 border-b border-primary/30 bg-primary backdrop-blur-xl"><div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6"><button onClick={() => setPage("today")} className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20 text-white"><CalendarCheck2 className="h-5 w-5" /></span><span className="text-left"><span className="block text-lg font-bold text-white">小步计划</span><span className="hidden text-[10px] tracking-wider text-white/60 sm:block">家庭学习生活规划</span></span></button><nav className="hidden items-center gap-1 lg:flex">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium ${page === value ? "bg-white/20 text-white shadow-sm" : "text-white/80 hover:bg-white/10"}`}><Icon className="h-4 w-4" />{label}</button>)}</nav><div className="flex items-center gap-2">{!cloudInitializing && (<span className={`hidden items-center gap-1 text-xs sm:flex ${cloudMode ? "text-white/90" : "text-white/60"}`}><Cloud className="h-3.5 w-3.5" />{cloudMode ? "云端同步" : "本地模式"}</span>)}<button onClick={() => setForm({ open: true })} className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2.5 text-sm font-semibold text-primary"><Plus className="h-4 w-4" /><span className="hidden sm:inline">添加任务</span></button></div></div></header>
-    {page === "today" && <DayPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenMonth={() => setPage("month")} {...actions} />}
-    {page === "month" && <MonthPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenDay={openDay} onAddTask={(date) => { setSelectedDate(date); setForm({ open: true }); }} />}
-    {page === "tasks" && <TaskManagementPage refreshKey={refreshKey} onRefresh={refresh} notify={notify} onEdit={(task) => setForm({ open: true, task })} onDelete={deleteTask} onEnd={endTask} onExtend={extendTask} onCopy={copyTask} />}
-    {page === "stats" && <StatsPage onImported={refresh} cloudMode={cloudMode} onAuthChange={syncCloudSession} />}
-    <nav className="bottom-nav-safe fixed inset-x-0 bottom-0 z-40 rounded-t-2xl border-t border-primary/20 bg-lavender/95 backdrop-blur lg:hidden"><div className="grid grid-cols-4 px-2 pt-1">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`flex min-w-0 flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[10px] ${page === value ? "bg-primary/10 text-primary" : "text-muted"}`}><Icon className="h-5 w-5" /><span className="truncate">{label}</span></button>)}</div></nav>
+  const actions = { onStatusChange: changeStatus, onChecklistToggle: toggleChecklist, onCopy: copyTask, onEdit: (task: Task) => setForm({ open: true, task }), onDelete: deleteTask, onEnd: endTask, onExtend: extendTask, onOccurrenceCancel: cancelOccurrence, onOccurrencePostpone: postponeOccurrence, unsyncedTasks, unsyncedItems, onRetrySync: retryTaskSync, onRetryItemSync: retryItemSync };
+  return <div className="min-h-screen bg-paper text-ink">
+    <aside className="fixed inset-y-0 left-0 z-50 hidden w-56 flex-col bg-ink px-3 py-5 text-white lg:flex">
+      <button onClick={() => setPage("today")} className="flex items-center gap-3 px-2 text-left">
+        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-alert text-white"><CalendarCheck2 className="h-5 w-5" /></span>
+        <span><span className="block text-lg font-bold">小步计划</span><span className="block text-[10px] text-white/50">家庭执行台</span></span>
+      </button>
+      <button onClick={() => setForm({ open: true })} className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-alert px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#cf5b40]"><Plus className="h-4 w-4" />新建任务</button>
+      <nav className="mt-6 space-y-1">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium ${page === value ? "bg-white text-ink" : "text-white/65 hover:bg-white/10 hover:text-white"}`}><Icon className="h-4 w-4" />{label}{page === value && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-alert" />}</button>)}</nav>
+      <div className="mt-auto border-t border-white/10 pt-4">
+        {!cloudInitializing && <div className="flex items-center gap-2 px-2 text-xs text-white/55"><span className={`h-2 w-2 rounded-full ${cloudMode ? "bg-emerald-400" : "bg-white/30"}`} /><Cloud className="h-3.5 w-3.5" />{cloudMode ? "云端已连接" : "本地模式"}</div>}
+      </div>
+    </aside>
+    <header className="pt-safe sticky top-0 z-40 border-b border-ink/10 bg-paper/95 backdrop-blur-xl lg:hidden"><div className="flex h-14 items-center justify-between px-4"><button onClick={() => setPage("today")} className="flex items-center gap-2.5"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink text-white"><CalendarCheck2 className="h-4 w-4" /></span><span className="text-left text-base font-bold">小步计划</span></button><div className="flex items-center gap-2">{!cloudInitializing && <span title={cloudMode ? "云端已连接" : "本地模式"} className={`h-2 w-2 rounded-full ${cloudMode ? "bg-emerald-500" : "bg-stone-300"}`} />}<button aria-label="添加任务" onClick={() => setForm({ open: true })} className="flex h-9 w-9 items-center justify-center rounded-lg bg-alert text-white"><Plus className="h-4 w-4" /></button></div></div></header>
+    <div className="app-content">
+      {page === "today" && <DayPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenMonth={() => setPage("month")} {...actions} />}
+      {page === "month" && <MonthPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenDay={openDay} onAddTask={(date) => { setSelectedDate(date); setForm({ open: true }); }} />}
+      {page === "tasks" && <TaskManagementPage refreshKey={refreshKey} onRefresh={refresh} notify={notify} onEdit={(task) => setForm({ open: true, task })} onDelete={deleteTask} onEnd={endTask} onExtend={extendTask} onCopy={copyTask} />}
+      {page === "stats" && <StatsPage onImported={refresh} cloudMode={cloudMode} onAuthChange={syncCloudSession} />}
+      {page === "timetable" && <TimetablePage />}
+    </div>
+    <nav className="bottom-nav-safe fixed inset-x-0 bottom-0 z-40 border-t border-ink/10 bg-white/95 backdrop-blur lg:hidden"><div className="grid grid-cols-5 px-2 pt-1">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`relative flex min-w-0 flex-col items-center gap-0.5 px-1 py-1.5 text-[10px] ${page === value ? "text-primary" : "text-muted"}`}>{page === value && <span className="absolute -top-1 h-0.5 w-8 bg-alert" />}<Icon className="h-5 w-5" /><span className="truncate">{label}</span></button>)}</div></nav>
     {form.open && <TaskForm task={form.task} initialDate={selectedDate} onClose={() => setForm({ open: false })} onSave={saveTask} />}
     {extendTarget && <ExtendRecurringDialog task={extendTarget} onClose={() => setExtendTarget(null)} onConfirm={confirmExtend} />}
-    {toast && <div className="toast-safe fixed bottom-24 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-primary px-5 py-2.5 text-sm text-white shadow-xl lg:bottom-8">{toast}</div>}
-    {syncErrorToast && <div className="toast-safe-above fixed bottom-[8.5rem] left-1/2 z-[71] -translate-x-1/2 rounded-full bg-sun px-5 py-2.5 text-sm font-medium text-ink shadow-xl lg:bottom-24">{syncErrorToast}</div>}
-  </div></TimerProvider>;
+    {toast && <div className="toast-safe fixed bottom-24 left-1/2 z-[70] -translate-x-1/2 rounded-lg bg-ink px-5 py-2.5 text-sm text-white shadow-xl lg:bottom-8 lg:ml-[7.5rem]">{toast}</div>}
+    {syncErrorToast && <div className="toast-safe-above fixed bottom-[8.5rem] left-1/2 z-[71] -translate-x-1/2 rounded-lg bg-sun px-5 py-2.5 text-sm font-medium text-ink shadow-xl lg:bottom-24 lg:ml-[7.5rem]">{syncErrorToast}</div>}
+  </div>;
 }

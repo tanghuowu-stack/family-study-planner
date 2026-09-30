@@ -4,18 +4,18 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: "#2A3B30",
-        paper: "#F8FAF7",
-        primary: "#6BB089",
-        mint: "#EAF5EC",
-        lavender: "#ECE6F7",
-        muted: "#7A8A80",
-        alert: "#E8743B",
-        sage: { 50: "#f0f5ef", 100: "#dfeadd", 500: "#67866c", 700: "#47604c" },
-        sun: "#f0bc68"
+        ink: "#202925",
+        paper: "#F4F2ED",
+        primary: "#245747",
+        mint: "#DCEAE3",
+        lavender: "#E8EEEB",
+        muted: "#6E7772",
+        alert: "#E36B4E",
+        sage: { 50: "#eef4f0", 100: "#dbe8e0", 500: "#557565", 700: "#355648" },
+        sun: "#EFC66A"
       },
-      boxShadow: { card: "0 12px 35px rgba(45, 61, 52, 0.08)" },
-      fontFamily: { sans: ["Inter", "PingFang SC", "Microsoft YaHei", "sans-serif"] }
+      boxShadow: { card: "0 8px 24px rgba(31, 41, 37, 0.06)" },
+      fontFamily: { sans: ["Inter", "ui-sans-serif", "PingFang SC", "Microsoft YaHei", "sans-serif"] }
     },
   },
   plugins: [],

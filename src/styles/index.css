@@ -147,7 +147,7 @@ body::before {
   }
   .school-timetable-page:not(.is-editing) .timetable-section-label { display: none; }
   .school-timetable-page:not(.is-editing) .timetable-section-inline { display: inline; }
-  .school-timetable-page:not(.is-editing) .timetable-slot-label { font-size: 9px; }
+  .school-timetable-page:not(.is-editing) .timetable-slot-label { font-size: 9px; line-height: 1.1; }
   .school-timetable-page:not(.is-editing) .timetable-slot-time { margin-top: 2px; font-size: 8px; }
   .school-timetable-page:not(.is-editing) .timetable-course {
     padding: 2px;

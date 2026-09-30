@@ -1,5 +1,7 @@
 node_modules/
 dist/
+小步计划-本地预览.html
+dist-preview/
 .env
 .env.local
 .DS_Store

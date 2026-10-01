@@ -16,6 +16,7 @@ import { scheduleOccursOn } from "./taskRepository";
 import { getRepository } from "./repositoryProvider";
 import { isOccurrenceSchedule, taskShortName } from "../utils/taskMeta";
 import { todayKey, toDateKey, toLocalDateKey } from "../utils/date";
+import { createTravelPauseCheck } from "../utils/travelPause";
 import { loadRestDays, saveRestDays, loadHiddenHabitCandidates, saveHiddenHabitCandidates } from "./appSettingsRepository";
 import type { Task, TaskOccurrenceStatus } from "../types/task";
 
@@ -38,6 +39,7 @@ const listDays = (start: string, end: string): string[] => {
 const beforeStreakStart = (task: Task, date: string) => !!task.streakStartDate && date < task.streakStartDate;
 
 type OccMap = Map<string, TaskOccurrenceStatus>;
+type TravelPauseCheck = ReturnType<typeof createTravelPauseCheck>;
 
 /**
  * 单项完成判定（沿用完成日归因）：
@@ -53,10 +55,11 @@ function itemSatisfied(task: Task, date: string, occByKey: OccMap): boolean {
  * 该项目在某天是否「应做」：排期命中、在生效起点之后、当天未被单独取消。
  * startOverride：分组场景下用组级起点统一判定（组内单次课任务自身没有 streakStartDate）。
  */
-function isApplicable(task: Task, date: string, occByKey: OccMap, startOverride?: string): boolean {
+function isApplicable(task: Task, date: string, occByKey: OccMap, startOverride?: string, paused?: TravelPauseCheck): boolean {
   const start = startOverride ?? task.streakStartDate;
   if (start ? date < start : beforeStreakStart(task, date)) return false;
   if (!scheduleOccursOn(task, date)) return false;
+  if (paused?.(task, date) && !itemSatisfied(task, date, occByKey)) return false;
   if (isOccurrenceSchedule(task) && occByKey.get(`${task.id}:${date}`)?.status === "cancelled") return false;
   return true;
 }
@@ -74,11 +77,11 @@ function itemFloor(task: Task, today: string, startOverride?: string): string {
  * 应做日完成 +1（休息日完成同样计入）、应做日未完成断——但休息日"免罚"穿过；
  * 非应做日穿过；今天应做但未完成不算断（当天未结束）。分组时"应做/完成"取组内任一任务满足。
  */
-function computeGroupStreak(tasks: Task[], today: string, occByKey: OccMap, rests: Set<string>, start?: string): number {
+function computeGroupStreak(tasks: Task[], today: string, occByKey: OccMap, rests: Set<string>, start?: string, paused?: TravelPauseCheck): number {
   if (tasks.length === 0) return 0;
   const floor = tasks.map((t) => itemFloor(t, today, start)).reduce((a, b) => (a < b ? a : b));
-  const applicable = (d: string) => groupApplicable(tasks, d, occByKey, start);
-  const ok = (d: string) => groupSatisfied(tasks, d, occByKey, start);
+  const applicable = (d: string) => groupApplicable(tasks, d, occByKey, start, paused);
+  const ok = (d: string) => groupSatisfied(tasks, d, occByKey, start, paused);
   let streak = 0;
   let cursor = today;
   if (applicable(cursor) && !ok(cursor)) cursor = prevDayKey(cursor); // 今天未完成不算断
@@ -111,11 +114,11 @@ const HABIT_GROUPS: Record<string, { groupKey: string; label: string }> = {
 const habitGroupKey = (task: Task): string => HABIT_GROUPS[task.subCategory]?.groupKey ?? task.id;
 
 /** 分组版应做判定：组内任一任务当天应做 */
-const groupApplicable = (tasks: Task[], date: string, occByKey: OccMap, start?: string) =>
-  tasks.some((t) => isApplicable(t, date, occByKey, start));
+const groupApplicable = (tasks: Task[], date: string, occByKey: OccMap, start?: string, paused?: TravelPauseCheck) =>
+  tasks.some((t) => isApplicable(t, date, occByKey, start, paused));
 /** 分组版完成判定：组内任一应做任务当天完成 */
-const groupSatisfied = (tasks: Task[], date: string, occByKey: OccMap, start?: string) =>
-  tasks.some((t) => isApplicable(t, date, occByKey, start) && itemSatisfied(t, date, occByKey));
+const groupSatisfied = (tasks: Task[], date: string, occByKey: OccMap, start?: string, paused?: TravelPauseCheck) =>
+  tasks.some((t) => isApplicable(t, date, occByKey, start, paused) && itemSatisfied(t, date, occByKey));
 
 // ── 管理打卡项目 ─────────────────────────────────────────────────────────────
 
@@ -217,6 +220,7 @@ export async function getHabitCalendars(month: string, today: string = todayKey(
     loadRestDays(),
   ]);
   const rests = new Set(restDays);
+  const paused = createTravelPauseCheck(tasks, occurrences);
   const occByKey: OccMap = new Map(occurrences.map((o) => [`${o.taskId}:${o.occurrenceDate}`, o]));
   // 与 getHabitCandidates 口径对齐：非 recurring 类任务即使 enableStreak=true 也不出现
   // （管理弹窗只认重复类任务，若这里不同步限制，会出现"月历有卡但管理不了"的孤儿卡）
@@ -258,8 +262,8 @@ export async function getHabitCalendars(month: string, today: string = todayKey(
     const days = monthDays.map((date) => {
       let status: HabitDayStatus;
       if (date > today) status = "off";                                                 // 未来日
-      else if (!groupApplicable(groupTasks, date, occByKey, start)) status = "off";     // 起点前 / 未排期 / 单日取消
-      else if (groupSatisfied(groupTasks, date, occByKey, start)) status = "done";      // 完成（休息日完成同样算 done）
+      else if (!groupApplicable(groupTasks, date, occByKey, start, paused)) status = "off"; // 起点前 / 未排期 / 取消或旅游暂停
+      else if (groupSatisfied(groupTasks, date, occByKey, start, paused)) status = "done"; // 完成（含旅游期间已完成的历史记录）
       else if (rests.has(date)) status = "off";                                        // 休息日未完成：免罚不算漏卡
       else status = "missed";
       return { date, status };
@@ -267,7 +271,7 @@ export async function getHabitCalendars(month: string, today: string = todayKey(
     return {
       taskId: key,
       title: groupLabel ?? taskShortName(groupTasks[0]),
-      currentStreak: computeGroupStreak(groupTasks, today, occByKey, rests, start),
+      currentStreak: computeGroupStreak(groupTasks, today, occByKey, rests, start, paused),
       monthCompletedDays: days.filter((day) => day.status === "done").length,
       days,
     };

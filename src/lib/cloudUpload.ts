@@ -109,6 +109,7 @@ function buildMetadata(task: Task): Record<string, unknown> | null {
   if (task.allowedWeekdays !== undefined) meta.allowedWeekdays = task.allowedWeekdays;
   if (task.allowWeekend !== undefined) meta.allowWeekend = task.allowWeekend;
   if (task.enableTimer !== undefined) meta.enableTimer = task.enableTimer;
+  if (task.pauseDuringTravel !== undefined) meta.pauseDuringTravel = task.pauseDuringTravel;
   return Object.keys(meta).length > 0 ? meta : null;
 }
 

@@ -95,6 +95,7 @@ function HabitCard({ cal, month, onPrevMonth, onNextMonth }: { cal: HabitCalenda
         <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full bg-primary" />完成</span>
         <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full bg-rose-400" />漏卡</span>
         <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full bg-stone-200" />休息或无排期</span>
+        <span className="ml-auto text-right font-semibold text-primary">本月打卡 {cal.monthCompletedDays} 天</span>
       </div>
     </div>
   );

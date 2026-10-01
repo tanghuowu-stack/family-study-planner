@@ -1,6 +1,7 @@
 import { Check, Pencil, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { formatFullDate, fromDateKey, todayKey } from "../utils/date";
+import { getCalendarAnnotation } from "../data/calendarAnnotations";
 import {
   cloneSchoolTimetable,
   loadSchoolTimetable,
@@ -129,6 +130,7 @@ export function TimetablePage() {
   }
 
   const firstExtended = draft.slots.find((slot) => slot.id === "extended-1");
+  const holidayStatus = getCalendarAnnotation(today).holidayStatus;
   const secondExtended = draft.slots.find((slot) => slot.id === "extended-2");
   const mergedDays = new Set(TIMETABLE_DAYS.filter((day) => firstExtended?.courses[day] && firstExtended.courses[day] === secondExtended?.courses[day]));
   const mergeMondayTuesdayBreak = !mergedDays.has("monday") && !mergedDays.has("tuesday");
@@ -136,7 +138,7 @@ export function TimetablePage() {
   return (
     <main className={`school-timetable-page ${editing ? "is-editing" : ""} mx-auto w-full max-w-6xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10`}>
       <header className="timetable-header mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-ink/10 pb-4">
-        <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-4 gap-y-1"><h1 className="text-xl font-bold text-ink sm:text-2xl">课表</h1><p className="text-sm font-semibold text-ink sm:text-base">{formatFullDate(today)}</p></div>{editing ? <input aria-label="学期名称" value={draft.term} onChange={(event) => setDraft({ ...draft, term: event.target.value })} className="mt-1 w-full max-w-sm rounded-md border px-2 py-1 text-xs text-muted" /> : <p className="mt-1 text-xs text-muted">{saved?.term}</p>}</div>
+        <div className="min-w-0"><div className="flex flex-wrap items-baseline gap-x-4 gap-y-1"><h1 className="text-xl font-bold text-ink sm:text-2xl">课表</h1><p className="text-sm font-semibold text-ink sm:text-base">{formatFullDate(today)}{holidayStatus && <span className={`ml-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{holidayStatus}</span>}</p></div>{editing ? <input aria-label="学期名称" value={draft.term} onChange={(event) => setDraft({ ...draft, term: event.target.value })} className="mt-1 w-full max-w-sm rounded-md border px-2 py-1 text-xs text-muted" /> : <p className="mt-1 text-xs text-muted">{saved?.term}</p>}</div>
         <div className="flex items-center gap-2">
           {savedHint && <span className="text-xs font-medium text-primary">已保存</span>}
           {editing ? <><button type="button" onClick={cancelEdit} className="flex h-9 items-center gap-1.5 rounded-lg border border-ink/10 bg-white px-3 text-xs font-semibold text-muted hover:text-ink"><X className="h-4 w-4" />取消</button><button type="button" disabled={saving} onClick={() => void save()} className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-white hover:bg-[#1c493b] disabled:opacity-50"><Check className="h-4 w-4" />{saving ? "保存中" : "保存"}</button></> : <button type="button" aria-label="编辑课表" title="编辑课表" onClick={beginEdit} className="timetable-edit-button flex h-9 items-center gap-1.5 rounded-lg bg-ink px-3 text-xs font-semibold text-white hover:bg-primary"><Pencil className="h-4 w-4" /><span>编辑课表</span></button>}

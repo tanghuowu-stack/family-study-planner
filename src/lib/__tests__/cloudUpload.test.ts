@@ -54,6 +54,11 @@ beforeEach(async () => {
 });
 
 describe("cloudUpload occurrence 过滤（A 类违规行不上传）", () => {
+  it("preserves explicit travel suspension opt-in and opt-out in metadata", async () => {
+    await db.tasks.bulkAdd([task("yes", { pauseDuringTravel: true }), task("no", { pauseDuringTravel: false })]);
+    await uploadLocalDataToCloud("fam-test");
+    expect(Object.fromEntries(captured.upserts.tasks.map((row) => [row.id, row.metadata]))).toEqual({ yes: { pauseDuringTravel: true }, no: { pauseDuringTravel: false } });
+  });
   it("15. 跳过非 occurrence 类任务和已软删任务名下的行，正常行照常上传", async () => {
     await db.tasks.bulkAdd([
       task("rec-ok", { timeType: "recurring", schedulePattern: "dailyRecurring", date: undefined, startDate: "2026-07-01" }),

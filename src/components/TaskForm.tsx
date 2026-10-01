@@ -8,6 +8,7 @@ import { courseHomeworkTitle, homeworkDateDefault, regularSchoolHomeworkTitle, s
 import { loadCustomTaskCategories, saveCustomTaskCategories, type CustomTaskCategories } from "../data/appSettingsRepository";
 import type { Course, ExtraContentType, MainCategory, PlanPeriod, SchedulePattern, Task, TaskDisplay, TaskDraft, TaskStatus, TaskTimeType, WeeklyQuota } from "../types/task";
 import { fromDateKey, getWeekStartKey, todayKey, toDateKey } from "../utils/date";
+import { isTravelPauseEnabled } from "../utils/travelPause";
 import { EXTRA_CONTENT_OPTIONS_SIMPLE, MAIN_CATEGORY_META, STATUS_META, SUB_CATEGORY_OPTIONS, TIME_TYPE_META, WEEKDAY_LABELS, courseOptionLabel, customSubCategoryValue, defaultSortOrder, interestContentType, isCourseTask, isCustomSubCategory, isOccurrenceSchedule, isValidSubCategory, subCategoryLabel } from "../utils/taskMeta";
 
 // "事项"分类或"上课"内容类型默认在月计划中显示，不受上次使用偏好影响
@@ -380,6 +381,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
 
       {draft.timeType === "singleDate" && <DateField title="日期" value={draft.date} onChange={(value) => set("date", value)} input={input} label={label} required quick />}
       {draft.timeType === "dateRange" && <DateRange draft={draft} set={set} input={detailInput} label={label} />}
+      {isOccurrenceSchedule(draft) && <Check label="旅游期间暂停" checked={isTravelPauseEnabled(draft)} onChange={(value) => set("pauseDuringTravel", value)} />}
 
       {/* ── 更多设置折叠区 ── */}
       <button type="button" onClick={() => setShowMore((v) => !v)} className="flex w-full items-center justify-between border-y border-ink/10 px-1 py-2.5 text-sm font-semibold text-ink"><span>详细设置</span><ChevronDown className={`h-4 w-4 text-muted transition-transform ${showMore ? "rotate-180" : ""}`} /></button>

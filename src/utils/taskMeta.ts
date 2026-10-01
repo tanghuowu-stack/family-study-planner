@@ -1,5 +1,6 @@
 import type { CourseStatus, ExtraContentType, MainCategory, PlanPeriod, RolloverMode, SchedulePattern, TaskDraft, TaskStatus, TaskTimeType, SubCategory } from "../types/task";
-import { todayKey } from "./date";
+import { addDays, getDay, startOfWeek } from "date-fns";
+import { fromDateKey, todayKey, toDateKey } from "./date";
 
 export function schoolHomeworkTitle(subCategory: string): string {
   const subject = ({ chinese: "语文", math: "数学", english: "英语" } as Record<string, string>)[subCategory];
@@ -7,14 +8,36 @@ export function schoolHomeworkTitle(subCategory: string): string {
 }
 
 export function regularSchoolHomeworkTitle(
-  draft: Pick<TaskDraft, "mainCategory" | "subCategory" | "timeType" | "date" | "applicablePeriodType">,
+  draft: Pick<TaskDraft, "mainCategory" | "subCategory" | "timeType" | "date" | "startDate" | "endDate" | "applicablePeriodType">,
   periods: Pick<PlanPeriod, "type" | "startDate" | "endDate">[],
   dayOff = false,
 ): string {
-  if (draft.mainCategory !== "school" || draft.timeType !== "singleDate" || !draft.date
+  const start = draft.timeType === "singleDate" ? draft.date : draft.timeType === "dateRange" ? draft.startDate : undefined;
+  const end = draft.timeType === "singleDate" ? draft.date : draft.endDate;
+  if (draft.mainCategory !== "school" || !start || !end || start > end
     || draft.applicablePeriodType === "holiday" || dayOff
-    || periods.some((period) => period.type === "holiday" && draft.date! >= period.startDate && draft.date! <= period.endDate)) return "";
+    || periods.some((period) => period.type === "holiday" && start <= period.endDate && end >= period.startDate)) return "";
   return schoolHomeworkTitle(draft.subCategory);
+}
+
+export function courseHomeworkTitle(draft: Pick<TaskDraft, "mainCategory" | "subCategory" | "extraContentType">): string {
+  if (draft.mainCategory !== "extraHomework" || draft.extraContentType !== "homework") return "";
+  return ({ chinese: "大增语文课后作业", math: "奥数班作业" } as Record<string, string>)[draft.subCategory] ?? "";
+}
+
+/** Default windows contain the selected day; they are not recurring schedules. */
+export function homeworkDateDefault(
+  draft: Pick<TaskDraft, "mainCategory" | "subCategory" | "extraContentType"> & { title?: string },
+  date: string,
+): { id: string; startDate: string; endDate: string } | undefined {
+  const day = fromDateKey(date);
+  if (draft.mainCategory === "school" && schoolHomeworkTitle(draft.subCategory) && getDay(day) === 5) {
+    return { id: "school-weekend", startDate: date, endDate: toDateKey(addDays(day, 2)) };
+  }
+  if (!courseHomeworkTitle(draft)) return undefined;
+  if (draft.title?.trim() && !(draft.subCategory === "chinese" ? draft.title.includes("大增") : draft.title.includes("奥数"))) return undefined;
+  const start = startOfWeek(day, { weekStartsOn: draft.subCategory === "chinese" ? 6 : 0 });
+  return { id: draft.subCategory === "chinese" ? "dazeng" : "aoshu", startDate: toDateKey(start), endDate: toDateKey(addDays(start, 6)) };
 }
 
 /**

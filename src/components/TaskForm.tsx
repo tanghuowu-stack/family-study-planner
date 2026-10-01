@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { taskRepository } from "../data/taskRepository";
 import { getRepository } from "../data/repositoryProvider";
 import { getCalendarAnnotation } from "../data/calendarAnnotations";
-import { regularSchoolHomeworkTitle, schoolHomeworkTitle } from "../utils/taskMeta";
+import { courseHomeworkTitle, homeworkDateDefault, regularSchoolHomeworkTitle, schoolHomeworkTitle } from "../utils/taskMeta";
 import { loadCustomTaskCategories, saveCustomTaskCategories, type CustomTaskCategories } from "../data/appSettingsRepository";
 import type { Course, ExtraContentType, MainCategory, PlanPeriod, SchedulePattern, Task, TaskDisplay, TaskDraft, TaskStatus, TaskTimeType, WeeklyQuota } from "../types/task";
 import { fromDateKey, getWeekStartKey, todayKey, toDateKey } from "../utils/date";
@@ -62,6 +62,10 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
   const checklistInputs = useRef<Record<string, HTMLInputElement | null>>({});
   const titleInput = useRef<HTMLInputElement>(null);
   const [checklistFocusId, setChecklistFocusId] = useState<string>();
+  const [scheduleTouched, setScheduleTouched] = useState(!!task);
+  const [scheduleAnchorDate, setScheduleAnchorDate] = useState(initialDate);
+  const automaticSchedule = useRef<string | undefined>(undefined);
+  const previousSchedule = useRef<Pick<TaskDraft, "timeType" | "schedulePattern" | "date" | "startDate" | "endDate" | "recurrence" | "specificDates"> | undefined>(undefined);
   const [courses, setCourses] = useState<Course[]>([]);
   const [titleTouched, setTitleTouched] = useState(!!task?.title);
   const [periodTouched, setPeriodTouched] = useState(!!task?.id);
@@ -75,22 +79,49 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
   const [pendingConflict, setPendingConflict] = useState<TaskDraft>();
   const [conflictTitle, setConflictTitle] = useState("");
   const [showMore, setShowMore] = useState(false);
-  const set = <K extends keyof TaskDraft>(key: K, value: TaskDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
+  const set = <K extends keyof TaskDraft>(key: K, value: TaskDraft[K]) => {
+    if (key === "date" && typeof value === "string" && value) setScheduleAnchorDate(value);
+    if (["startDate", "endDate", "recurrence", "specificDates"].includes(key)) setScheduleTouched(true);
+    setDraft((current) => ({ ...current, [key]: value }));
+  };
   const input = "mt-1.5 w-full rounded-lg border border-ink/15 bg-white px-3.5 py-2.5 text-sm text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/10";
   const detailInput = "mt-1 w-full rounded-md border border-ink/15 bg-white px-3 py-1.5 text-sm text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/10";
   const label = "text-xs font-bold uppercase tracking-wide text-muted";
 
   useEffect(() => { taskRepository.listPlanPeriods().then((value) => { setPeriods(value); setPeriodsLoaded(true); }).catch(() => setError("读取假期设置失败，请手动填写标题")); getRepository().listCourses().then(setCourses); loadCustomTaskCategories().then(setCustomCategories); const handler = (event: KeyboardEvent) => event.key === "Escape" && onClose(); window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler); }, [onClose]);
-  const regularSchoolTitle = regularSchoolHomeworkTitle(draft, periods, getCalendarAnnotation(draft.date ?? initialDate).holidayStatus === "休");
+  const referenceDate = draft.date ?? draft.startDate ?? initialDate;
+  const dateDefault = draft.mainCategory === "extraHomework" && titleTouched && !draft.title.trim()
+    ? undefined : homeworkDateDefault(draft, scheduleAnchorDate);
   useEffect(() => {
-    if (task || titleTouched || !periodsLoaded || draft.mainCategory !== "school") return;
+    if (task || scheduleTouched) return;
+    if (dateDefault) {
+      if (automaticSchedule.current === dateDefault.id) return;
+      automaticSchedule.current = dateDefault.id;
+      setDraft((current) => {
+        previousSchedule.current ??= { timeType: current.timeType, schedulePattern: current.schedulePattern, date: current.date,
+          startDate: current.startDate, endDate: current.endDate, recurrence: current.recurrence, specificDates: current.specificDates };
+        return { ...current, timeType: "dateRange", schedulePattern: "singleDate", date: undefined,
+          startDate: dateDefault.startDate, endDate: dateDefault.endDate, recurrence: undefined, specificDates: undefined };
+      });
+    } else if (automaticSchedule.current && previousSchedule.current) {
+      const previous = previousSchedule.current;
+      automaticSchedule.current = undefined;
+      previousSchedule.current = undefined;
+      setDraft((current) => ({ ...current, ...previous }));
+    }
+  }, [task, scheduleTouched, dateDefault?.id, dateDefault?.startDate, dateDefault?.endDate]);
+  const regularSchoolTitle = regularSchoolHomeworkTitle(draft, periods, getCalendarAnnotation(referenceDate).holidayStatus === "休");
+  const courseTitle = courseHomeworkTitle(draft);
+  const automaticTitle = draft.mainCategory === "school" ? regularSchoolTitle : courseTitle;
+  useEffect(() => {
+    if (task || titleTouched || !periodsLoaded || (draft.mainCategory !== "school" && !courseTitle)) return;
     const firstItemId = crypto.randomUUID();
-    setDraft((current) => ({ ...current, title: regularSchoolTitle,
-      checklistItems: regularSchoolTitle && !current.checklistItems?.length
+    setDraft((current) => ({ ...current, title: automaticTitle,
+      checklistItems: automaticTitle && !current.checklistItems?.length
         ? [{ id: firstItemId, title: "", done: false, sortOrder: 0 }] : current.checklistItems,
     }));
-    if (regularSchoolTitle && !draft.checklistItems?.length) setChecklistFocusId(firstItemId);
-  }, [task, titleTouched, periodsLoaded, draft.mainCategory, regularSchoolTitle]);
+    if (automaticTitle && !draft.checklistItems?.length) setChecklistFocusId(firstItemId);
+  }, [task, titleTouched, periodsLoaded, draft.mainCategory, automaticTitle, courseTitle]);
   useEffect(() => { if (checklistFocusId) checklistInputs.current[checklistFocusId]?.focus(); }, [checklistFocusId]);
   useEffect(() => { if (!calendarVisibilityTouched && forceCalendarVisible(draft) && draft.calendarVisibility !== "show") set("calendarVisibility", "show"); }, [draft.mainCategory, draft.subCategory, draft.extraContentType, calendarVisibilityTouched]);
 
@@ -227,7 +258,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
         : draft.mainCategory === "interestClass" ? (["otherInterest"].includes(subCategory) || isCustomSubCategory(subCategory) ? interestContentType(true) : undefined)
         : current.extraContentType,
       title: isReading ? "" : (titleTouched ? current.title : current.mainCategory === "school"
-        ? regularSchoolHomeworkTitle({ ...current, subCategory }, periods, getCalendarAnnotation(current.date ?? initialDate).holidayStatus === "休")
+        ? regularSchoolHomeworkTitle({ ...current, subCategory }, periods, getCalendarAnnotation(current.date ?? current.startDate ?? initialDate).holidayStatus === "休")
         : defaultTitle(current.mainCategory, subCategory, current.extraContentType)),
       rolloverMode: auto ? "autoNextDay" : "keepOverdue", allowRollover: auto,
       sortOrder: defaultSortOrder(current.mainCategory, subCategory),
@@ -235,7 +266,9 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
     if (isReading) setTitleTouched(false);
   };
   const changeExtraContent = (extraContentType: ExtraContentType) => {
-    setDraft((current) => ({ ...current, extraContentType }));
+    setDraft((current) => ({ ...current, extraContentType,
+      title: titleTouched ? current.title : defaultTitle(current.mainCategory, current.subCategory, extraContentType),
+    }));
   };
   const addCustomCategory = async () => {
     const label = customCategoryName.trim();
@@ -251,7 +284,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
     changeSub(item.value);
     try { await saveCustomTaskCategories(next); } catch (reason) { setError(reason instanceof Error ? reason.message : "保存自定义分类失败"); }
   };
-  const changeTimeType = (timeType: TaskTimeType) => setDraft((current) => ({
+  const changeTimeType = (timeType: TaskTimeType) => { setScheduleTouched(true); setDraft((current) => ({
     ...current, timeType,
     schedulePattern: timeType === "recurring" ? current.schedulePattern === "singleDate" ? "weeklyRecurring" : current.schedulePattern : "singleDate",
     date: timeType === "singleDate" ? current.date ?? initialDate : undefined,
@@ -260,14 +293,14 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
     weekStart: timeType === "weekGoal" ? current.weekStart ?? getWeekStartKey(initialDate) : undefined,
     assignmentWindow: timeType === "assignmentWindow" ? current.assignmentWindow ?? { startDate: initialDate, endDate: initialDate } : undefined,
     recurrence: timeType === "recurring" ? current.recurrence ?? { frequency: "weekly", weekdays: [new Date(`${initialDate}T00:00:00`).getDay()], startDate: initialDate } : undefined,
-  }));
-  const changePattern = (schedulePattern: SchedulePattern) => setDraft((current) => ({
+  })); };
+  const changePattern = (schedulePattern: SchedulePattern) => { setScheduleTouched(true); setDraft((current) => ({
     ...current, schedulePattern,
     recurrence: schedulePattern === "weeklyRecurring" ? current.recurrence ?? { frequency: "weekly", weekdays: [1], startDate: initialDate } : schedulePattern === "dailyRecurring" ? { frequency: "daily", startDate: current.recurrence?.startDate ?? initialDate, endDate: current.recurrence?.endDate } : undefined,
     specificDates: schedulePattern === "specificDates" ? current.specificDates ?? [initialDate] : undefined,
     startDate: ["dateRangeDaily", "dateRangeWeekdays"].includes(schedulePattern) ? current.startDate ?? initialDate : current.startDate,
     endDate: ["dateRangeDaily", "dateRangeWeekdays"].includes(schedulePattern) ? current.endDate ?? initialDate : current.endDate,
-  }));
+  })); };
   const toggleDays = (day: number, field: "allowedWeekdays" | "recurrence" | "rangeWeekdays") => {
     const values = field === "recurrence" ? draft.recurrence?.weekdays ?? [] : field === "rangeWeekdays" ? draft.rangeWeekdays ?? [] : draft.allowedWeekdays ?? [];
     const next = values.includes(day) ? values.filter((item) => item !== day) : [...values, day];
@@ -328,6 +361,10 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
       {draft.mainCategory === "extraHomework" && draft.subCategory !== "reading" && <div><p className={label}>内容</p><div className="mt-2 flex gap-1.5">{EXTRA_CONTENT_OPTIONS_SIMPLE.map((item) => <button key={item.value} type="button" onClick={() => changeExtraContent(item.value)} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${draft.extraContentType === item.value ? "bg-primary text-white" : "bg-white text-muted ring-1 ring-inset ring-ink/10"}`}>{item.label}</button>)}</div></div>}
 
       <div>
+        {courseTitle && <div className="mb-2 flex gap-1.5">
+          <button type="button" onClick={() => { setTitleTouched(false); set("title", courseTitle); if (!draft.checklistItems?.length) addChecklist(); else checklistInputs.current[draft.checklistItems[0].id]?.focus(); }} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${draft.title === courseTitle ? "bg-primary text-white" : "bg-white text-muted ring-1 ring-inset ring-ink/10"}`}>{draft.subCategory === "chinese" ? "大增作业" : "奥数作业"}</button>
+          <button type="button" onClick={() => { setTitleTouched(true); set("title", ""); titleInput.current?.focus(); }} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${titleTouched && draft.title !== courseTitle ? "bg-primary text-white" : "bg-white text-muted ring-1 ring-inset ring-ink/10"}`}>自定义标题</button>
+        </div>}
         {draft.mainCategory === "school" && schoolHomeworkTitle(draft.subCategory) && <div className="mb-2 flex gap-1.5">
           <button type="button" onClick={() => { setTitleTouched(!regularSchoolTitle || !!task); set("title", schoolHomeworkTitle(draft.subCategory)); if (!draft.checklistItems?.length) addChecklist(); else checklistInputs.current[draft.checklistItems[0].id]?.focus(); }} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${draft.title === schoolHomeworkTitle(draft.subCategory) ? "bg-primary text-white" : "bg-white text-muted ring-1 ring-inset ring-ink/10"}`}>家庭作业</button>
           <button type="button" onClick={() => { setTitleTouched(true); set("title", ""); titleInput.current?.focus(); }} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${titleTouched && draft.title !== schoolHomeworkTitle(draft.subCategory) ? "bg-primary text-white" : "bg-white text-muted ring-1 ring-inset ring-ink/10"}`}>自定义标题</button>
@@ -342,6 +379,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
       {!reading && <div><p className={label}>安排</p><div className="mt-2 grid grid-cols-3 gap-1.5">{(["singleDate", "dateRange", "recurring"] as TaskTimeType[]).map((value) => <button key={value} type="button" onClick={() => { changeTimeType(value); if (value !== "singleDate") setShowMore(true); }} className={`rounded-md px-2 py-2 text-xs font-semibold ${draft.timeType === value ? "bg-ink text-white" : "bg-white text-muted ring-1 ring-inset ring-ink/10"}`}>{value === "singleDate" ? "单日" : value === "dateRange" ? "日期段" : "重复"}</button>)}</div></div>}
 
       {draft.timeType === "singleDate" && <DateField title="日期" value={draft.date} onChange={(value) => set("date", value)} input={input} label={label} required quick />}
+      {draft.timeType === "dateRange" && <DateRange draft={draft} set={set} input={detailInput} label={label} />}
 
       {/* ── 更多设置折叠区 ── */}
       <button type="button" onClick={() => setShowMore((v) => !v)} className="flex w-full items-center justify-between border-y border-ink/10 px-1 py-2.5 text-sm font-semibold text-ink"><span>详细设置</span><ChevronDown className={`h-4 w-4 text-muted transition-transform ${showMore ? "rotate-180" : ""}`} /></button>
@@ -349,7 +387,6 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave }: Pr
       {showMore && <div className="space-y-2 rounded-lg border border-ink/10 bg-white/65 p-2.5 sm:p-3">
         {!reading && task && ["weekGoal", "assignmentWindow"].includes(task.timeType) && <label className={label}>任务类型<select value={draft.timeType} onChange={(e) => changeTimeType(e.target.value as TaskTimeType)} className={input}>{(["singleDate", "dateRange", "recurring", task.timeType] as TaskTimeType[]).filter((value, index, values) => values.indexOf(value) === index).map((value) => <option key={value} value={value}>{value === "recurring" ? "固定重复" : TIME_TYPE_META[value]}</option>)}</select></label>}
         {reading && <div className="rounded-xl bg-cyan-50 px-4 py-3 text-sm font-medium text-cyan-800">每周目标（周一到周日任意完成，不绑定固定星期）</div>}
-        {draft.timeType === "dateRange" && <DateRange draft={draft} set={set} input={detailInput} label={label} />}
         {draft.timeType === "weekGoal" && <DateField title="首次执行周" value={draft.weekStart} onChange={(value) => set("weekStart", value)} input={detailInput} label={label} required />}
         {draft.timeType === "assignmentWindow" && <div className="rounded-lg border border-emerald-100 bg-emerald-50/40 p-2.5"><p className="mb-1.5 text-sm font-semibold">课后作业周期</p><div className="grid gap-2 sm:grid-cols-3"><DateField title="来源课程" value={draft.assignmentWindow?.sourceClassDate} onChange={(value) => set("assignmentWindow", { ...draft.assignmentWindow!, sourceClassDate: value })} input={detailInput} label={label} /><DateField title="开始" value={draft.assignmentWindow?.startDate} onChange={(value) => set("assignmentWindow", { ...draft.assignmentWindow!, startDate: value })} input={detailInput} label={label} /><DateField title="截止" value={draft.assignmentWindow?.endDate} onChange={(value) => set("assignmentWindow", { ...draft.assignmentWindow!, endDate: value })} input={detailInput} label={label} /></div></div>}
         {recurring && <div className="rounded-lg border border-violet-100 bg-violet-50/40 p-2.5"><div className={`grid gap-2 ${["dailyRecurring", "weeklyRecurring"].includes(draft.schedulePattern ?? "") ? "sm:grid-cols-3" : ""}`}><label className={label}>安排方式<select value={draft.schedulePattern ?? "weeklyRecurring"} onChange={(e) => changePattern(e.target.value as SchedulePattern)} className={detailInput}><option value="dailyRecurring">每日重复</option><option value="weeklyRecurring">每周固定</option><option value="specificDates">指定日期列表</option><option value="dateRangeDaily">日期范围内每天</option><option value="dateRangeWeekdays">日期范围内按星期</option></select></label>{["dailyRecurring", "weeklyRecurring"].includes(draft.schedulePattern ?? "") && <><DateField title="开始日期" value={draft.recurrence?.startDate} onChange={(value) => set("recurrence", { ...draft.recurrence!, startDate: value })} input={detailInput} label={label} /><DateField title="结束日期（可空）" value={draft.recurrence?.endDate} onChange={(value) => set("recurrence", { ...draft.recurrence!, endDate: value || undefined })} input={detailInput} label={label} /></>}</div>{draft.schedulePattern === "weeklyRecurring" && <WeekdayPicker values={draft.recurrence?.weekdays ?? []} onToggle={(day) => toggleDays(day, "recurrence")} />}{draft.schedulePattern === "specificDates" && <MultiDatePicker values={draft.specificDates ?? []} onChange={(values) => set("specificDates", values)} initialDate={initialDate} />}{["dateRangeDaily", "dateRangeWeekdays"].includes(draft.schedulePattern ?? "") && <DateRange draft={draft} set={set} input={detailInput} label={label} />}{draft.schedulePattern === "dateRangeWeekdays" && <WeekdayPicker values={draft.rangeWeekdays ?? []} onToggle={(day) => toggleDays(day, "rangeWeekdays")} title="范围内星期" />}</div>}
@@ -385,6 +422,8 @@ function Check({ label, checked, onChange }: { label: string; checked: boolean; 
 function NumberField({ label, value, onChange, input }: { label: string; value?: number; onChange: (value?: number) => void; input: string }) { return <label className="text-sm font-medium text-stone-600">{label}<input type="number" min="1" value={value ?? ""} onChange={(e) => onChange(Number(e.target.value) || undefined)} className={input} /></label>; }
 function defaultTitle(main: MainCategory, sub: string, extraContentType?: ExtraContentType) {
   if (main !== "extraHomework") return "";
+  const homeworkTitle = courseHomeworkTitle({ mainCategory: main, subCategory: sub, extraContentType });
+  if (homeworkTitle) return homeworkTitle;
   if (extraContentType === "class") return ({ chinese: "大增语文课", math: "奥数课", english: "FCE精讲" } as Record<string, string>)[sub] ?? "";
   if (sub === "english" && extraContentType === "dictation") return "英语听写";
   if (sub === "chinese" && extraContentType === "recitation") return "语文背诵";

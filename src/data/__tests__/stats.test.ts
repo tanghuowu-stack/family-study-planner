@@ -192,6 +192,7 @@ describe("getHabitCalendars", () => {
     expect(m["2026-07-13"]).toBe("done");
     expect(m["2026-07-20"]).toBe("off");   // 未来
     expect(cals[0].currentStreak).toBe(1); // 07-13 done，07-12 漏卡截断
+    expect(cals[0].monthCompletedDays).toBe(3);
   });
 
   it("4. 休息日未完成 = off 且连续免罚穿过", async () => {
@@ -204,6 +205,7 @@ describe("getHabitCalendars", () => {
     const m = statusMap(cals[0]);
     expect(m["2026-07-12"]).toBe("off");
     expect(cals[0].currentStreak).toBe(3); // 07-13、07-11、07-10，休息日穿过
+    expect(cals[0].monthCompletedDays).toBe(3);
   });
 
   it("4b. 休息日实际完成 = done 且计入连续（免罚而非不计）", async () => {
@@ -216,6 +218,7 @@ describe("getHabitCalendars", () => {
     const m = statusMap(cals[0]);
     expect(m["2026-07-12"]).toBe("done"); // 完成优先于休息日
     expect(cals[0].currentStreak).toBe(4); // 4 天全计入
+    expect(cals[0].monthCompletedDays).toBe(4);
   });
 
   it("5. 跨月切换：同一项目不同 month 参数返回对应月，currentStreak 恒从今天算", async () => {
@@ -238,6 +241,8 @@ describe("getHabitCalendars", () => {
     expect(julyM["2026-07-03"]).toBe("off"); // 未来
     expect(june[0].currentStreak).toBe(5);   // 跨月连续
     expect(july[0].currentStreak).toBe(5);   // 与展示月份无关
+    expect(june[0].monthCompletedDays).toBe(3);
+    expect(july[0].monthCompletedDays).toBe(2);
   });
 
   it("6. 单项连续：隔日排期非应做日穿过；今天未完成不算断", async () => {

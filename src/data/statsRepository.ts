@@ -200,6 +200,8 @@ export interface HabitCalendar {
   title: string;
   /** 该项目自身的当前连续天数（与展示月份无关，恒从今天往回算） */
   currentStreak: number;
+  /** Completion days in the displayed month, counted once per calendar day. */
+  monthCompletedDays: number;
   /**
    * 该月逐日状态：done 完成（休息日完成同样算 done）/ missed 应做未完成 /
    * off 非应做日（起点前、未排期、未来）或"休息日且未完成"（免罚不算漏卡）
@@ -266,6 +268,7 @@ export async function getHabitCalendars(month: string, today: string = todayKey(
       taskId: key,
       title: groupLabel ?? taskShortName(groupTasks[0]),
       currentStreak: computeGroupStreak(groupTasks, today, occByKey, rests, start),
+      monthCompletedDays: days.filter((day) => day.status === "done").length,
       days,
     };
   });

@@ -54,6 +54,7 @@ function fullTask(): Task {
     sessionIndex: 2,
     allocationWeekStart: "2026-07-13",
     enableStreak: true,
+    pauseDuringTravel: false,
     streakStartDate: "2026-07-02",
     completedAt: "2026-07-19T10:00:00.000Z",
     deletedAt: "2026-07-19T11:00:00.000Z",
@@ -79,7 +80,7 @@ const FIELD_PAIRS: [keyof Task, unknown][] = (() => {
     ["estimatedMinutes", t.estimatedMinutes], ["actualMinutes", t.actualMinutes], ["location", t.location],
     ["important", t.important], ["calendarVisibility", t.calendarVisibility], ["parentTaskId", t.parentTaskId],
     ["sessionIndex", t.sessionIndex], ["allocationWeekStart", t.allocationWeekStart],
-    ["enableStreak", t.enableStreak], ["streakStartDate", t.streakStartDate],
+    ["enableStreak", t.enableStreak], ["streakStartDate", t.streakStartDate], ["pauseDuringTravel", t.pauseDuringTravel],
     ["completedAt", t.completedAt], ["deletedAt", t.deletedAt], ["deletedByDevice", t.deletedByDevice],
     ["deletedByActor", t.deletedByActor], ["createdAt", t.createdAt], ["updatedAt", t.updatedAt],
   ];

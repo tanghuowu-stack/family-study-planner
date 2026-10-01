@@ -1,5 +1,5 @@
 import { addDays } from "date-fns";
-import { CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, GripVertical } from "lucide-react";
+import { CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, GripVertical, Plus } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useSwipe } from "../hooks/useSwipe";
 import { EmptyState } from "../components/EmptyState";
@@ -24,6 +24,7 @@ interface Props {
   onDelete: (task: TaskDisplay) => void; onEnd: (task: TaskDisplay) => void; onExtend: (task: TaskDisplay) => void; onOccurrenceCancel: (task: TaskDisplay) => void;
   onOccurrencePostpone: (task: TaskDisplay) => void; onChecklistToggle: (task: TaskDisplay, itemId: string, asOfDate?: string) => void;
   onCopy: (task: TaskDisplay) => void; onOpenMonth: () => void;
+  onAddTask: () => void;
   unsyncedTasks?: Set<string>; unsyncedItems?: Set<string>;
   onRetrySync?: (task: TaskDisplay) => void; onRetryItemSync?: (task: TaskDisplay, itemId: string) => void;
 }
@@ -48,6 +49,8 @@ export function DayPage(props: Props) {
   const annotation = getCalendarAnnotation(props.date);
   const annotationLabels = [...annotation.solarTerms, ...annotation.festivals];
   const isToday = props.date === todayKey();
+  const [dateLabel, weekdayLabel] = formatFullDate(props.date).split(" ");
+  const navButton = "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-ink/15 bg-white text-muted shadow-sm hover:border-primary/30 hover:text-primary sm:h-10 sm:w-10";
   const renderTask = (task: TaskDisplay) => <TaskItem
     key={`${task.id}:${task.occurrenceDate ?? task.date}`}
     task={task}
@@ -60,9 +63,9 @@ export function DayPage(props: Props) {
 
   return <main className="mx-auto w-full max-w-6xl overflow-x-hidden px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
     <header className="mb-4 border-b border-ink/10 pb-4">
-      <div className="grid items-center gap-3 2xl:grid-cols-[minmax(0,1fr)_auto]">
-        <div className="min-w-0 overflow-hidden"><div className="flex min-h-8 items-center gap-2 whitespace-nowrap"><h1 className="shrink-0 text-xl font-bold leading-tight text-ink sm:text-2xl">{formatFullDate(props.date)}</h1>{annotationLabels.length > 0 && <span className="truncate text-xs font-semibold text-amber-700 sm:text-sm">{annotationLabels.join(" · ")}</span>}{!isToday && <span className="shrink-0 rounded-md bg-amber-100 px-2 py-1 text-[11px] font-bold text-amber-800">非今天</span>}{annotation.holidayStatus && <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{annotation.holidayStatus}</span>}</div></div>
-        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap"><button onClick={() => move(-1)} aria-label="前一天" title="前一天" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-ink/15 bg-white text-muted shadow-sm hover:border-primary/30 hover:text-primary"><ChevronLeft className="h-5 w-5" /></button><button onClick={() => props.onDateChange(todayKey())} disabled={isToday} className={`h-10 shrink-0 rounded-lg border px-4 text-sm font-bold transition-colors ${isToday ? "border-primary bg-primary text-white" : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"}`}>{isToday ? "今天" : "回到今天"}</button><button onClick={() => move(1)} aria-label="后一天" title="后一天" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-ink/15 bg-white text-muted shadow-sm hover:border-primary/30 hover:text-primary"><ChevronRight className="h-5 w-5" /></button><button onClick={props.onOpenMonth} aria-label="打开月视图" title="打开月视图" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-ink/15 bg-white text-muted shadow-sm hover:border-primary/30 hover:text-primary"><CalendarDays className="h-5 w-5" /></button><ProgressMeter completed={done.length} total={pending.length + done.length} /></div>
+      <div className="grid min-h-20 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 sm:gap-x-4">
+        <div className="min-w-0"><div className="flex min-h-16 flex-wrap content-center items-center gap-x-2 gap-y-1"><h1 className="text-sm font-bold leading-tight text-ink sm:text-xl xl:text-2xl"><span className="whitespace-nowrap">{dateLabel}</span><span className="block whitespace-nowrap sm:ml-2 sm:inline">{weekdayLabel}</span></h1>{annotationLabels.length > 0 && <span title={annotationLabels.join(" · ")} className="max-w-full truncate text-[11px] font-semibold text-amber-700 sm:text-sm">{annotationLabels.join(" · ")}</span>}{!isToday && <span className="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">非今天</span>}{annotation.holidayStatus && <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{annotation.holidayStatus}</span>}</div></div>
+        <div className="flex flex-col items-end gap-2"><div className="flex flex-nowrap items-center gap-1 sm:gap-2"><button onClick={() => move(-1)} aria-label="前一天" title="前一天" className={navButton}><ChevronLeft className="h-5 w-5" /></button><button onClick={() => props.onDateChange(todayKey())} aria-label={isToday ? "今天" : "回到今天"} title="回到今天" disabled={isToday} className={`h-8 w-12 shrink-0 rounded-lg border text-xs font-bold transition-colors sm:h-10 sm:w-16 sm:text-sm ${isToday ? "border-primary bg-primary text-white" : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"}`}>今天</button><button onClick={() => move(1)} aria-label="后一天" title="后一天" className={navButton}><ChevronRight className="h-5 w-5" /></button><button onClick={props.onOpenMonth} aria-label="打开月视图" title="打开月视图" className={`${navButton} hidden sm:flex`}><CalendarDays className="h-5 w-5" /></button><button onClick={props.onAddTask} aria-label="新建当日任务" title="新建任务" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-alert text-white hover:bg-[#cf5b40] sm:h-10 sm:w-10"><Plus className="h-5 w-5" /></button></div><ProgressMeter completed={done.length} total={pending.length + done.length} /></div>
       </div>
     </header>
     <div ref={swipeRef} className="space-y-4">

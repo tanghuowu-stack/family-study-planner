@@ -5,7 +5,9 @@ import type {
   TaskDraft, TaskOccurrenceStatus, TaskStatus, TaskWriteResult,
 } from "../types/task";
 import { getMonthBounds, getMonthKey, getWeekEndKey, getWeekStartKey, isDateInRange, todayKey, toDateKey, toLocalDateKey } from "../utils/date";
-import { taskOccursOn } from "../utils/recurrence";
+import { scheduleOccursOn } from "../utils/recurrence";
+import { createTravelPauseCheck } from "../utils/travelPause";
+export { scheduleOccursOn } from "../utils/recurrence";
 import { defaultSortOrder, isCourseTask, isOccurrenceSchedule, subCategoryLabel } from "../utils/taskMeta";
 import { TASK_SUBJECT_GROUPS, taskSubjectGroup } from "../utils/taskGrouping";
 
@@ -154,18 +156,6 @@ const isCalendarPlanTask = (task: Task) =>
   || (task.mainCategory === "interestClass" && (task.subCategory === "otherInterest" ? isCourseTask(task) : task.subCategory !== "pianoPractice"))
   || task.mainCategory === "temporary";
 
-export const scheduleOccursOn = (task: Task, date: string) => {
-  if (task.timeType === "singleDate") return task.date === date;
-  if (task.timeType === "dateRange") return !!task.startDate && !!task.endDate && isDateInRange(date, task.startDate, task.endDate);
-  if (task.timeType !== "recurring") return false;
-  if (task.schedulePattern === "specificDates") return task.specificDates?.includes(date) ?? false;
-  if (task.schedulePattern === "dateRangeDaily") return !!task.startDate && !!task.endDate && isDateInRange(date, task.startDate, task.endDate);
-  if (task.schedulePattern === "dateRangeWeekdays") return !!task.startDate && !!task.endDate && isDateInRange(date, task.startDate, task.endDate) && (task.rangeWeekdays?.includes(getDay(parseISO(date))) ?? false);
-  if (task.schedulePattern === "dailyRecurring") return taskOccursOn(task, date);
-  if (task.schedulePattern === "weeklyRecurring") return taskOccursOn(task, date);
-  return taskOccursOn(task, date);
-};
-
 const isRangeSchedule = (task: Task) => task.timeType === "dateRange" || (task.timeType === "recurring" && ["dateRangeDaily", "dateRangeWeekdays"].includes(task.schedulePattern ?? ""));
 
 // R1/R3 写入口防线（PROJECT_GUIDE 6.5）：剔除 TaskDisplay 的运行时展示字段；
@@ -192,14 +182,14 @@ function sanitizeTaskWrite(task: Task, previousStatus?: TaskStatus): Task {
 
 // carryOver（autoNextDay）的重复类任务：往前找最早一个已排期但未完成/未取消/未延期的日子，
 // 当作"欠着"的那一天顶替今天的名额展示；不欠账时才回落到今天本身的正常排期。
-function findPendingOccurrenceDate(task: Task, date: string, byTaskAndDate: Map<string, TaskOccurrenceStatus>): string | undefined {
+function findPendingOccurrenceDate(task: Task, date: string, byTaskAndDate: Map<string, TaskOccurrenceStatus>, paused: ReturnType<typeof createTravelPauseCheck>): string | undefined {
   if (!task.allowRollover || task.rolloverMode !== "autoNextDay" || date > todayKey()) return undefined;
   const start = task.recurrence?.startDate ?? task.startDate ?? (task.specificDates?.length ? [...task.specificDates].sort()[0] : undefined);
   if (!start) return undefined;
   let cursor = parseISO(start);
   let key = toDateKey(cursor);
   while (key < date) {
-    if (scheduleOccursOn(task, key)) {
+    if (scheduleOccursOn(task, key) && !paused(task, key)) {
       const status = byTaskAndDate.get(`${task.id}:${key}`)?.status ?? "todo";
       if (status !== "done" && status !== "cancelled" && status !== "postponed") return key;
     }
@@ -309,6 +299,7 @@ export const taskRepository = {
     const [allTasks, occurrences] = await Promise.all([db.tasks.toArray(), db.taskOccurrenceStatuses.toArray()]);
     const tasks = allTasks.filter(isActiveTask);
     const byTaskAndDate = new Map(occurrences.map((item) => [`${item.taskId}:${item.occurrenceDate}`, item]));
+    const paused = createTravelPauseCheck(tasks, occurrences);
     const result: TaskDisplay[] = [];
 
     for (const task of tasks) {
@@ -316,7 +307,7 @@ export const taskRepository = {
       // 今日页：dateRange 任务完成后，完成日之后不再出现；月历例外——旅游等跨天安排要显示完整区间
       if (!options?.forCalendar && task.status === "done" && task.timeType === "dateRange" && task.completedAt && date > toLocalDateKey(task.completedAt)) continue;
       if (isOccurrenceSchedule(task)) {
-        const pendingDate = findPendingOccurrenceDate(task, date, byTaskAndDate);
+        const pendingDate = findPendingOccurrenceDate(task, date, byTaskAndDate, paused);
         if (pendingDate) {
           const occurrence = byTaskAndDate.get(`${task.id}:${pendingDate}`);
           result.push({ ...task, status: occurrence?.status as TaskStatus ?? "todo", occurrenceDate: pendingDate, occurrenceStatus: occurrence?.status ?? "todo", overrideDate: occurrence?.overrideDate, overrideNote: occurrence?.overrideNote, rolledFromDate: pendingDate });
@@ -383,7 +374,7 @@ export const taskRepository = {
 
     const unique = new Map<string, TaskDisplay>();
     result.forEach((task) => unique.set(`${task.id}:${task.occurrenceDate ?? task.date ?? date}`, task));
-    return [...unique.values()].sort(taskSort);
+    return [...unique.values()].filter((task) => task.status === "done" || !paused(task, date)).sort(taskSort);
   },
 
   async getOverdueTasks(date: string): Promise<TaskDisplay[]> {

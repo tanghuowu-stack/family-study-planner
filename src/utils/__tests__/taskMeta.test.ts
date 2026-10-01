@@ -11,7 +11,7 @@
  * 覆盖"已结束/未结束"边界，防止再次漏某一种模式。
  */
 import { describe, expect, it } from "vitest";
-import { canEndRecurring, canExtendRecurring, isEndedRecurring, regularSchoolHomeworkTitle, schoolHomeworkTitle } from "../taskMeta";
+import { canEndRecurring, canExtendRecurring, courseHomeworkTitle, homeworkDateDefault, isEndedRecurring, regularSchoolHomeworkTitle, schoolHomeworkTitle } from "../taskMeta";
 
 describe("学校家庭作业默认标题", () => {
   const draft = { mainCategory: "school" as const, subCategory: "chinese", timeType: "singleDate" as const, date: "2026-09-29" };
@@ -33,6 +33,42 @@ describe("学校家庭作业默认标题", () => {
     expect(regularSchoolHomeworkTitle({ ...draft, timeType: "dateRange" }, [])).toBe("");
     expect(regularSchoolHomeworkTitle({ ...draft, timeType: "recurring" }, [])).toBe("");
     expect(regularSchoolHomeworkTitle({ ...draft, date: undefined }, [])).toBe("");
+  });
+  it("普通日期段可以使用家庭作业标题，但跨入假期不自动套用", () => {
+    const range = { ...draft, timeType: "dateRange" as const, startDate: "2026-09-18", endDate: "2026-09-20" };
+    expect(regularSchoolHomeworkTitle(range, [])).toBe("语文家庭作业");
+    expect(regularSchoolHomeworkTitle(range, [{ type: "holiday", startDate: "2026-09-19", endDate: "2026-09-19" }])).toBe("");
+  });
+});
+
+describe("新建作业的默认日期段", () => {
+  const extra = { mainCategory: "extraHomework" as const, subCategory: "chinese", extraContentType: "homework" as const };
+  it.each(["2026-09-26", "2026-09-27", "2026-10-01", "2026-10-02"])("大增作业 %s 属于周六至周五", (date) => {
+    expect(homeworkDateDefault(extra, date)).toEqual({ id: "dazeng", startDate: "2026-09-26", endDate: "2026-10-02" });
+  });
+  it.each(["2026-09-27", "2026-10-01", "2026-10-03"])("奥数作业 %s 属于周日至周六", (date) => {
+    expect(homeworkDateDefault({ ...extra, subCategory: "math" }, date)).toEqual({ id: "aoshu", startDate: "2026-09-27", endDate: "2026-10-03" });
+  });
+  it("新上课周末进入新日期段", () => {
+    expect(homeworkDateDefault(extra, "2026-10-03")?.startDate).toBe("2026-10-03");
+    expect(homeworkDateDefault({ ...extra, subCategory: "math" }, "2026-10-04")?.startDate).toBe("2026-10-04");
+  });
+  it.each(["chinese", "math", "english"])("周五的学校 %s 作业默认到周日", (subCategory) => {
+    expect(homeworkDateDefault({ mainCategory: "school", subCategory }, "2026-10-02")).toEqual({ id: "school-weekend", startDate: "2026-10-02", endDate: "2026-10-04" });
+  });
+  it("跨年仍是完整的一周", () => {
+    expect(homeworkDateDefault(extra, "2027-01-01")).toEqual({ id: "dazeng", startDate: "2026-12-26", endDate: "2027-01-01" });
+  });
+  it("上课、其他课外作业、兴趣班和非周五学校作业不套用", () => {
+    expect(homeworkDateDefault({ ...extra, extraContentType: "class" }, "2026-10-01")).toBeUndefined();
+    expect(homeworkDateDefault({ ...extra, subCategory: "english" }, "2026-10-01")).toBeUndefined();
+    expect(homeworkDateDefault({ ...extra, title: "小白鸥练习" }, "2026-10-01")).toBeUndefined();
+    expect(homeworkDateDefault({ ...extra, mainCategory: "interestClass" }, "2026-10-01")).toBeUndefined();
+    expect(homeworkDateDefault({ mainCategory: "school", subCategory: "chinese" }, "2026-10-01")).toBeUndefined();
+  });
+  it("模板标题与已有作业命名一致", () => {
+    expect(courseHomeworkTitle(extra)).toBe("大增语文课后作业");
+    expect(courseHomeworkTitle({ ...extra, subCategory: "math" })).toBe("奥数班作业");
   });
 });
 

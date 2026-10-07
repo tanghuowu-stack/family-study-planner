@@ -39,6 +39,18 @@ export function DayPage(props: Props) {
   const reorderTasks = async (ids: string[]) => { await getRepository().reorderTasks(ids); await reload(); };
   const pending = tasks.filter((task) => !["done", "cancelled"].includes(task.status));
   const done = tasks.filter((task) => ["done", "cancelled"].includes(task.status));
+  // 有小项时只统计小项；没有小项时，大项自身计为一项。
+  // 使用当前查看日的展示状态，历史日期的小项完成情况由数据层提供。
+  const progress = tasks.reduce((result, task) => {
+    if (task.checklistItems?.length) {
+      result.total += task.checklistItems.length;
+      result.completed += task.checklistItems.filter((item) => item.done).length;
+    } else {
+      result.total += 1;
+      if (["done", "cancelled"].includes(task.status)) result.completed += 1;
+    }
+    return result;
+  }, { completed: 0, total: 0 });
   const move = (days: number) => props.onDateChange(toDateKey(addDays(fromDateKey(props.date), days)));
   const swipeRef = useSwipe<HTMLDivElement>(
     () => move(1),   // left swipe → next day
@@ -65,7 +77,7 @@ export function DayPage(props: Props) {
     <header className="mb-4 border-b border-ink/10 pb-4">
       <div className="grid min-h-20 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 sm:gap-x-4">
         <div className="min-w-0"><div className="flex min-h-16 flex-wrap content-center items-center gap-x-2 gap-y-1"><h1 className="text-sm font-bold leading-tight text-ink sm:text-xl xl:text-2xl"><span className="whitespace-nowrap">{dateLabel}</span><span className="block whitespace-nowrap sm:ml-2 sm:inline">{weekdayLabel}</span></h1>{annotationLabels.length > 0 && <span title={annotationLabels.join(" · ")} className="max-w-full truncate text-[11px] font-semibold text-amber-700 sm:text-sm">{annotationLabels.join(" · ")}</span>}{!isToday && <span className="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">非今天</span>}{annotation.holidayStatus && <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{annotation.holidayStatus}</span>}</div></div>
-        <div className="flex flex-col items-end gap-2"><div className="flex flex-nowrap items-center gap-1 sm:gap-2"><button onClick={() => move(-1)} aria-label="前一天" title="前一天" className={navButton}><ChevronLeft className="h-5 w-5" /></button><button onClick={() => props.onDateChange(todayKey())} aria-label={isToday ? "今天" : "回到今天"} title="回到今天" disabled={isToday} className={`h-8 w-12 shrink-0 rounded-lg border text-xs font-bold transition-colors sm:h-10 sm:w-16 sm:text-sm ${isToday ? "border-primary bg-primary text-white" : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"}`}>今天</button><button onClick={() => move(1)} aria-label="后一天" title="后一天" className={navButton}><ChevronRight className="h-5 w-5" /></button><button onClick={props.onOpenMonth} aria-label="打开月视图" title="打开月视图" className={`${navButton} hidden sm:flex`}><CalendarDays className="h-5 w-5" /></button><button onClick={props.onAddTask} aria-label="新建当日任务" title="新建任务" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-alert text-white hover:bg-[#cf5b40] sm:h-10 sm:w-10"><Plus className="h-5 w-5" /></button></div><ProgressMeter completed={done.length} total={pending.length + done.length} /></div>
+        <div className="flex flex-col items-end gap-2"><div className="flex flex-nowrap items-center gap-1 sm:gap-2"><button onClick={() => move(-1)} aria-label="前一天" title="前一天" className={navButton}><ChevronLeft className="h-5 w-5" /></button><button onClick={() => props.onDateChange(todayKey())} aria-label={isToday ? "今天" : "回到今天"} title="回到今天" disabled={isToday} className={`h-8 w-12 shrink-0 rounded-lg border text-xs font-bold transition-colors sm:h-10 sm:w-16 sm:text-sm ${isToday ? "border-primary bg-primary text-white" : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"}`}>今天</button><button onClick={() => move(1)} aria-label="后一天" title="后一天" className={navButton}><ChevronRight className="h-5 w-5" /></button><button onClick={props.onOpenMonth} aria-label="打开月视图" title="打开月视图" className={`${navButton} hidden sm:flex`}><CalendarDays className="h-5 w-5" /></button><button onClick={props.onAddTask} aria-label="新建当日任务" title="新建任务" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-alert text-white hover:bg-[#cf5b40] sm:h-10 sm:w-10"><Plus className="h-5 w-5" /></button></div><ProgressMeter completed={progress.completed} total={progress.total} /></div>
       </div>
     </header>
     <div ref={swipeRef} className="space-y-4">

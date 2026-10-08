@@ -9,7 +9,7 @@ import {
 describe("school timetable settings", () => {
   it("uses the supplied timetable when no saved setting exists", () => {
     const timetable = normalizeSchoolTimetable(null);
-    expect(timetable.term).toBe("2026-2027学年度上学期");
+    expect(timetable.term).toBe("五年级上学期");
     expect(timetable.slots).toHaveLength(9);
     expect(timetable.slots.find((slot) => slot.id === "pm-1")?.courses.thursday).toBe("英语（课本）");
     expect(timetable.slots.find((slot) => slot.id === "am-1")?.time).toBe("08:25-09:05");
@@ -17,6 +17,14 @@ describe("school timetable settings", () => {
     expect(timetable.slots.find((slot) => slot.id === "am-4")?.courses.tuesday).toBe("音乐（葫芦丝）");
     expect(timetable.slots.find((slot) => slot.id === "pm-1")?.courses.thursday).toBe("英语（课本）");
     expect(timetable.slots.find((slot) => slot.id === "extended-1")?.courses.monday).toBe("英语");
+  });
+
+  it("upgrades a saved old default term without replacing a custom term", () => {
+    const saved = cloneSchoolTimetable(DEFAULT_SCHOOL_TIMETABLE);
+    saved.term = "2026-2027学年度上学期";
+    expect(normalizeSchoolTimetable(saved).term).toBe("五年级上学期");
+    saved.term = "六年级上学期";
+    expect(normalizeSchoolTimetable(saved).term).toBe("六年级上学期");
   });
 
   it("keeps the fixed row structure while accepting edited cells", () => {
@@ -51,6 +59,7 @@ describe("school timetable settings", () => {
       })),
     } as unknown as SchoolTimetable;
     const timetable = normalizeSchoolTimetable(legacy);
+    expect(timetable.term).toBe("五年级上学期");
     expect(timetable.slots[0].time).toBe("08:25-09:05");
     expect(timetable.slots.find((slot) => slot.id === "extended-1")?.courses.wednesday).toBe("云脑班");
     expect(timetable.slots.find((slot) => slot.id === "extended-2")?.courses.wednesday).toBe("云脑班");

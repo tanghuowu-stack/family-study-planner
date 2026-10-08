@@ -136,7 +136,7 @@ const courses = (monday: string, tuesday: string, wednesday: string, thursday: s
 
 export const DEFAULT_SCHOOL_TIMETABLE: SchoolTimetable = {
   version: 3,
-  term: "2026-2027学年度上学期",
+  term: "五年级上学期",
   slots: [
     { id: "am-1", section: "morning", label: "第一节", time: "08:25-09:05", courses: courses("数学", "语文", "数学", "语文", "数学") },
     { id: "am-2", section: "morning", label: "第二节", time: "09:35-10:15", courses: courses("语文", "数学", "语文", "数学", "语文") },
@@ -162,9 +162,10 @@ export function cloneSchoolTimetable(value: SchoolTimetable): SchoolTimetable {
 export function normalizeSchoolTimetable(value: SchoolTimetable | null): SchoolTimetable {
   const incomingSlots = Array.isArray(value?.slots) ? value.slots : [];
   const legacy = !value || value.version !== 3;
+  const savedTerm = typeof value?.term === "string" && value.term.trim() ? value.term.trim() : DEFAULT_SCHOOL_TIMETABLE.term;
   return {
     version: 3,
-    term: typeof value?.term === "string" && value.term.trim() ? value.term.trim() : DEFAULT_SCHOOL_TIMETABLE.term,
+    term: savedTerm === "2026-2027学年度上学期" ? DEFAULT_SCHOOL_TIMETABLE.term : savedTerm,
     slots: DEFAULT_SCHOOL_TIMETABLE.slots.map((fallback) => {
       const incoming = incomingSlots.find((slot) => slot?.id === fallback.id);
       const incomingCourses: Partial<Record<TimetableDay, unknown>> = incoming?.courses && typeof incoming.courses === "object" ? incoming.courses : {};

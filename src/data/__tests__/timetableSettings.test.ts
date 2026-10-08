@@ -45,6 +45,36 @@ describe("school timetable settings", () => {
     expect(timetable.slots[1].courses.tuesday).toBe("数学");
   });
 
+  it("highlights textbook and tool lessons while leaving Monday extended English plain", () => {
+    const timetable = normalizeSchoolTimetable(null);
+    const slot = (id: string) => timetable.slots.find((item) => item.id === id)!;
+    expect(slot("am-3").highlights.monday).toBe(true);
+    expect(slot("am-3").highlights.tuesday).toBe(true);
+    expect(slot("am-3").highlights.wednesday).toBe(true);
+    expect(slot("am-4").highlights.tuesday).toBe(true);
+    expect(slot("am-4").highlights.thursday).toBe(true);
+    expect(slot("pm-1").highlights.monday).toBe(true);
+    expect(slot("extended-1").highlights.monday).toBe(false);
+    expect(slot("extended-1").highlights.friday).toBe(false);
+  });
+
+  it("adds highlights to saved courses and preserves manual changes", () => {
+    const saved = cloneSchoolTimetable(DEFAULT_SCHOOL_TIMETABLE);
+    const club = saved.slots.find((slot) => slot.id === "extended-1")!;
+    club.courses.wednesday = "俱乐部";
+    club.courses.friday = "走班";
+    club.highlights = undefined as unknown as typeof club.highlights;
+    const migrated = normalizeSchoolTimetable(saved);
+    const highlighted = migrated.slots.find((slot) => slot.id === "extended-1")!;
+    expect(highlighted.highlights.wednesday).toBe(true);
+    expect(highlighted.highlights.friday).toBe(true);
+    highlighted.highlights.wednesday = false;
+    expect(normalizeSchoolTimetable(migrated).slots.find((slot) => slot.id === "extended-1")?.highlights.wednesday).toBe(false);
+    const copy = cloneSchoolTimetable(migrated);
+    copy.slots.find((slot) => slot.id === "extended-1")!.highlights.friday = false;
+    expect(highlighted.highlights.friday).toBe(true);
+  });
+
   it("migrates the original timetable corrections without overwriting other cells", () => {
     const legacy = {
       term: "2026-2027学年度上学期",

@@ -106,6 +106,15 @@ export function TimetablePage() {
     } : current);
   };
 
+  const updateHighlight = (slotIds: string[], day: TimetableDay, value: boolean) => {
+    setDraft((current) => current ? {
+      ...current,
+      slots: current.slots.map((slot) => slotIds.includes(slot.id)
+        ? { ...slot, highlights: { ...slot.highlights, [day]: value } }
+        : slot),
+    } : current);
+  };
+
   const updateTime = (slotId: string, value: string) => {
     setDraft((current) => current ? {
       ...current,
@@ -159,7 +168,8 @@ export function TimetablePage() {
               {TIMETABLE_DAYS.map((day) => {
                 if (slot.id === "extended-2" && mergedDays.has(day)) return null;
                 const merged = slot.id === "extended-1" && mergedDays.has(day);
-                return <td key={day} rowSpan={merged ? 3 : 1} className={`timetable-course border-b border-r border-ink/[0.08] px-2 py-3.5 text-center align-middle last:border-r-0 ${tomorrow === day ? "bg-alert/[0.035]" : "bg-white"}`}>{editing ? <input aria-label={`${DAY_LABELS[day]}${slot.label}`} value={slot.courses[day]} onChange={(event) => updateCourse(merged ? ["extended-1", "extended-2"] : [slot.id], day, event.target.value)} className="w-full rounded-md border px-1.5 py-2 text-center text-base font-bold text-ink" /> : <span className={`text-[17px] font-extrabold leading-tight ${courseClass(slot.courses[day])}`}><CourseName course={slot.courses[day]} /></span>}</td>;
+                const slotIds = merged ? ["extended-1", "extended-2"] : [slot.id];
+                return <td key={day} rowSpan={merged ? 3 : 1} className={`timetable-course border-b border-r border-ink/[0.08] px-2 py-3.5 text-center align-middle last:border-r-0 ${tomorrow === day ? "bg-alert/[0.035]" : "bg-white"}`}>{editing ? <div className="flex flex-col items-center gap-1"><input aria-label={`${DAY_LABELS[day]}${section.label}${slot.label}`} value={slot.courses[day]} onChange={(event) => updateCourse(slotIds, day, event.target.value)} className="w-full rounded-md border px-1.5 py-2 text-center text-base font-bold text-ink" /><label className="flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-muted"><input type="checkbox" aria-label={`${DAY_LABELS[day]}${section.label}${slot.label}高亮显示`} checked={slot.highlights[day]} onChange={(event) => updateHighlight(slotIds, day, event.target.checked)} className="accent-primary" />高亮显示</label></div> : <span className={`inline-block rounded-md text-[17px] font-extrabold leading-tight ${slot.highlights[day] ? "bg-mint px-2 py-1" : ""} ${courseClass(slot.courses[day])}`}><CourseName course={slot.courses[day]} /></span>}</td>;
               })}
             </tr>,
             breakMeta && (breakMeta.splitByDay ? <tr key={`${slot.id}-break`} className="timetable-break timetable-break-split bg-[#F5F4F1]"><th aria-hidden="true" className="sticky left-0 z-20 border-b border-r border-ink/[0.08] bg-[#F5F4F1] px-3 py-1" />{TIMETABLE_DAYS.map((day) => {
@@ -170,6 +180,7 @@ export function TimetablePage() {
           ];
         })}</tbody>
       </table></div></section>
+      <p className="mt-2 text-center text-[11px] font-medium text-muted">标注课需要带课本或工具。</p>
     </main>
   );
 }

@@ -118,6 +118,7 @@ export interface TimetableSlot {
   label: string;
   time: string;
   courses: Record<TimetableDay, string>;
+  highlights: Record<TimetableDay, boolean>;
 }
 
 export interface SchoolTimetable {
@@ -134,19 +135,34 @@ const courses = (monday: string, tuesday: string, wednesday: string, thursday: s
   friday,
 });
 
+function defaultCourseHighlight(section: TimetableSection, day: TimetableDay, course: string): boolean {
+  const name = course.trim();
+  if (day === "wednesday" && name.startsWith("俱乐部")) return true;
+  if (day === "friday" && name.startsWith("走班")) return true;
+  if (section === "extended" && day === "monday" && name.startsWith("英语")) return false;
+  return /^(英语|劳动|美术|道法|音乐|科学)(?:[（(]|$)/.test(name);
+}
+
+function timetableSlot(id: string, section: TimetableSection, label: string, time: string, names: Record<TimetableDay, string>): TimetableSlot {
+  return {
+    id, section, label, time, courses: names,
+    highlights: Object.fromEntries(TIMETABLE_DAYS.map((day) => [day, defaultCourseHighlight(section, day, names[day])])) as Record<TimetableDay, boolean>,
+  };
+}
+
 export const DEFAULT_SCHOOL_TIMETABLE: SchoolTimetable = {
   version: 3,
   term: "五年级上学期",
   slots: [
-    { id: "am-1", section: "morning", label: "第一节", time: "08:25-09:05", courses: courses("数学", "语文", "数学", "语文", "数学") },
-    { id: "am-2", section: "morning", label: "第二节", time: "09:35-10:15", courses: courses("语文", "数学", "语文", "数学", "语文") },
-    { id: "am-3", section: "morning", label: "第三节", time: "10:30-11:10", courses: courses("英语（课本）", "道法（课本）", "科学（课本）", "道法（课本）", "体健") },
-    { id: "am-4", section: "morning", label: "第四节", time: "11:30-12:10", courses: courses("足球", "音乐（葫芦丝）", "足球", "美术", "书法") },
-    { id: "pm-1", section: "afternoon", label: "第一节", time: "14:00-14:40", courses: courses("劳动", "科学（课本）", "信息", "英语（课本）", "队课") },
-    { id: "pm-2", section: "afternoon", label: "第二节", time: "15:00-15:40", courses: courses("美术", "心理", "音乐（葫芦丝）", "体健", "英语（课本）") },
-    { id: "extended-1", section: "extended", label: "第三节", time: "15:55-16:35", courses: courses("英语", "数学", "云脑班", "社团", "俱乐部") },
-    { id: "extended-2", section: "extended", label: "第四节", time: "16:50-17:30", courses: courses("数学", "语文", "云脑班", "语文", "俱乐部") },
-    { id: "extended-3", section: "extended", label: "第五节", time: "17:30-17:55", courses: courses("数学", "语文", "语文", "语文", "云脑班") },
+    timetableSlot("am-1", "morning", "第一节", "08:25-09:05", courses("数学", "语文", "数学", "语文", "数学")),
+    timetableSlot("am-2", "morning", "第二节", "09:35-10:15", courses("语文", "数学", "语文", "数学", "语文")),
+    timetableSlot("am-3", "morning", "第三节", "10:30-11:10", courses("英语（课本）", "道法（课本）", "科学（课本）", "道法（课本）", "体健")),
+    timetableSlot("am-4", "morning", "第四节", "11:30-12:10", courses("足球", "音乐（葫芦丝）", "足球", "美术", "书法")),
+    timetableSlot("pm-1", "afternoon", "第一节", "14:00-14:40", courses("劳动", "科学（课本）", "信息", "英语（课本）", "队课")),
+    timetableSlot("pm-2", "afternoon", "第二节", "15:00-15:40", courses("美术", "心理", "音乐（葫芦丝）", "体健", "英语（课本）")),
+    timetableSlot("extended-1", "extended", "第三节", "15:55-16:35", courses("英语", "数学", "云脑班", "社团", "俱乐部")),
+    timetableSlot("extended-2", "extended", "第四节", "16:50-17:30", courses("数学", "语文", "云脑班", "语文", "俱乐部")),
+    timetableSlot("extended-3", "extended", "第五节", "17:30-17:55", courses("数学", "语文", "语文", "语文", "云脑班")),
   ],
 };
 
@@ -154,7 +170,7 @@ export function cloneSchoolTimetable(value: SchoolTimetable): SchoolTimetable {
   return {
     version: 3,
     term: value.term,
-    slots: value.slots.map((slot) => ({ ...slot, courses: { ...slot.courses } })),
+    slots: value.slots.map((slot) => ({ ...slot, courses: { ...slot.courses }, highlights: { ...slot.highlights } })),
   };
 }
 
@@ -169,24 +185,32 @@ export function normalizeSchoolTimetable(value: SchoolTimetable | null): SchoolT
     slots: DEFAULT_SCHOOL_TIMETABLE.slots.map((fallback) => {
       const incoming = incomingSlots.find((slot) => slot?.id === fallback.id);
       const incomingCourses: Partial<Record<TimetableDay, unknown>> = incoming?.courses && typeof incoming.courses === "object" ? incoming.courses : {};
+      const incomingHighlights: Partial<Record<TimetableDay, unknown>> = incoming?.highlights && typeof incoming.highlights === "object" ? incoming.highlights : {};
+      const normalizedCourses = Object.fromEntries(TIMETABLE_DAYS.map((day) => [
+        day,
+        legacy && (
+          (day === "wednesday" && ["extended-1", "extended-2"].includes(fallback.id) && incomingCourses[day] === "俱乐部")
+          || (day === "friday" && fallback.id === "extended-3" && incomingCourses[day] === "看班")
+        )
+          ? fallback.courses[day]
+          : typeof incomingCourses[day] === "string"
+            ? legacy && fallback.section !== "extended"
+              ? decorateCourseName(incomingCourses[day] as string)
+              : incomingCourses[day]
+            : fallback.courses[day],
+      ])) as Record<TimetableDay, string>;
       return {
         ...fallback,
         time: legacy && (!incoming?.time || incoming.time === "15:05-16:35")
           ? fallback.time
           : typeof incoming?.time === "string" ? incoming.time : fallback.time,
-        courses: Object.fromEntries(TIMETABLE_DAYS.map((day) => [
+        courses: normalizedCourses,
+        highlights: Object.fromEntries(TIMETABLE_DAYS.map((day) => [
           day,
-          legacy && (
-            (day === "wednesday" && ["extended-1", "extended-2"].includes(fallback.id) && incomingCourses[day] === "俱乐部")
-            || (day === "friday" && fallback.id === "extended-3" && incomingCourses[day] === "看班")
-          )
-            ? fallback.courses[day]
-            : typeof incomingCourses[day] === "string"
-              ? legacy && fallback.section !== "extended"
-                ? decorateCourseName(incomingCourses[day] as string)
-                : incomingCourses[day]
-              : fallback.courses[day],
-        ])) as Record<TimetableDay, string>,
+          typeof incomingHighlights[day] === "boolean"
+            ? incomingHighlights[day]
+            : defaultCourseHighlight(fallback.section, day, normalizedCourses[day]),
+        ])) as Record<TimetableDay, boolean>,
       };
     }),
   };

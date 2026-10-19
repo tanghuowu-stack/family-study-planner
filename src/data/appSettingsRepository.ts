@@ -6,10 +6,14 @@ import type { TaskSubjectGroup } from "../utils/taskGrouping";
 const SETTINGS_KEY = "group_sort_order";
 
 /** 通用 jsonb 设置读取：本地 localStorage 缓存 + 云端 app_settings（family_id+key 唯一） */
-async function loadJsonSetting<T>(key: string): Promise<T | null> {
+async function loadJsonSetting<T>(key: string, reconcile?: (cached: T | null, remote: T) => T): Promise<T | null> {
   const cacheKey = `app_settings:${key}`;
   const cached = localStorage.getItem(cacheKey);
-  const cachedValue: T | null = cached ? JSON.parse(cached) : null;
+  let cachedValue: T | null = null;
+  if (cached) {
+    try { cachedValue = JSON.parse(cached) as T; }
+    catch { localStorage.removeItem(cacheKey); }
+  }
 
   if (!isCloudMode() || !supabase) return cachedValue;
 
@@ -23,7 +27,8 @@ async function loadJsonSetting<T>(key: string): Promise<T | null> {
       .maybeSingle();
     if (error) throw error;
     if (data?.value != null) {
-      const value = data.value as T;
+      const remoteValue = data.value as T;
+      const value = reconcile ? reconcile(cachedValue, remoteValue) : remoteValue;
       localStorage.setItem(cacheKey, JSON.stringify(value));
       return value;
     }
@@ -76,6 +81,48 @@ export async function loadCustomTaskCategories(): Promise<CustomTaskCategories> 
 
 export async function saveCustomTaskCategories(value: CustomTaskCategories): Promise<void> {
   return saveJsonSetting(CUSTOM_TASK_CATEGORIES_KEY, value, "自定义任务分类同步失败");
+}
+
+// ── 侧栏备忘录 ───────────────────────────────────────────────────────────────
+
+const SIDEBAR_MEMO_KEY = "sidebar_memo";
+
+export interface SidebarMemoSetting {
+  text: string;
+  updatedAt: string;
+}
+
+export function normalizeSidebarMemoSetting(value: unknown): SidebarMemoSetting {
+  // 兼容可能曾手工写入的纯字符串值；正式写入统一使用带时间戳的对象，
+  // 这样云端旧内容不会盖掉刚在本机输入、但暂时未成功同步的文字。
+  if (typeof value === "string") return { text: value, updatedAt: "" };
+  if (value && typeof value === "object") {
+    const setting = value as Partial<SidebarMemoSetting>;
+    return {
+      text: typeof setting.text === "string" ? setting.text : "",
+      updatedAt: typeof setting.updatedAt === "string" ? setting.updatedAt : "",
+    };
+  }
+  return { text: "", updatedAt: "" };
+}
+
+export function latestSidebarMemoSetting(cached: unknown, remote: unknown): SidebarMemoSetting {
+  const localSetting = normalizeSidebarMemoSetting(cached);
+  const remoteSetting = normalizeSidebarMemoSetting(remote);
+  return localSetting.updatedAt > remoteSetting.updatedAt ? localSetting : remoteSetting;
+}
+
+export async function loadSidebarMemo(): Promise<string> {
+  const setting = await loadJsonSetting<unknown>(SIDEBAR_MEMO_KEY, latestSidebarMemoSetting);
+  return normalizeSidebarMemoSetting(setting).text;
+}
+
+export async function saveSidebarMemo(text: string): Promise<void> {
+  return saveJsonSetting(
+    SIDEBAR_MEMO_KEY,
+    { text, updatedAt: new Date().toISOString() } satisfies SidebarMemoSetting,
+    "备忘录云端同步失败",
+  );
 }
 
 // ── 统计设置（TASK_08）────────────────────────────────────────────────────────

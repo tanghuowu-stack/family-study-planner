@@ -1,7 +1,8 @@
 import { BarChart3, CalendarCheck2, CalendarDays, Cloud, ClipboardList, Home, Plus, Table2 } from "lucide-react";
 import { addDays } from "date-fns";
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { TaskForm } from "./components/TaskForm";
+import { SidebarMemo } from "./components/SidebarMemo";
 import { ExtendRecurringDialog } from "./components/ExtendRecurringDialog";
 import { getRepository, isCloudMode, setCloudMode } from "./data/repositoryProvider";
 import { cloudRepository, setCloudSyncErrorHandler } from "./data/cloudRepository";
@@ -15,6 +16,7 @@ import { TimetablePage } from "./pages/TimetablePage";
 import type { Task, TaskDisplay, TaskDraft, TaskStatus } from "./types/task";
 import { fromDateKey, todayKey, toDateKey } from "./utils/date";
 import { isOccurrenceSchedule, itemSyncKey, taskSyncKey } from "./utils/taskMeta";
+import { loadSidebarMemo, saveSidebarMemo } from "./data/appSettingsRepository";
 
 type Page = "today" | "month" | "tasks" | "stats" | "timetable";
 const navItems = [
@@ -36,6 +38,13 @@ export default function App() {
   const [cloudInitializing, setCloudInitializing] = useState(true);
   const [unsyncedTasks, setUnsyncedTasks] = useState<Set<string>>(new Set());
   const [unsyncedItems, setUnsyncedItems] = useState<Set<string>>(new Set());
+  const [memo, setMemo] = useState("");
+  const memoRef = useRef("");
+  const memoEditingRef = useRef(false);
+  const memoLoadRequestRef = useRef(0);
+  const memoEditVersionRef = useRef(0);
+  const memoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const memoSaveQueueRef = useRef(Promise.resolve());
 
   const refresh = () => setRefreshKey((value) => value + 1);
   const notify = (text: string) => { setToast(text); setTimeout(() => setToast(""), 2600); };
@@ -45,6 +54,60 @@ export default function App() {
     set((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
   const clearUnsynced = (set: Dispatch<SetStateAction<Set<string>>>, key: string) =>
     set((prev) => { if (!prev.has(key)) return prev; const next = new Set(prev); next.delete(key); return next; });
+
+  const queueMemoSave = (value: string) => {
+    memoSaveQueueRef.current = memoSaveQueueRef.current.then(() => saveSidebarMemo(value));
+    return memoSaveQueueRef.current;
+  };
+  const beginMemoEdit = () => { memoEditVersionRef.current += 1; memoEditingRef.current = true; };
+  const changeMemo = (value: string) => {
+    memoEditingRef.current = true;
+    memoRef.current = value;
+    setMemo(value);
+    if (memoSaveTimerRef.current) clearTimeout(memoSaveTimerRef.current);
+    memoSaveTimerRef.current = setTimeout(() => {
+      memoSaveTimerRef.current = null;
+      void queueMemoSave(memoRef.current);
+    }, 1000);
+  };
+  const finishMemoEdit = async () => {
+    if (memoSaveTimerRef.current) { clearTimeout(memoSaveTimerRef.current); memoSaveTimerRef.current = null; }
+    const editVersion = memoEditVersionRef.current;
+    const save = queueMemoSave(memoRef.current);
+    await save;
+    // 点完成按钮时会先触发 textarea blur，再触发按钮 click。只有自己仍是最后一次操作时才结束编辑锁，
+    // 避免“保存旧文字”的回声在“清空”请求完成前把旧内容短暂写回界面。
+    if (editVersion === memoEditVersionRef.current && save === memoSaveQueueRef.current) memoEditingRef.current = false;
+  };
+  const completeMemo = async () => {
+    if (memoSaveTimerRef.current) { clearTimeout(memoSaveTimerRef.current); memoSaveTimerRef.current = null; }
+    const editVersion = ++memoEditVersionRef.current;
+    memoEditingRef.current = true;
+    memoRef.current = "";
+    setMemo("");
+    const save = queueMemoSave("");
+    await save;
+    if (editVersion === memoEditVersionRef.current && save === memoSaveQueueRef.current) memoEditingRef.current = false;
+  };
+
+  // 云端拉取或 Realtime 触发刷新时重读备忘录；编辑期间忽略远端结果，避免旧内容冲掉正在输入的文字。
+  useEffect(() => {
+    const requestId = ++memoLoadRequestRef.current;
+    void loadSidebarMemo().then((value) => {
+      if (memoEditingRef.current || requestId !== memoLoadRequestRef.current) return;
+      memoRef.current = value;
+      setMemo(value);
+    });
+  }, [refreshKey, cloudMode]);
+
+  useEffect(() => {
+    const flushMemo = () => { if (memoEditingRef.current) void saveSidebarMemo(memoRef.current); };
+    window.addEventListener("pagehide", flushMemo);
+    return () => {
+      window.removeEventListener("pagehide", flushMemo);
+      if (memoSaveTimerRef.current) clearTimeout(memoSaveTimerRef.current);
+    };
+  }, []);
 
   // ── 云同步启动/切换 ─────────────────────────────────────────────────────────
   // 挂载时跑一次，登录/登出后由 CloudLoginPanel 回调再跑一次。
@@ -159,13 +222,14 @@ export default function App() {
       </button>
       <button onClick={() => setForm({ open: true })} className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-alert px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#cf5b40]"><Plus className="h-4 w-4" />新建任务</button>
       <nav className="mt-6 space-y-1">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium ${page === value ? "bg-white text-ink" : "text-white/65 hover:bg-white/10 hover:text-white"}`}><Icon className="h-4 w-4" />{label}{page === value && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-alert" />}</button>)}</nav>
+      <SidebarMemo value={memo} variant="sidebar" onFocus={beginMemoEdit} onChange={changeMemo} onBlur={() => void finishMemoEdit()} onComplete={() => void completeMemo()} />
       <div className="mt-auto border-t border-white/10 pt-4">
         {!cloudInitializing && <div className="flex items-center gap-2 px-2 text-xs text-white/55"><span className={`h-2 w-2 rounded-full ${cloudMode ? "bg-emerald-400" : "bg-white/30"}`} /><Cloud className="h-3.5 w-3.5" />{cloudMode ? "云端已连接" : "本地模式"}</div>}
       </div>
     </aside>
     <header className="pt-safe sticky top-0 z-40 border-b border-ink/10 bg-paper/95 backdrop-blur-xl lg:hidden"><div className="flex h-14 items-center justify-between px-4"><button onClick={() => setPage("today")} className="flex items-center gap-2.5"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink text-white"><CalendarCheck2 className="h-4 w-4" /></span><span className="text-left text-base font-bold">小步计划</span></button><div className="flex items-center gap-2">{!cloudInitializing && <span title={cloudMode ? "云端已连接" : "本地模式"} className={`h-2 w-2 rounded-full ${cloudMode ? "bg-emerald-500" : "bg-stone-300"}`} />}<button aria-label="添加任务" onClick={() => setForm({ open: true })} className="flex h-9 w-9 items-center justify-center rounded-lg bg-alert text-white"><Plus className="h-4 w-4" /></button></div></div></header>
     <div className="app-content">
-      {page === "today" && <DayPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenMonth={() => setPage("month")} onAddTask={() => setForm({ open: true })} {...actions} />}
+      {page === "today" && <DayPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenMonth={() => setPage("month")} onAddTask={() => setForm({ open: true })} memo={memo} onMemoFocus={beginMemoEdit} onMemoChange={changeMemo} onMemoBlur={() => void finishMemoEdit()} onMemoComplete={() => void completeMemo()} {...actions} />}
       {page === "month" && <MonthPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenDay={openDay} onAddTask={(date) => { setSelectedDate(date); setForm({ open: true }); }} />}
       {page === "tasks" && <TaskManagementPage refreshKey={refreshKey} onRefresh={refresh} notify={notify} onEdit={(task) => setForm({ open: true, task })} onDelete={deleteTask} onEnd={endTask} onExtend={extendTask} onCopy={copyTask} />}
       {page === "stats" && <StatsPage onImported={refresh} cloudMode={cloudMode} onAuthChange={syncCloudSession} />}

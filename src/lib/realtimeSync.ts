@@ -24,7 +24,7 @@ const PERIODIC_PULL_MS = 3 * 60 * 1000;
 const RECONNECT_BASE_MS = 2_000;
 const RECONNECT_MAX_MS = 30_000;
 /** 加入 realtime publication 的表 */
-const TABLES = ["tasks", "task_checklist_items", "task_occurrence_statuses", "plan_periods", "courses"] as const;
+const TABLES = ["tasks", "task_checklist_items", "task_occurrence_statuses", "plan_periods", "courses", "app_settings"] as const;
 
 type Channel = ReturnType<NonNullable<typeof supabase>["channel"]>;
 

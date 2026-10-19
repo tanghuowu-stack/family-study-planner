@@ -12,6 +12,7 @@ import { formatFullDate, fromDateKey, toDateKey, todayKey } from "../utils/date"
 import { TASK_SUBJECT_GROUPS, groupDayTasks, normalizeSubjectOrder, type TaskSubjectGroup } from "../utils/taskGrouping";
 import { useGroupOrder } from "../hooks/useGroupOrder";
 import { itemSyncKey, taskSyncKey } from "../utils/taskMeta";
+import { SidebarMemo } from "../components/SidebarMemo";
 
 function ProgressMeter({ completed, total }: { completed: number; total: number }) {
   const percentage = total === 0 ? 0 : (completed / total) * 100;
@@ -25,6 +26,7 @@ interface Props {
   onOccurrencePostpone: (task: TaskDisplay) => void; onChecklistToggle: (task: TaskDisplay, itemId: string, asOfDate?: string) => void;
   onCopy: (task: TaskDisplay) => void; onOpenMonth: () => void;
   onAddTask: () => void;
+  memo: string; onMemoFocus: () => void; onMemoChange: (value: string) => void; onMemoBlur: () => void; onMemoComplete: () => void;
   unsyncedTasks?: Set<string>; unsyncedItems?: Set<string>;
   onRetrySync?: (task: TaskDisplay) => void; onRetryItemSync?: (task: TaskDisplay, itemId: string) => void;
 }
@@ -80,6 +82,7 @@ export function DayPage(props: Props) {
         <div className="day-header-actions flex flex-nowrap items-center gap-1 sm:gap-2"><button onClick={() => move(-1)} aria-label="前一天" title="前一天" className={navButton}><ChevronLeft className="h-5 w-5" /></button><button onClick={() => props.onDateChange(todayKey())} aria-label={isToday ? "今天" : "回到今天"} title="回到今天" disabled={isToday} className={`h-8 w-20 shrink-0 rounded-lg border text-sm font-bold transition-colors sm:h-10 sm:w-20 ${isToday ? "border-primary bg-primary text-white" : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"}`}>今天</button><button onClick={() => move(1)} aria-label="后一天" title="后一天" className={navButton}><ChevronRight className="h-5 w-5" /></button><button onClick={props.onOpenMonth} aria-label="打开月视图" title="打开月视图" className={`${navButton} hidden sm:flex`}><CalendarDays className="h-5 w-5" /></button><button onClick={props.onAddTask} aria-label="新建当日任务" title="新建任务" className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-alert text-white hover:bg-[#cf5b40] lg:flex lg:h-10 lg:w-10"><Plus className="h-5 w-5" /></button></div>
       </div>
     </header>
+    <SidebarMemo value={props.memo} variant="narrow" onFocus={props.onMemoFocus} onChange={props.onMemoChange} onBlur={props.onMemoBlur} onComplete={props.onMemoComplete} />
     <div ref={swipeRef} className="space-y-4">
       {overdue.length > 0 && <section className="surface overflow-visible border-alert/35"><div className="flex items-center justify-between border-b border-alert/20 bg-alert/[0.06] px-3 py-2"><h2 className="text-xs font-bold text-alert">逾期未完成</h2><span className="text-xs font-bold tabular-nums text-alert">{overdue.length}</span></div>{overdue.map(renderTask)}</section>}
       <section className="surface overflow-visible"><div className="flex items-center gap-2 border-b border-ink/10 px-3 py-2.5 sm:px-4"><h2 className="shrink-0 text-sm font-bold text-ink">{isToday ? "今日清单" : "当日清单"}</h2><ProgressMeter completed={progress.completed} total={progress.total} /><span className="ml-auto shrink-0 text-[11px] text-muted">{pending.length} 项待完成</span></div>{pending.length ? <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} onTaskReorder={reorderTasks} /> : <div className="p-3"><EmptyState compact /></div>}</section>

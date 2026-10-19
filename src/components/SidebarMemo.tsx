@@ -34,7 +34,6 @@ export function SidebarMemo({ value, variant, onFocus, onChange, onBlur, onCompl
         aria-label="备忘录内容"
         value={value}
         rows={3}
-        placeholder="写下明天要带的东西…"
         onFocus={onFocus}
         onChange={(event) => onChange(event.target.value)}
         onBlur={onBlur}

@@ -6,13 +6,14 @@ interface Props {
   variant: "sidebar" | "narrow";
   editorOpen?: boolean;
   focusRequest?: number;
+  busy?: boolean;
   onFocus: () => void;
   onChange: (value: string) => void;
   onBlur: () => void;
   onComplete: () => void;
 }
 
-export function SidebarMemo({ value, variant, editorOpen = false, focusRequest = 0, onFocus, onChange, onBlur, onComplete }: Props) {
+export function SidebarMemo({ value, variant, editorOpen = false, focusRequest = 0, busy = false, onFocus, onChange, onBlur, onComplete }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [focused, setFocused] = useState(false);
   const hasContent = value.trim().length > 0;
@@ -58,8 +59,9 @@ export function SidebarMemo({ value, variant, editorOpen = false, focusRequest =
           <button
             type="button"
             onClick={onComplete}
-            aria-label="完成并清除备忘录"
-            title="完成并清除"
+            aria-label="完成并归档备忘录"
+            title="完成并存入历史备忘"
+            disabled={busy}
             className={`flex shrink-0 items-center justify-center rounded-md border ${sidebar ? "h-7 w-7 border-white/20 text-white/70 hover:bg-white/10 hover:text-white" : "h-11 w-11 border-primary/30 text-primary hover:bg-mint"}`}
           >
             <Check className="h-4 w-4" />
@@ -71,6 +73,8 @@ export function SidebarMemo({ value, variant, editorOpen = false, focusRequest =
         aria-label="备忘录内容"
         value={value}
         rows={3}
+        readOnly={busy}
+        aria-busy={busy}
         onFocus={() => { setFocused(true); onFocus(); }}
         onChange={(event) => onChange(event.target.value)}
         onBlur={() => { setFocused(false); onBlur(); }}

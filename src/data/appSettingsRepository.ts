@@ -28,7 +28,10 @@ async function loadJsonSetting<T>(key: string, reconcile?: (cached: T | null, re
     if (error) throw error;
     if (data?.value != null) {
       const remoteValue = data.value as T;
-      const value = reconcile ? reconcile(cachedValue, remoteValue) : remoteValue;
+      // 请求发出后可能又有本机写入；不能用请求开始时的旧缓存回滚新备忘录/历史。
+      const currentCache = localStorage.getItem(cacheKey);
+      const currentValue = reconcile && currentCache ? JSON.parse(currentCache) as T : cachedValue;
+      const value = reconcile ? reconcile(currentValue, remoteValue) : remoteValue;
       localStorage.setItem(cacheKey, JSON.stringify(value));
       return value;
     }
@@ -86,24 +89,38 @@ export async function saveCustomTaskCategories(value: CustomTaskCategories): Pro
 // ── 侧栏备忘录 ───────────────────────────────────────────────────────────────
 
 const SIDEBAR_MEMO_KEY = "sidebar_memo";
+export const MEMO_HISTORY_LIMIT = 50;
+
+export interface MemoHistoryEntry {
+  id: string;
+  text: string;
+  completedAt: string;
+}
 
 export interface SidebarMemoSetting {
   text: string;
   updatedAt: string;
+  history: MemoHistoryEntry[];
 }
 
 export function normalizeSidebarMemoSetting(value: unknown): SidebarMemoSetting {
   // 兼容可能曾手工写入的纯字符串值；正式写入统一使用带时间戳的对象，
   // 这样云端旧内容不会盖掉刚在本机输入、但暂时未成功同步的文字。
-  if (typeof value === "string") return { text: value, updatedAt: "" };
+  if (typeof value === "string") return { text: value, updatedAt: "", history: [] };
   if (value && typeof value === "object") {
     const setting = value as Partial<SidebarMemoSetting>;
     return {
       text: typeof setting.text === "string" ? setting.text : "",
       updatedAt: typeof setting.updatedAt === "string" ? setting.updatedAt : "",
+      history: Array.isArray(setting.history) ? setting.history
+        .filter((entry): entry is MemoHistoryEntry => !!entry && typeof entry.id === "string" && !!entry.id && typeof entry.text === "string" && !!entry.text.trim() && typeof entry.completedAt === "string" && Number.isFinite(Date.parse(entry.completedAt)))
+        .filter((entry, index, all) => all.findIndex((other) => other.id === entry.id) === index)
+        .map(({ id, text, completedAt }) => ({ id, text, completedAt }))
+        .sort((a, b) => Date.parse(b.completedAt) - Date.parse(a.completedAt))
+        .slice(0, MEMO_HISTORY_LIMIT) : [],
     };
   }
-  return { text: "", updatedAt: "" };
+  return { text: "", updatedAt: "", history: [] };
 }
 
 export function latestSidebarMemoSetting(cached: unknown, remote: unknown): SidebarMemoSetting {
@@ -112,17 +129,53 @@ export function latestSidebarMemoSetting(cached: unknown, remote: unknown): Side
   return localSetting.updatedAt > remoteSetting.updatedAt ? localSetting : remoteSetting;
 }
 
-export async function loadSidebarMemo(): Promise<string> {
+export async function loadSidebarMemoState(): Promise<SidebarMemoSetting> {
   const setting = await loadJsonSetting<unknown>(SIDEBAR_MEMO_KEY, latestSidebarMemoSetting);
-  return normalizeSidebarMemoSetting(setting).text;
+  return normalizeSidebarMemoSetting(setting);
+}
+
+export async function loadSidebarMemo(): Promise<string> {
+  return (await loadSidebarMemoState()).text;
+}
+
+let memoWriteQueue: Promise<unknown> = Promise.resolve();
+
+function updateSidebarMemo(update: (current: SidebarMemoSetting) => SidebarMemoSetting): Promise<SidebarMemoSetting> {
+  // 自动保存、归档、恢复、删除按顺序读取最新基准，单个 jsonb 写入同时保存正文和历史。
+  const operation = memoWriteQueue.then(async () => {
+    const current = await loadSidebarMemoState();
+    const updatedAt = new Date(Math.max(Date.now(), (Date.parse(current.updatedAt) || 0) + 1)).toISOString();
+    const next = normalizeSidebarMemoSetting({ ...update(current), updatedAt });
+    await saveJsonSetting(SIDEBAR_MEMO_KEY, next, "备忘录云端同步失败");
+    return next;
+  });
+  // 队列自身可以继续；原始 Promise 仍返回调用方处理失败。
+  memoWriteQueue = operation.then(() => undefined, () => undefined);
+  return operation;
 }
 
 export async function saveSidebarMemo(text: string): Promise<void> {
-  return saveJsonSetting(
-    SIDEBAR_MEMO_KEY,
-    { text, updatedAt: new Date().toISOString() } satisfies SidebarMemoSetting,
-    "备忘录云端同步失败",
-  );
+  await updateSidebarMemo((current) => ({ ...current, text }));
+}
+
+export function archiveSidebarMemo(text: string): Promise<SidebarMemoSetting> {
+  return updateSidebarMemo((current) => {
+    if (!text.trim()) return current;
+    return { ...current, text: "", history: [{ id: crypto.randomUUID(), text, completedAt: new Date().toISOString() }, ...current.history] };
+  });
+}
+
+export function restoreSidebarMemo(id: string): Promise<SidebarMemoSetting> {
+  return updateSidebarMemo((current) => {
+    const entry = current.history.find((item) => item.id === id);
+    if (!entry) throw new Error("这条历史备忘已被恢复或删除，请刷新后重试");
+    return { ...current, text: current.text.trim() ? `${current.text}\n\n${entry.text}` : entry.text, history: current.history.filter((item) => item.id !== id) };
+  });
+}
+
+export function deleteSidebarMemoHistory(id: string): Promise<SidebarMemoSetting> {
+  // 用户明确要求永久删除历史；移出同一个设置的历史数组并更新时间，跨端同步。
+  return updateSidebarMemo((current) => ({ ...current, history: current.history.filter((item) => item.id !== id) }));
 }
 
 // ── 统计设置（TASK_08）────────────────────────────────────────────────────────

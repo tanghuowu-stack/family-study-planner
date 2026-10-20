@@ -3,6 +3,8 @@ import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { CloudLoginPanel } from "../components/CloudLoginPanel";
 import { getCalendarDisplaySettings, saveCalendarDisplaySettings, type CalendarDisplaySettings } from "../data/calendarAnnotations";
 import { HabitSection } from "../components/HabitSection";
+import { MemoHistorySection } from "../components/MemoHistorySection";
+import type { MemoHistoryEntry } from "../data/appSettingsRepository";
 import { taskRepository } from "../data/taskRepository";
 import { getRepository } from "../data/repositoryProvider";
 import { canUndoActivityLog, undoActivityLog } from "../data/activityUndo";
@@ -11,7 +13,17 @@ import { todayKey, toLocalDateKey } from "../utils/date";
 
 type CourseStats = Awaited<ReturnType<typeof taskRepository.getCourseStatistics>>;
 
-export function StatsPage({ onImported, cloudMode, onAuthChange }: { onImported: () => void; cloudMode?: boolean; onAuthChange?: () => void | Promise<void> }) {
+interface Props {
+  onImported: () => void;
+  cloudMode?: boolean;
+  onAuthChange?: () => void | Promise<void>;
+  memoHistory: MemoHistoryEntry[];
+  memoBusy: boolean;
+  onRestoreMemo: (id: string) => Promise<void>;
+  onDeleteMemo: (id: string) => Promise<void>;
+}
+
+export function StatsPage({ onImported, cloudMode, onAuthChange, memoHistory, memoBusy, onRestoreMemo, onDeleteMemo }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState("");
   const [deviceLabel, setDeviceLabel] = useState(() => localStorage.getItem("familyPlanner.deviceLabel") ?? "");
@@ -25,7 +37,7 @@ export function StatsPage({ onImported, cloudMode, onAuthChange }: { onImported:
   const [backupOpen, setBackupOpen] = useState(false);
   const [cloudSyncOpen, setCloudSyncOpen] = useState(false);
   const [moreSettingsOpen, setMoreSettingsOpen] = useState(false);
-  const loadLogs = () => getRepository().listActivityLogs(100).then(setLogs);
+  const loadLogs = () => getRepository().listActivityLogs(50).then(setLogs);
   useEffect(() => { void loadLogs(); }, []);
   const handleUndo = async (log: ActivityLog) => {
     if (!confirm(`撤回"${actionLabel(log.actionType)}${log.entityTitle ? "：" + log.entityTitle : ""}"这条操作吗？`)) return;
@@ -55,6 +67,7 @@ export function StatsPage({ onImported, cloudMode, onAuthChange }: { onImported:
     {message && <p className="mt-4 rounded-xl bg-sage-50 px-4 py-3 text-sm text-sage-700">{message}</p>}
     <section className="surface mt-6 p-4 sm:p-5"><button onClick={() => setMoreSettingsOpen(!moreSettingsOpen)} className="flex w-full items-center justify-between text-left"><span><span className="section-heading block">System</span><span className="mt-1 block font-bold">更多设置</span></span><span className="inline-flex items-center gap-1 text-xs text-stone-500">{moreSettingsOpen ? "收起" : "展开"}<ChevronDown className={`h-4 w-4 transition ${moreSettingsOpen ? "rotate-180" : ""}`} /></span></button>
       {moreSettingsOpen && <div className="mt-4 space-y-4">
+        <MemoHistorySection entries={memoHistory} busy={memoBusy} onRestore={onRestoreMemo} onDelete={onDeleteMemo} />
         <div><button onClick={() => setCloudSyncOpen(!cloudSyncOpen)} className="flex w-full items-center justify-between text-left"><span className="text-sm font-semibold">云同步</span><span className="inline-flex items-center gap-1 text-xs text-stone-500">{cloudSyncOpen ? "收起" : "展开"}<ChevronDown className={`h-4 w-4 transition ${cloudSyncOpen ? "rotate-180" : ""}`} /></span></button>{cloudSyncOpen && <div className="mt-3"><CloudLoginPanel cloudMode={cloudMode} onAuthChange={onAuthChange} /></div>}</div>
         <div className="border-t pt-4"><h3 className="text-sm font-semibold">本机名称</h3><div className="mt-2 inline-flex items-center gap-2"><span className="text-xs text-stone-500">名称</span><input value={deviceLabel} onChange={(event) => setDeviceLabel(event.target.value)} placeholder="例如：书房 MacBook" className="w-36 rounded-lg border px-2.5 py-1.5 text-sm" /><button onClick={() => { localStorage.setItem("familyPlanner.deviceLabel", deviceLabel.trim() || "本地设备"); setMessage("本机名称已保存"); }} className="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-white">保存</button></div></div>
         <div className="border-t pt-4"><h3 className="text-sm font-semibold">数据备份</h3><button onClick={() => setBackupOpen(!backupOpen)} className="mt-2 flex w-full items-center justify-between text-left"><span className="text-xs text-stone-500">导入 / 导出</span><span className="inline-flex items-center gap-1 text-xs text-stone-500">{backupOpen ? "收起" : "展开"}<ChevronDown className={`h-4 w-4 transition ${backupOpen ? "rotate-180" : ""}`} /></span></button>{backupOpen && <div className="mt-3 grid gap-4 sm:grid-cols-2"><ActionCard icon={<Download />} title="导出备份" text="保存全部任务、软删除记录和操作日志。" button="导出备份" onClick={exportData} /><div className="rounded-2xl border border-stone-100 bg-white p-5 shadow-card"><span className="inline-flex rounded-xl bg-amber-50 p-2 text-amber-700"><Upload className="h-5 w-5" /></span><h2 className="mt-3 font-semibold">导入备份</h2><p className="mt-1 text-sm text-stone-500">从 JSON 文件恢复任务。</p><input ref={fileRef} type="file" accept=".json,application/json" onChange={importData} className="hidden" /><button onClick={() => fileRef.current?.click()} className="mt-4 w-full rounded-xl border px-4 py-2.5 text-sm font-semibold">选择备份文件</button></div></div>}</div>

@@ -39,6 +39,8 @@ export default function App() {
   const [unsyncedTasks, setUnsyncedTasks] = useState<Set<string>>(new Set());
   const [unsyncedItems, setUnsyncedItems] = useState<Set<string>>(new Set());
   const [memo, setMemo] = useState("");
+  const [memoEditorOpen, setMemoEditorOpen] = useState(false);
+  const [memoFocusRequest, setMemoFocusRequest] = useState(0);
   const memoRef = useRef("");
   const memoEditingRef = useRef(false);
   const memoLoadRequestRef = useRef(0);
@@ -60,6 +62,15 @@ export default function App() {
     return memoSaveQueueRef.current;
   };
   const beginMemoEdit = () => { memoEditVersionRef.current += 1; memoEditingRef.current = true; };
+  const openMemoEditor = () => {
+    beginMemoEdit();
+    setMemoEditorOpen(true);
+    setMemoFocusRequest((value) => value + 1);
+  };
+  const finishNarrowMemoEdit = () => {
+    setMemoEditorOpen(false);
+    void finishMemoEdit();
+  };
   const changeMemo = (value: string) => {
     memoEditingRef.current = true;
     memoRef.current = value;
@@ -85,6 +96,7 @@ export default function App() {
     memoEditingRef.current = true;
     memoRef.current = "";
     setMemo("");
+    setMemoEditorOpen(false);
     const save = queueMemoSave("");
     await save;
     if (editVersion === memoEditVersionRef.current && save === memoSaveQueueRef.current) memoEditingRef.current = false;
@@ -215,21 +227,21 @@ export default function App() {
   const openDay = (date: string) => { setSelectedDate(date); setPage("today"); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const actions = { onStatusChange: changeStatus, onChecklistToggle: toggleChecklist, onCopy: copyTask, onEdit: (task: Task) => setForm({ open: true, task }), onDelete: deleteTask, onEnd: endTask, onExtend: extendTask, onOccurrenceCancel: cancelOccurrence, onOccurrencePostpone: postponeOccurrence, unsyncedTasks, unsyncedItems, onRetrySync: retryTaskSync, onRetryItemSync: retryItemSync };
   return <div className="min-h-screen bg-paper text-ink">
-    <aside className="fixed inset-y-0 left-0 z-50 hidden w-56 flex-col bg-ink px-3 py-5 text-white lg:flex">
+    <aside className="fixed inset-y-0 left-0 z-50 hidden w-56 flex-col overflow-y-auto bg-ink px-3 py-5 text-white lg:flex">
       <button onClick={() => setPage("today")} className="flex items-center gap-3 px-2 text-left">
         <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-alert text-white"><CalendarCheck2 className="h-5 w-5" /></span>
         <span><span className="block text-lg font-bold">小步计划</span><span className="block text-[10px] text-white/50">家庭执行台</span></span>
       </button>
-      <button onClick={() => setForm({ open: true })} className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-alert px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#cf5b40]"><Plus className="h-4 w-4" />新建任务</button>
+      <button onClick={() => setForm({ open: true })} className="mt-6 flex w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-alert px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#cf5b40]"><Plus className="h-4 w-4" />新建任务</button>
       <nav className="mt-6 space-y-1">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium ${page === value ? "bg-white text-ink" : "text-white/65 hover:bg-white/10 hover:text-white"}`}><Icon className="h-4 w-4" />{label}{page === value && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-alert" />}</button>)}</nav>
       <SidebarMemo value={memo} variant="sidebar" onFocus={beginMemoEdit} onChange={changeMemo} onBlur={() => void finishMemoEdit()} onComplete={() => void completeMemo()} />
-      <div className="mt-auto border-t border-white/10 pt-4">
+      <div className="mt-auto shrink-0 border-t border-white/10 pt-4">
         {!cloudInitializing && <div className="flex items-center gap-2 px-2 text-xs text-white/55"><span className={`h-2 w-2 rounded-full ${cloudMode ? "bg-emerald-400" : "bg-white/30"}`} /><Cloud className="h-3.5 w-3.5" />{cloudMode ? "云端已连接" : "本地模式"}</div>}
       </div>
     </aside>
-    <header className="pt-safe sticky top-0 z-40 border-b border-ink/10 bg-paper/95 backdrop-blur-xl lg:hidden"><div className="flex h-14 items-center justify-between px-4"><button onClick={() => setPage("today")} className="flex items-center gap-2.5"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink text-white"><CalendarCheck2 className="h-4 w-4" /></span><span className="text-left text-base font-bold">小步计划</span></button><div className="flex items-center gap-2">{!cloudInitializing && <span title={cloudMode ? "云端已连接" : "本地模式"} className={`h-2 w-2 rounded-full ${cloudMode ? "bg-emerald-500" : "bg-stone-300"}`} />}<button aria-label="添加任务" onClick={() => setForm({ open: true })} className="flex h-9 w-9 items-center justify-center rounded-lg bg-alert text-white"><Plus className="h-4 w-4" /></button></div></div></header>
+    <header className="pt-safe sticky top-0 z-40 border-b border-ink/10 bg-paper/95 backdrop-blur-xl lg:hidden"><div className="flex h-14 items-center justify-between px-4"><button onClick={() => setPage("today")} className="flex items-center gap-2.5"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink text-white"><CalendarCheck2 className="h-4 w-4" /></span><span className="text-left text-base font-bold">小步计划</span></button><div className="flex items-center gap-2">{!cloudInitializing && <span title={cloudMode ? "云端已连接" : "本地模式"} className={`h-2 w-2 rounded-full ${cloudMode ? "bg-emerald-500" : "bg-stone-300"}`} />}{page === "today" && <button type="button" onClick={openMemoEditor} aria-controls="today-memo" aria-expanded={memoEditorOpen} className="h-11 shrink-0 rounded-lg border border-ink/10 bg-white px-3 text-sm font-medium text-muted hover:text-primary">备忘</button>}<button aria-label="添加任务" onClick={() => setForm({ open: true })} className="flex h-11 w-11 items-center justify-center rounded-lg bg-alert text-white"><Plus className="h-4 w-4" /></button></div></div></header>
     <div className="app-content">
-      {page === "today" && <DayPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenMonth={() => setPage("month")} onAddTask={() => setForm({ open: true })} memo={memo} onMemoFocus={beginMemoEdit} onMemoChange={changeMemo} onMemoBlur={() => void finishMemoEdit()} onMemoComplete={() => void completeMemo()} {...actions} />}
+      {page === "today" && <DayPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenMonth={() => setPage("month")} onAddTask={() => setForm({ open: true })} memo={memo} memoEditorOpen={memoEditorOpen} memoFocusRequest={memoFocusRequest} onMemoFocus={beginMemoEdit} onMemoChange={changeMemo} onMemoBlur={finishNarrowMemoEdit} onMemoComplete={() => void completeMemo()} {...actions} />}
       {page === "month" && <MonthPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenDay={openDay} onAddTask={(date) => { setSelectedDate(date); setForm({ open: true }); }} />}
       {page === "tasks" && <TaskManagementPage refreshKey={refreshKey} onRefresh={refresh} notify={notify} onEdit={(task) => setForm({ open: true, task })} onDelete={deleteTask} onEnd={endTask} onExtend={extendTask} onCopy={copyTask} />}
       {page === "stats" && <StatsPage onImported={refresh} cloudMode={cloudMode} onAuthChange={syncCloudSession} />}

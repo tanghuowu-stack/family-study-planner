@@ -5,6 +5,7 @@
 ## 2026-10-23
 
 - 更换应用图标为打卡点阵方案，补上浏览器标签图标（favicon.svg / favicon.ico）；apple-touch-icon 补 180/167/152 三个尺寸，Service Worker 缓存版本升至 v2 以便旧图标立即刷新。
+- 手机与 iPad 窄屏顶部栏“小步计划”前的 logo 换成新的打卡点阵图标（复用 favicon.svg）；Mac 宽屏侧栏 logo 保持不变。
 
 ## 2026-10-20
 

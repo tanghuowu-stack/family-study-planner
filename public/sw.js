@@ -11,7 +11,7 @@
  * 3. index.html 走 network-first——保证推新版本后用户能拿到新代码，不会卡在旧版本。
  *    /assets/ 下是 Vite 带内容哈希的文件名（改动必然换名），可以放心 cache-first。
  */
-const VERSION = "v1";
+const VERSION = "v2";
 const SHELL_CACHE = `xiaobu-shell-${VERSION}`;
 const ASSET_CACHE = `xiaobu-assets-${VERSION}`;
 const KEEP = [SHELL_CACHE, ASSET_CACHE];

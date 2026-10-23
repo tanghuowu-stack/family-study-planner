@@ -1,4 +1,4 @@
-import { BarChart3, CalendarCheck2, CalendarDays, Cloud, ClipboardList, Home, Plus, Table2 } from "lucide-react";
+import { BarChart3, CalendarDays, Cloud, ClipboardList, Home, Plus, Table2 } from "lucide-react";
 import { addDays } from "date-fns";
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { TaskForm } from "./components/TaskForm";
@@ -261,7 +261,7 @@ export default function App() {
   return <div className="min-h-screen bg-paper text-ink">
     <aside className="fixed inset-y-0 left-0 z-50 hidden w-56 flex-col overflow-y-auto bg-ink px-3 py-5 text-white lg:flex">
       <button onClick={() => setPage("today")} className="flex items-center gap-3 px-2 text-left">
-        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-alert text-white"><CalendarCheck2 className="h-5 w-5" /></span>
+        <img src="/favicon.svg" alt="" className="h-10 w-10 rounded-lg" />
         <span><span className="block text-lg font-bold">小步计划</span><span className="block text-[10px] text-white/50">家庭执行台</span></span>
       </button>
       <button onClick={() => setForm({ open: true })} className="mt-6 flex w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-alert px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#cf5b40]"><Plus className="h-4 w-4" />新建任务</button>

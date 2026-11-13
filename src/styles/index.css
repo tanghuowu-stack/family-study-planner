@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  --color-primary: #245747;
+  --color-primary: #2B7656;
   --color-mint: #DCEAE3;
   --color-lavender: #E8EEEB;
   --color-ink: #202925;
@@ -25,7 +25,7 @@ button, input, select, textarea { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease, opacity 160ms ease, transform 160ms ease; }
 button:active { transform: translateY(1px); }
 input, select, textarea { border-color: #d9ddd9; background-color: #fff; }
-input:focus, select:focus, textarea:focus { border-color: var(--color-primary); outline: none; box-shadow: 0 0 0 3px rgba(36, 87, 71, 0.1); }
+input:focus, select:focus, textarea:focus { border-color: var(--color-primary); outline: none; box-shadow: 0 0 0 3px rgba(43, 118, 86, 0.12); }
 ::selection { background: #c8ddd2; color: var(--color-ink); }
 
 body::before {

@@ -6,7 +6,7 @@ export default {
       colors: {
         ink: "#202925",
         paper: "#F4F2ED",
-        primary: "#245747",
+        primary: "#2B7656",
         mint: "#DCEAE3",
         lavender: "#E8EEEB",
         muted: "#6E7772",

@@ -50,7 +50,7 @@ export function TaskManagementPage(props: Props) {
     const count = await getRepository().batchRemove([...selected]);
     await reload(); props.onRefresh(); props.notify(`已删除 ${count} 项任务`);
   };
-  return <main className="task-management mx-auto w-full max-w-4xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
+  return <main className="task-management mx-auto w-full max-w-4xl xl:max-w-6xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
     <header className="page-header"><h1 className="page-title shrink-0">任务管理</h1>{selected.size > 0 && <button onClick={batchDelete} className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white"><Trash2 className="h-4 w-4" />删除已选（{selected.size}）</button>}</header>
     <div className="mb-5 flex flex-wrap items-center gap-1 border-b border-ink/10">{(["all", "current", "regular", "holiday"] as const).map((value) => <button key={value} onClick={() => setFilter(value)} className={`border-b-2 px-3 py-2.5 text-[13px] font-semibold ${filter === value ? "border-alert text-ink" : "border-transparent text-muted hover:text-ink"}`}>{value === "current" ? `当前阶段 · ${currentHoliday ? "假期" : "平时"}` : { all: "全部", regular: "平时", holiday: "假期" }[value]}</button>)}<span className="ml-2 hidden text-[13px] text-stone-400 sm:inline">今天：{currentHoliday?.name ?? "平时"}</span></div>
     <div className="space-y-5">{order.map((category) => <TaskGroup key={category} category={category} sortable onReorder={async (ids) => { await getRepository().reorderTasks(ids); await reload(); props.onRefresh(); }} tasks={pending.filter((task) => task.mainCategory === category)} selected={selected} onToggle={toggle} onSelectGroup={selectIds} {...props} />)}</div>

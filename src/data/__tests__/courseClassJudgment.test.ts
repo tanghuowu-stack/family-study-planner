@@ -12,7 +12,7 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "../db";
 import { taskRepository } from "../taskRepository";
-import { courseOptionLabel, customSubCategoryValue, interestContentType, isCourseTask, isValidSubCategory, subCategoryLabel, SUB_CATEGORY_OPTIONS } from "../../utils/taskMeta";
+import { courseOptionLabel, customSubCategoryValue, defaultRollover, interestContentType, isCourseTask, isValidSubCategory, subCategoryLabel, SUB_CATEGORY_OPTIONS } from "../../utils/taskMeta";
 import { groupDayTasks, type DayGroupable } from "../../utils/taskGrouping";
 import type { ExtraContentType, MainCategory, Task, TaskDraft } from "../../types/task";
 
@@ -188,5 +188,26 @@ describe("课程表单 / 新建任务表单辅助", () => {
     expect(courseOptionLabel(a, all)).toBe("跳绳课（兴趣班·其他兴趣班）");
     expect(courseOptionLabel(b, all)).toBe("跳绳课（课外班·语文）");
     expect(courseOptionLabel(c, all)).toBe("游泳课");
+  });
+});
+
+describe("defaultRollover：新建任务时“没做完时”的默认值（2026-11-13 上课类单列）", () => {
+  it("上课类默认“当天没做就算了”：课外班上课、钢琴/游泳/轮滑课、勾了“算作上课”的其他兴趣班", () => {
+    for (const task of [
+      { mainCategory: "extraHomework" as const, subCategory: "english", extraContentType: "class" as const },
+      { mainCategory: "interestClass" as const, subCategory: "piano" },
+      { mainCategory: "interestClass" as const, subCategory: "swimming" },
+      { mainCategory: "interestClass" as const, subCategory: "rollerSkating" },
+      { mainCategory: "interestClass" as const, subCategory: "otherInterest", extraContentType: "class" as const },
+    ]) expect(defaultRollover(task)).toEqual({ rolloverMode: "skipIfMissed", allowRollover: false });
+  });
+
+  it("课外班作业、钢琴练习、阅读计划默认“挪到第二天”；学校作业、其他安排、没勾上课的其他兴趣班默认“留在原日标红”", () => {
+    expect(defaultRollover({ mainCategory: "extraHomework", subCategory: "math", extraContentType: "homework" })).toEqual({ rolloverMode: "autoNextDay", allowRollover: true });
+    expect(defaultRollover({ mainCategory: "interestClass", subCategory: "pianoPractice" })).toEqual({ rolloverMode: "autoNextDay", allowRollover: true });
+    expect(defaultRollover({ mainCategory: "readingPlan", subCategory: "reading" })).toEqual({ rolloverMode: "autoNextDay", allowRollover: true });
+    expect(defaultRollover({ mainCategory: "school", subCategory: "chinese" })).toEqual({ rolloverMode: "keepOverdue", allowRollover: false });
+    expect(defaultRollover({ mainCategory: "temporary", subCategory: "travel" })).toEqual({ rolloverMode: "keepOverdue", allowRollover: false });
+    expect(defaultRollover({ mainCategory: "interestClass", subCategory: "otherInterest" })).toEqual({ rolloverMode: "keepOverdue", allowRollover: false });
   });
 });

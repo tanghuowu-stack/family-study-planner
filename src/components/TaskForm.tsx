@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { taskRepository } from "../data/taskRepository";
 import { getRepository } from "../data/repositoryProvider";
 import { getCalendarAnnotation } from "../data/calendarAnnotations";
-import { courseHomeworkTitle, homeworkDateDefault, regularSchoolHomeworkTitle, schoolHomeworkTitle } from "../utils/taskMeta";
+import { courseHomeworkTitle, defaultRollover, homeworkDateDefault, regularSchoolHomeworkTitle, schoolHomeworkTitle } from "../utils/taskMeta";
 import { loadCustomTaskCategories, saveCustomTaskCategories, type CustomTaskCategories } from "../data/appSettingsRepository";
 import type { Course, ExtraContentType, MainCategory, PlanPeriod, SchedulePattern, Task, TaskDisplay, TaskDraft, TaskStatus, TaskTimeType, WeeklyQuota } from "../types/task";
 import { fromDateKey, getWeekStartKey, todayKey, toDateKey } from "../utils/date";
@@ -32,6 +32,9 @@ const carryFrom = (draft: TaskDraft): Partial<TaskDraft> => ({
   rangeWeekdays: draft.rangeWeekdays, rolloverMode: draft.rolloverMode, allowRollover: draft.allowRollover,
   planPeriodId: draft.planPeriodId, applicablePeriodType: draft.applicablePeriodType,
 });
+
+/** 按分类与内容补上"没做完时"的默认值（上课类当天没上就算了，见 taskMeta.defaultRollover） */
+const withDefaultRollover = (draft: TaskDraft): TaskDraft => ({ ...draft, ...defaultRollover(draft) });
 
 /** 没做完时怎么办（rolloverMode）的界面说法；存储值不变 */
 const ROLLOVER_CHOICES = [
@@ -174,7 +177,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
     const course = courses.find((item) => item.id === courseId);
     if (!course) return;
     setTitleTouched(true);
-    setDraft((current) => ({
+    setDraft((current) => withDefaultRollover({
       ...current,
       courseId,
       mainCategory: course.mainCategory,
@@ -268,7 +271,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
     // 切换分类后二级类型置空、必须手动选择，不静默落到第一项（选中后由 changeSub 补齐标题/顺延/排序）
     const subCategory = "";
     const reading = mainCategory === "readingPlan";
-    const auto = mainCategory === "extraHomework" || reading;
+    const extraContentType: ExtraContentType | undefined = mainCategory === "extraHomework" ? "homework" : undefined;
     setAddingCategory(false);
     setCustomCategoryName("");
     setDraft((current) => ({
@@ -276,31 +279,32 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
       timeType: reading ? "weekGoal" : current.timeType, weekStart: reading ? getWeekStartKey(initialDate) : current.weekStart,
       schedulePattern: reading ? "singleDate" : current.schedulePattern, specificDates: reading ? undefined : current.specificDates,
       weeklyQuota: reading ? { enabled: true, targetCount: 1, unit: "本", isWeeklyRecurring: true, allowAutoDistribute: true, allowRollover: true } : undefined,
-      extraContentType: mainCategory === "extraHomework" ? "homework" : undefined,
-      rolloverMode: auto ? "autoNextDay" : "keepOverdue", allowRollover: auto, sortOrder: defaultSortOrder(mainCategory, subCategory),
+      extraContentType,
+      ...defaultRollover({ mainCategory, subCategory, extraContentType }), sortOrder: defaultSortOrder(mainCategory, subCategory),
     }));
   };
   const changeSub = (subCategory: string) => {
-    const auto = draft.mainCategory === "extraHomework" || draft.mainCategory === "readingPlan" || subCategory === "pianoPractice";
     const isReading = draft.mainCategory === "extraHomework" && subCategory === "reading";
-    setDraft((current) => ({
-      ...current, subCategory, courseId: undefined,
+    setDraft((current) => {
       // 兴趣班：只有"其他兴趣班"用任务级"算作上课"标记（默认勾上）；换到其他二级类型必须清掉，
       // 否则钢琴练习会带着残留的 class 标记被算成上课
-      extraContentType: isReading ? undefined
+      const extraContentType = isReading ? undefined
         : draft.mainCategory === "extraHomework" ? (current.extraContentType ?? "homework")
         : draft.mainCategory === "interestClass" ? (["otherInterest"].includes(subCategory) || isCustomSubCategory(subCategory) ? interestContentType(true) : undefined)
-        : current.extraContentType,
+        : current.extraContentType;
+      return {
+      ...current, subCategory, courseId: undefined,
+      extraContentType,
       title: isReading ? "" : (titleTouched ? current.title : current.mainCategory === "school"
         ? regularSchoolHomeworkTitle({ ...current, subCategory }, periods, getCalendarAnnotation(current.date ?? current.startDate ?? initialDate).holidayStatus === "休")
         : defaultTitle(current.mainCategory, subCategory, current.extraContentType)),
-      rolloverMode: auto ? "autoNextDay" : "keepOverdue", allowRollover: auto,
+      ...defaultRollover({ mainCategory: current.mainCategory, subCategory, extraContentType }),
       sortOrder: defaultSortOrder(current.mainCategory, subCategory),
-    }));
+    }; });
     if (isReading) setTitleTouched(false);
   };
   const changeExtraContent = (extraContentType: ExtraContentType) => {
-    setDraft((current) => ({ ...current, extraContentType,
+    setDraft((current) => ({ ...current, extraContentType, ...defaultRollover({ ...current, extraContentType }),
       title: titleTouched ? current.title : defaultTitle(current.mainCategory, current.subCategory, extraContentType),
     }));
   };
@@ -404,7 +408,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
           {addingCategory && <div className="mt-2 flex max-w-sm items-center gap-1.5"><input autoFocus value={customCategoryName} onChange={(event) => setCustomCategoryName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void addCustomCategory(); } }} placeholder="例如：跳绳课" className="min-w-0 flex-1 rounded-lg border border-primary/30 bg-white px-3 py-2 text-sm outline-none focus:border-primary" /><button type="button" onClick={() => void addCustomCategory()} className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white">添加</button><button type="button" aria-label="取消添加分类" onClick={() => { setAddingCategory(false); setCustomCategoryName(""); }} className="rounded p-1.5 text-muted hover:bg-white"><X className="h-4 w-4" /></button></div>}
         </div>
 
-        {draft.mainCategory === "interestClass" && (draft.subCategory === "otherInterest" || isCustomSubCategory(draft.subCategory)) && <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={draft.extraContentType === "class"} onChange={(e) => set("extraContentType", interestContentType(e.target.checked))} className="h-4 w-4 rounded" />算作上课</label>}
+        {draft.mainCategory === "interestClass" && (draft.subCategory === "otherInterest" || isCustomSubCategory(draft.subCategory)) && <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={draft.extraContentType === "class"} onChange={(e) => setDraft((current) => withDefaultRollover({ ...current, extraContentType: interestContentType(e.target.checked) }))} className="h-4 w-4 rounded" />算作上课</label>}
 
         {draft.mainCategory === "extraHomework" && draft.subCategory !== "reading" && <div><p className={label}>是上课还是作业</p><div className="mt-1.5 grid max-w-xs grid-cols-2 gap-1.5">{EXTRA_CONTENT_OPTIONS_SIMPLE.map((item) => <button key={item.value} type="button" onClick={() => changeExtraContent(item.value)} className={segment(draft.extraContentType === item.value)}>{item.label}</button>)}</div></div>}
 

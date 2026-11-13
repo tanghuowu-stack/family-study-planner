@@ -262,6 +262,19 @@ export const isCourseTask = (task: { mainCategory: MainCategory; subCategory: st
   (task.mainCategory === "extraHomework" && task.extraContentType === "class")
   || (task.mainCategory === "interestClass" && (FIXED_CLASS_INTEREST_SUBS.includes(task.subCategory) || task.extraContentType === "class"));
 
+/**
+ * 新建任务时"没做完时"的默认值（2026-11-13 起上课类单列）：
+ * - 上课（isCourseTask：课外班上课、钢琴/游泳/轮滑课、勾了"算作上课"的兴趣班）→ 当天没上就算了，不挪、不标红；
+ * - 课外班作业、阅读计划、钢琴练习 → 挪到第二天；
+ * - 其余（学校作业、其他安排等）→ 留在原日标红。
+ * 只决定表单默认值，已有任务不改；用户在"更多设置"里手动改的以手动为准（直到再切换分类/内容）。
+ */
+export function defaultRollover(task: { mainCategory: MainCategory; subCategory: string; extraContentType?: ExtraContentType }): { rolloverMode: RolloverMode; allowRollover: boolean } {
+  if (isCourseTask(task)) return { rolloverMode: "skipIfMissed", allowRollover: false };
+  const auto = task.mainCategory === "extraHomework" || task.mainCategory === "readingPlan" || task.subCategory === "pianoPractice";
+  return auto ? { rolloverMode: "autoNextDay", allowRollover: true } : { rolloverMode: "keepOverdue", allowRollover: false };
+}
+
 /** 兴趣班任务应写入的内容类型：勾了"算作上课"记 class，否则不写（钢琴/游泳/轮滑不依赖它，照样算上课） */
 export const interestContentType = (isClass: boolean): ExtraContentType | undefined => isClass ? "class" : undefined;
 

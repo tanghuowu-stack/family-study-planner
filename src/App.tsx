@@ -29,7 +29,8 @@ const navItems = [
 export default function App() {
   const [page, setPage] = useState<Page>("today");
   const [selectedDate, setSelectedDate] = useState(todayKey());
-  const [form, setForm] = useState<{ open: boolean; task?: Task }>({ open: false });
+  // carry / justAdded / round：「保存，再加一个」时用上一张表单的分类与日期重新打开一张空白表单（round 变化即重新挂载）
+  const [form, setForm] = useState<{ open: boolean; task?: Task; carry?: Partial<TaskDraft>; justAdded?: string[]; round?: number }>({ open: false });
   const [extendTarget, setExtendTarget] = useState<Task | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [toast, setToast] = useState("");
@@ -266,18 +267,18 @@ export default function App() {
   const copyTask = async (task: Task) => { const taskDate = task.date ?? task.startDate ?? selectedDate; const defaultDate = toDateKey(addDays(fromDateKey(taskDate), 1)); const date = prompt("复制到哪一天？请输入 YYYY-MM-DD", defaultDate); if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return; await repo().copyToDate(task.id, date); refresh(); notify(`已复制到 ${date}`); };
   const deleteTask = async (task: Task) => { if (!confirm(`确定删除"${task.title}"吗？${task.timeType === "recurring" ? "这会删除整个重复任务。" : ""}`)) return; await repo().remove(task.id); refresh(); notify("任务已删除"); };
   // 结束长期重复任务：今天起不再排期，但任务本体保留、历史记录与统计月历卡片继续可见（区别于删除的软删）
-  const endTask = async (task: Task) => { if (!confirm(`结束"${task.title}"吗？今天起不再排期，历史记录和打卡月历都会保留。`)) return; const { synced } = await repo().endRecurring(task.id); refresh(); if (synced) notify("已结束，今天起不再排期"); else notifyFailure("⚠️ 已保存到本地，未同步云端，请检查网络"); };
+  const endTask = async (task: Task) => { if (!confirm(`今天起不再安排"${task.title}"吗？历史记录和打卡月历都会保留，之后可以用"继续安排"恢复。`)) return; const { synced } = await repo().endRecurring(task.id); refresh(); if (synced) notify("今天起不再安排"); else notifyFailure("⚠️ 已保存到本地，未同步云端，请检查网络"); };
   // 延长周期：只改 recurrence.endDate，不建新任务——替代"到期后手动新建同名任务续期"
   const extendTask = (task: Task) => setExtendTarget(task);
   const confirmExtend = async (newEndDate: string | undefined) => {
     if (!extendTarget) return;
     const { synced } = await repo().extendRecurring(extendTarget.id, newEndDate);
     refresh();
-    if (synced) notify(newEndDate ? `已延长到 ${newEndDate}` : "已延长为不限期");
+    if (synced) notify(newEndDate ? `已继续安排到 ${newEndDate}` : "已改为长期安排");
     else notifyFailure("⚠️ 已保存到本地，未同步云端，请检查网络");
   };
-  const cancelOccurrence = async (task: TaskDisplay) => { if (!task.occurrenceDate || !confirm("只取消这一次课程吗？")) return; await repo().setOccurrence(task.id, task.occurrenceDate, "cancelled"); refresh(); notify("本次课程已取消"); };
-  const postponeOccurrence = async (task: TaskDisplay) => { if (!task.occurrenceDate) return; const date = prompt("延期到哪一天？请输入 YYYY-MM-DD", task.overrideDate ?? task.occurrenceDate); if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return; const note = prompt("调整备注（可选）", task.overrideNote ?? "") ?? ""; await repo().setOccurrence(task.id, task.occurrenceDate, "postponed", date, note); refresh(); notify(`已延期到 ${date}`); };
+  const cancelOccurrence = async (task: TaskDisplay) => { if (!task.occurrenceDate || !confirm("这一次跳过吗？只影响这一天，以后照常安排。")) return; await repo().setOccurrence(task.id, task.occurrenceDate, "cancelled"); refresh(); notify("这一次已跳过"); };
+  const postponeOccurrence = async (task: TaskDisplay) => { if (!task.occurrenceDate) return; const date = prompt("这一次改到哪一天？请输入 YYYY-MM-DD", task.overrideDate ?? task.occurrenceDate); if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return; const note = prompt("调整备注（可选）", task.overrideNote ?? "") ?? ""; await repo().setOccurrence(task.id, task.occurrenceDate, "postponed", date, note); refresh(); notify(`这一次已改到 ${date}`); };
   const openDay = (date: string) => { setSelectedDate(date); setPage("today"); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const actions = { onStatusChange: changeStatus, onChecklistToggle: toggleChecklist, onCopy: copyTask, onEdit: (task: Task) => setForm({ open: true, task }), onDelete: deleteTask, onEnd: endTask, onExtend: extendTask, onOccurrenceCancel: cancelOccurrence, onOccurrencePostpone: postponeOccurrence, unsyncedTasks, unsyncedItems, onRetrySync: retryTaskSync, onRetryItemSync: retryItemSync };
   return <div className="min-h-screen bg-paper text-ink">
@@ -302,7 +303,7 @@ export default function App() {
       {page === "timetable" && <TimetablePage />}
     </div>
     <nav className="bottom-nav-safe fixed inset-x-0 bottom-0 z-40 border-t border-ink/10 bg-white/95 backdrop-blur lg:hidden"><div className="grid grid-cols-5 px-2 pt-1">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`relative flex min-w-0 flex-col items-center gap-0.5 px-1 py-1.5 text-[10px] ${page === value ? "text-primary" : "text-muted"}`}>{page === value && <span className="absolute -top-1 h-0.5 w-8 bg-alert" />}<Icon className="h-5 w-5" /><span className="truncate">{label}</span></button>)}</div></nav>
-    {form.open && <TaskForm task={form.task} initialDate={selectedDate} onClose={() => setForm({ open: false })} onSave={saveTask} />}
+    {form.open && <TaskForm key={form.round ?? 0} task={form.task} initialDate={selectedDate} carry={form.carry} justAdded={form.justAdded} onClose={() => setForm({ open: false })} onSave={saveTask} onContinue={(carry, savedTitle) => setForm((current) => ({ open: true, carry, justAdded: [...(current.justAdded ?? []), savedTitle], round: (current.round ?? 0) + 1 }))} />}
     {extendTarget && <ExtendRecurringDialog task={extendTarget} onClose={() => setExtendTarget(null)} onConfirm={confirmExtend} />}
     {toast && <div className="toast-safe fixed bottom-24 left-1/2 z-[70] -translate-x-1/2 rounded-lg bg-ink px-5 py-2.5 text-sm text-white shadow-xl lg:bottom-8 lg:ml-[7.5rem]">{toast}</div>}
     {syncErrorToast && <div className="toast-safe-above fixed bottom-[8.5rem] left-1/2 z-[71] -translate-x-1/2 rounded-lg bg-sun px-5 py-2.5 text-sm font-medium text-ink shadow-xl lg:bottom-24 lg:ml-[7.5rem]">{syncErrorToast}</div>}

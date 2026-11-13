@@ -88,8 +88,8 @@ function normalizeImported(raw: Record<string, unknown>): Task {
   let subCategory = String(raw.subCategory ?? raw.subType ?? "other");
   const visibleMain = String(raw.mainCategory ?? "");
   if (["校内", "校内作业", "学校作业"].includes(visibleMain)) mainCategory = "school";
-  if (["校外", "校外作业", "课外作业", "课外"].includes(visibleMain)) mainCategory = "extraHomework";
-  if (["临时事项", "事项"].includes(visibleMain)) mainCategory = "temporary";
+  if (["校外", "校外作业", "课外作业", "课外", "课外班"].includes(visibleMain)) mainCategory = "extraHomework";
+  if (["临时事项", "事项", "其他安排"].includes(visibleMain)) mainCategory = "temporary";
   if (mainCategory === ("schoolHomework" as MainCategory)) mainCategory = "school";
   if (mainCategory === "interestClass") {
     subCategory = ({ jumpRopeClass: "other", aoshuClass: "aoshu", chineseClass: "dazeng", englishClass: "cambridge", pianoClass: "piano", swimmingClass: "swimming", rollerSkatingClass: "rollerSkating" } as Record<string, string>)[subCategory] ?? subCategory;

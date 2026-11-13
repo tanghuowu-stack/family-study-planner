@@ -147,10 +147,10 @@ export const SUB_CATEGORY_META: Record<SubCategory | ExtraContentType, { icon: s
 
 export const MAIN_CATEGORY_META: Record<MainCategory, { label: string; className: string; dot: string }> = {
   school: { label: "学校作业", className: "bg-blue-50 text-blue-700", dot: "bg-blue-500" },
-  extraHomework: { label: "课外", className: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-500" },
+  extraHomework: { label: "课外班", className: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-500" },
   interestClass: { label: "兴趣班", className: "bg-violet-50 text-violet-700", dot: "bg-violet-500" },
   readingPlan: { label: "阅读计划", className: "bg-cyan-50 text-cyan-700", dot: "bg-cyan-500" },
-  temporary: { label: "事项", className: "bg-rose-50 text-rose-700", dot: "bg-rose-500" },
+  temporary: { label: "其他安排", className: "bg-rose-50 text-rose-700", dot: "bg-rose-500" },
 };
 
 export const SUB_CATEGORY_OPTIONS: Record<MainCategory, { value: string; label: string }[]> = {

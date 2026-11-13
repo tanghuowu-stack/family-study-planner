@@ -75,6 +75,16 @@ function ChecklistRing({ completed, total, done }: { completed: number; total: n
 
 export function TaskItem({ task, compact = false, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onExtend, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onRetrySync, onRetryItemSync, onCopy }: Props) {
   const [menu, setMenu] = useState(false);
+  // 菜单离屏幕底部（含底部导航栏）太近时向上展开，避免被遮住
+  const [menuAbove, setMenuAbove] = useState(false);
+  const toggleMenu = (button: HTMLButtonElement) => {
+    if (!menu) {
+      const bounds = button.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - bounds.bottom;
+      setMenuAbove(spaceBelow < 320 && bounds.top > spaceBelow);
+    }
+    setMenu(!menu);
+  };
   const [checkState, setCheckState] = useState<AnimState>("idle");
   const [itemAnim, setItemAnim] = useState<Record<string, AnimState>>({});
   const [optimisticDone, setOptimisticDone] = useState<boolean | null>(null);
@@ -196,7 +206,7 @@ export function TaskItem({ task, compact = false, unsynced, unsyncedItemIds, onS
         {(task.rolledFromDate || task.occurrenceStatus === "postponed") && (
           <div className="mt-0.5 flex flex-wrap gap-2 text-[13px]">
             {task.rolledFromDate && <span className="text-amber-700">原定 {formatCompactDate(task.rolledFromDate)}</span>}
-            {task.occurrenceStatus === "postponed" && task.overrideDate && <span className="text-violet-700">已延期到 {task.overrideDate}</span>}
+            {task.occurrenceStatus === "postponed" && task.overrideDate && <span className="text-violet-700">这一次改到 {formatCompactDate(task.overrideDate)}</span>}
             {task.overrideNote && <span className="text-stone-400">{task.overrideNote}</span>}
           </div>
         )}
@@ -207,29 +217,29 @@ export function TaskItem({ task, compact = false, unsynced, unsyncedItemIds, onS
       )}
 
       <div ref={menuRef} className="relative">
-        <button aria-label="任务操作" aria-expanded={menu} onClick={() => setMenu(!menu)} className="rounded-lg p-1.5 text-stone-400 opacity-70 hover:bg-stone-100 hover:text-ink group-hover:opacity-100 [@media(pointer:coarse)]:-m-2 [@media(pointer:coarse)]:p-3.5">
+        <button aria-label="任务操作" aria-expanded={menu} onClick={(event) => toggleMenu(event.currentTarget)} className="rounded-lg p-1.5 text-stone-400 opacity-70 hover:bg-stone-100 hover:text-ink group-hover:opacity-100 [@media(pointer:coarse)]:-m-2 [@media(pointer:coarse)]:p-3.5">
           <MoreHorizontal className="h-4 w-4" />
         </button>
         {menu && (
-          <div className="absolute right-0 top-8 z-20 w-44 rounded-lg border border-ink/10 bg-white p-1.5 text-sm shadow-card">
+          <div className={`absolute right-0 ${menuAbove ? "bottom-8" : "top-8"} z-20 w-48 rounded-lg border border-ink/10 bg-white p-1.5 text-sm shadow-card`}>
             <button onClick={() => { onEdit?.(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-stone-50"><Pencil className="h-4 w-4" />编辑任务</button>
             <button onClick={() => { onCopy?.(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-stone-50"><Copy className="h-4 w-4" />复制到日期</button>
             {task.occurrenceDate && (
               <>
-                <button onClick={() => { onOccurrencePostpone?.(task); setMenu(false); }} className="w-full rounded-lg px-3 py-2 text-left hover:bg-violet-50">延期本次</button>
-                <button onClick={() => { onOccurrenceCancel?.(task); setMenu(false); }} className="w-full rounded-lg px-3 py-2 text-left hover:bg-amber-50">取消本次</button>
+                <button onClick={() => { onOccurrencePostpone?.(task); setMenu(false); }} className="w-full rounded-lg px-3 py-2 text-left hover:bg-violet-50">这一次改到别的日子</button>
+                <button onClick={() => { onOccurrenceCancel?.(task); setMenu(false); }} className="w-full rounded-lg px-3 py-2 text-left hover:bg-amber-50">这一次跳过</button>
               </>
             )}
             {onEnd && canEndRecurring(task) && effectiveStatus !== "done" && effectiveStatus !== "cancelled" && (
               <>
                 <div className="my-1 border-t border-stone-100" />
-                <button onClick={() => { onEnd(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-amber-700 hover:bg-amber-50"><CalendarX className="h-4 w-4" />结束</button>
+                <button onClick={() => { onEnd(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-amber-700 hover:bg-amber-50"><CalendarX className="h-4 w-4" />今天起不再安排</button>
               </>
             )}
             {onExtend && canExtendRecurring(task) && effectiveStatus !== "done" && effectiveStatus !== "cancelled" && (
               <>
                 <div className="my-1 border-t border-stone-100" />
-                <button onClick={() => { onExtend(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-primary hover:bg-mint"><CalendarPlus className="h-4 w-4" />延长周期</button>
+                <button onClick={() => { onExtend(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-primary hover:bg-mint"><CalendarPlus className="h-4 w-4" />继续安排</button>
               </>
             )}
             <button onClick={() => { onDelete?.(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-rose-600 hover:bg-rose-50"><Trash2 className="h-4 w-4" />删除任务</button>

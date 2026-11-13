@@ -186,7 +186,7 @@ describe("课程表单 / 新建任务表单辅助", () => {
     const c = { id: "c", name: "游泳课", mainCategory: "interestClass" as const, subCategory: "swimming" };
     const all = [a, b, c];
     expect(courseOptionLabel(a, all)).toBe("跳绳课（兴趣班·其他兴趣班）");
-    expect(courseOptionLabel(b, all)).toBe("跳绳课（课外·语文）");
+    expect(courseOptionLabel(b, all)).toBe("跳绳课（课外班·语文）");
     expect(courseOptionLabel(c, all)).toBe("游泳课");
   });
 });

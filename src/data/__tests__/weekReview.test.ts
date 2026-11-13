@@ -131,7 +131,7 @@ describe("getWeekReview 本周回看", () => {
       expect(review.unfinished).toEqual([]);
     });
 
-    it("12. 上周就到期、还没做完的：几天内做完的任务过了截止日不会顺延到之后的日子（今日页现有规则），本周不计", async () => {
+    it("12. 上周就到期、还没做完的：只在逾期区提醒（与单日逾期任务一样），算在它到期的那一周，本周不计", async () => {
       await taskRepository.create(draft({ title: "上周的几天作业", timeType: "dateRange", date: undefined, startDate: "2026-11-04", endDate: "2026-11-06", rolloverMode: "autoNextDay", allowRollover: true }));
       const review = await getWeekReview(TODAY, TODAY);
       const total = review.days.reduce((sum, day) => sum + day.total, 0);

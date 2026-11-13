@@ -205,7 +205,7 @@ export function TaskItem({ task, compact = false, unsynced, unsyncedItemIds, onS
         {/* 顺延/延期标注 */}
         {(task.rolledFromDate || task.occurrenceStatus === "postponed") && (
           <div className="mt-0.5 flex flex-wrap gap-2 text-[13px]">
-            {task.rolledFromDate && <span className="text-amber-700">原定 {formatCompactDate(task.rolledFromDate)}</span>}
+            {task.rolledFromDate && <span className="text-amber-700">{task.timeType === "dateRange" ? "截止" : "原定"} {formatCompactDate(task.rolledFromDate)}</span>}
             {task.occurrenceStatus === "postponed" && task.overrideDate && <span className="text-violet-700">这一次改到 {formatCompactDate(task.overrideDate)}</span>}
             {task.overrideNote && <span className="text-stone-400">{task.overrideNote}</span>}
           </div>

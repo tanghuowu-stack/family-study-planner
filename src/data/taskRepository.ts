@@ -205,11 +205,17 @@ function findPendingOccurrenceDate(task: Task, date: string, byTaskAndDate: Map<
 // （2026-08-16 修复，真实数据 ea0ba064 复现）。所以完成日归属必须在展示层按日推导。
 // 单日任务晚于原定日才完成：不论是顺延中做完，还是逾期保留、在逾期区补完（2026-09-28 扩展到后者——
 // 此前只认顺延，逾期保留任务补完后完成当天从今日页彻底消失：主清单、逾期区、已完成区都没有）
-const completedAfterDate = (task: Task) =>
-  task.timeType === "singleDate" && task.status === "done" && !!task.completedAt && !!task.date
-  && toLocalDateKey(task.completedAt) > task.date;
+/** 到期日：单日任务是那一天；几天内做完（dateRange）是最后一天 */
+const dueDateOf = (task: Task) => task.timeType === "singleDate" ? task.date : task.timeType === "dateRange" ? task.endDate : undefined;
+/** 晚于到期日才完成（顺延中做完、或在逾期区补完）。2026-11-13 起几天内做完的任务也适用 */
+const completedAfterDate = (task: Task) => {
+  const due = dueDateOf(task);
+  return (task.timeType === "singleDate" || task.timeType === "dateRange") && task.status === "done" && !!task.completedAt && !!due
+    && toLocalDateKey(task.completedAt) > due;
+};
+/** 顺延（每天挪到第二天）的单日任务晚于原定日做完；几天内做完的任务过期不走顺延，进逾期区 */
 const rolledOverCompletedLate = (task: Task) =>
-  completedAfterDate(task) && !!task.allowRollover && task.rolloverMode === "autoNextDay";
+  task.timeType === "singleDate" && completedAfterDate(task) && !!task.allowRollover && task.rolloverMode === "autoNextDay";
 
 // 过去日补勾（2026-09-28）：在哪天的页面上勾，就记为哪天完成——页面日期是用户明确选的上下文，
 // 若记今天，回放按查看日过滤会立刻把它判成"那天还没勾"，表现为勾上又自己回退。
@@ -382,12 +388,17 @@ export const taskRepository = {
     const tasks = allTasks.filter(isActiveTask);
     const parents = new Map(tasks.map((task) => [task.id, task]));
     return tasks.filter((task) => {
-      if (task.mainCategory === "readingPlan" || !task.childVisible || task.timeType !== "singleDate" || !task.date || task.date >= date || !unfinished(task.status)) return false;
+      if (task.mainCategory === "readingPlan" || !task.childVisible || !unfinished(task.status)) return false;
+      // 几天内做完（dateRange）过了最后一天还没做完：进逾期区，直到做完（2026-11-13）。
+      // 以前它既不顺延也不进逾期，过了截止日就从今日页消失。选了"当天没做就算了"的照旧不提醒；
+      // "其他安排"（旅游、休闲、考试比赛等）是一段时间的安排而不是要做完的作业，过了就过了，不进逾期。
+      if (task.timeType === "dateRange") return task.mainCategory !== "temporary" && !!task.endDate && task.endDate < date && task.rolloverMode !== "skipIfMissed";
+      if (task.timeType !== "singleDate" || !task.date || task.date >= date) return false;
       if (task.rolloverMode === "keepOverdue") return true;
       const parent = task.parentTaskId ? parents.get(task.parentTaskId) : undefined;
       return task.rolloverMode === "autoNextDay" && !!parent?.assignmentWindow && parent.assignmentWindow.endDate < date;
     })
-      .map((task) => ({ ...task, status: "overdue" as const, rolledFromDate: task.date }))
+      .map((task) => ({ ...task, status: "overdue" as const, rolledFromDate: dueDateOf(task) }))
       .sort(taskSort);
   },
 

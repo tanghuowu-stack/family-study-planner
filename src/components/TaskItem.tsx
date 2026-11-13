@@ -29,7 +29,7 @@ function UnsyncedBadge({ onRetry }: { onRetry?: () => void }) {
       type="button"
       onClick={(e) => { e.stopPropagation(); onRetry?.(); }}
       title="未同步到云端，点击重试"
-      className="ml-2 inline-flex shrink-0 items-center gap-1 rounded-full bg-sun/25 px-2 py-0.5 text-[10px] font-semibold text-ink no-underline"
+      className="ml-2 inline-flex shrink-0 items-center gap-1 rounded-full bg-sun/25 px-2 py-0.5 text-[13px] font-semibold leading-4 text-ink no-underline"
     >
       <TriangleAlert className="h-3 w-3" />未同步
     </button>
@@ -164,15 +164,15 @@ export function TaskItem({ task, compact = false, unsynced, unsyncedItemIds, onS
         </button>
       )}
 
-      <div className="min-w-0 flex-1 pt-1">
+      <div className="min-w-0 flex-1 pt-0.5">
         <div className="flex min-w-0 items-start gap-2">
-          {formatTime(task) && <span className="mt-0.5 shrink-0 rounded bg-ink/[0.06] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-muted">{formatTime(task).trim()}</span>}
-          <div className={`min-w-0 flex-1 font-semibold leading-5 ${compact ? "text-sm" : "text-base"} ${done || effectiveStatus === "cancelled" ? "line-through" : ""}`}>{taskShortName(task)}</div>
-          {hasChecklist && <span className="mt-0.5 inline-flex shrink-0 items-center gap-1.5 text-[11px] text-muted">{!ringMode && <span className="relative h-1 w-10 overflow-hidden rounded-full bg-stone-200"><span className="absolute inset-y-0 left-0 rounded-full bg-primary transition-all" style={{ width: `${(completedItems / displayItems.length) * 100}%` }} /></span>}<span className="tabular-nums">{completedItems}/{displayItems.length}</span></span>}
+          {formatTime(task) && <span className="shrink-0 rounded bg-ink/[0.05] px-1.5 text-[13px] font-medium leading-6 tabular-nums text-muted">{formatTime(task).trim()}</span>}
+          <div className={`min-w-0 flex-1 text-base font-semibold leading-6 ${done || effectiveStatus === "cancelled" ? "line-through" : ""}`}>{taskShortName(task)}</div>
+          {hasChecklist && <span className="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-6 text-muted">{!ringMode && <span className="relative h-1 w-10 overflow-hidden rounded-full bg-stone-200"><span className="absolute inset-y-0 left-0 rounded-full bg-primary transition-all" style={{ width: `${(completedItems / displayItems.length) * 100}%` }} /></span>}<span className="tabular-nums">{completedItems}/{displayItems.length}</span></span>}
           {unsynced && <UnsyncedBadge onRetry={onRetrySync} />}
         </div>
 
-        {task.note && !task.overrideNote && <div className="mt-0.5 min-w-0 truncate text-[11px] text-muted">{task.note}</div>}
+        {task.note && !task.overrideNote && <div className="min-w-0 truncate text-[13px] text-muted">{task.note}</div>}
 
         {/* Checklist 小项 */}
         {hasChecklist && (
@@ -194,7 +194,7 @@ export function TaskItem({ task, compact = false, unsynced, unsyncedItemIds, onS
 
         {/* 顺延/延期标注 */}
         {(task.rolledFromDate || task.occurrenceStatus === "postponed") && (
-          <div className="mt-1 flex flex-wrap gap-2 text-xs">
+          <div className="mt-0.5 flex flex-wrap gap-2 text-[13px]">
             {task.rolledFromDate && <span className="text-amber-700">原定 {formatCompactDate(task.rolledFromDate)}</span>}
             {task.occurrenceStatus === "postponed" && task.overrideDate && <span className="text-violet-700">已延期到 {task.overrideDate}</span>}
             {task.overrideNote && <span className="text-stone-400">{task.overrideNote}</span>}
@@ -202,8 +202,8 @@ export function TaskItem({ task, compact = false, unsynced, unsyncedItemIds, onS
         )}
       </div>
 
-      {effectiveStatus !== "todo" && effectiveStatus !== "overdue" && (
-        <span className={`mt-1 hidden shrink-0 rounded-full px-2 py-0.5 text-[11px] sm:block ${STATUS_META[effectiveStatus].className}`}>{STATUS_META[effectiveStatus].label}</span>
+      {(effectiveStatus === "doing" || effectiveStatus === "cancelled") && (
+        <span className={`mt-0.5 hidden shrink-0 rounded-full px-2 py-0.5 text-[13px] leading-5 sm:block ${STATUS_META[effectiveStatus].className}`}>{STATUS_META[effectiveStatus].label}</span>
       )}
 
       <div ref={menuRef} className="relative">
@@ -252,7 +252,7 @@ function ChecklistRow({ item, animState, unsynced, onToggle, onRetrySync }: {
       {/* 整行可点；触屏上行高 44px，鼠标设备保持紧凑 */}
       <button type="button" role="checkbox" aria-checked={item.done} onClick={onToggle} className="flex min-h-8 min-w-0 flex-1 items-center gap-2.5 rounded-md px-1.5 py-1 text-left hover:bg-stone-100/70 [@media(pointer:coarse)]:min-h-11">
         <span className={checkboxClass(animState, item.done, "sm")}><Check className="h-3.5 w-3.5" strokeWidth={3} /></span>
-        <span className={`min-w-0 flex-1 text-[13px] leading-5 ${item.done ? "line-through" : ""}`}>{item.title}</span>
+        <span className={`min-w-0 flex-1 text-[15px] leading-6 ${item.done ? "line-through" : ""}`}>{item.title}</span>
       </button>
       {unsynced && <UnsyncedBadge onRetry={onRetrySync} />}
     </div>

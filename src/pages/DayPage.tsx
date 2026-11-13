@@ -13,13 +13,14 @@ import { TASK_SUBJECT_GROUPS, dayTaskKey, findJustCompleted, groupDayTasks, norm
 import { useGroupOrder } from "../hooks/useGroupOrder";
 import { itemSyncKey, taskSyncKey } from "../utils/taskMeta";
 import { SidebarMemo } from "../components/SidebarMemo";
+import { GroupHeading, NEUTRAL_DOT, SUBJECT_DOT } from "../components/GroupHeading";
 
 /** 刚完成的任务在原位停留多久再收进"已完成"（略长于 400ms 的勾选动画） */
 const COMPLETED_HOLD_MS = 700;
 
 function ProgressMeter({ completed, total }: { completed: number; total: number }) {
   const percentage = total === 0 ? 0 : (completed / total) * 100;
-  return <div className="flex min-w-0 w-24 flex-1 items-center gap-1.5 sm:w-32 sm:max-w-40" role="meter" aria-label={`清单进度，已完成 ${completed}/${total}`} aria-valuemin={0} aria-valuemax={total} aria-valuenow={completed}><div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-stone-200"><div className="h-full rounded-full bg-alert transition-all duration-500" style={{ width: `${percentage}%` }} /></div></div>;
+  return <div className="flex min-w-0 w-24 flex-1 items-center gap-1.5 sm:w-32 sm:max-w-40" role="meter" aria-label={`清单进度，已完成 ${completed}/${total}`} aria-valuemin={0} aria-valuemax={total} aria-valuenow={completed}><div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-stone-200"><div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${percentage}%` }} /></div></div>;
 }
 
 interface Props {
@@ -108,19 +109,19 @@ export function DayPage(props: Props) {
     {...rowProps}
   />;
 
-  return <main className="mx-auto w-full max-w-6xl overflow-x-hidden px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
+  return <main className="mx-auto w-full max-w-3xl overflow-x-hidden px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
     <header className="page-header">
       <div className="day-header-content grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 sm:gap-x-4">
-        <div className="min-w-0"><div className="flex min-w-0 flex-wrap content-center items-center gap-x-2 gap-y-1"><h1 className="page-title"><span className="whitespace-nowrap">{dateLabel}</span><span className="block whitespace-nowrap sm:ml-2 sm:inline">{weekdayLabel}</span></h1>{annotationLabels.length > 0 && <span title={annotationLabels.join(" · ")} className="max-w-full truncate text-[11px] font-semibold text-amber-700 sm:text-sm">{annotationLabels.join(" · ")}</span>}{annotation.holidayStatus && <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{annotation.holidayStatus}</span>}</div></div>
+        <div className="min-w-0"><div className="flex min-w-0 flex-wrap content-center items-center gap-x-2 gap-y-1"><h1 className="page-title"><span className="whitespace-nowrap">{dateLabel}</span><span className="block whitespace-nowrap sm:ml-2 sm:inline">{weekdayLabel}</span></h1>{annotationLabels.length > 0 && <span title={annotationLabels.join(" · ")} className="max-w-full truncate text-[13px] font-semibold text-amber-700">{annotationLabels.join(" · ")}</span>}{annotation.holidayStatus && <span className={`shrink-0 rounded px-1.5 py-0.5 text-[13px] font-bold leading-4 ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{annotation.holidayStatus}</span>}</div></div>
         <div className="day-header-actions flex flex-nowrap items-center gap-1 sm:gap-2"><button onClick={() => move(-1)} aria-label="前一天" title="前一天" className={navButton}><ChevronLeft className="h-5 w-5" /></button><button onClick={() => props.onDateChange(todayKey())} aria-label={isToday ? "今天" : "回到今天"} title="回到今天" disabled={isToday} className={`h-8 w-20 shrink-0 rounded-lg border text-sm font-bold transition-colors sm:h-10 sm:w-20 ${isToday ? "border-primary bg-primary text-white" : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"}`}>今天</button><button onClick={() => move(1)} aria-label="后一天" title="后一天" className={navButton}><ChevronRight className="h-5 w-5" /></button><button onClick={props.onOpenMonth} aria-label="打开月视图" title="打开月视图" className={`${navButton} hidden sm:flex`}><CalendarDays className="h-5 w-5" /></button><button onClick={props.onAddTask} aria-label="新建当日任务" title="新建任务" className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-alert text-white hover:bg-[#cf5b40] lg:flex lg:h-10 lg:w-10"><Plus className="h-5 w-5" /></button></div>
       </div>
     </header>
     {!isToday && <div role="status" className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-sun/60 bg-sun/20 px-3 py-2 sm:px-4"><p className="min-w-0 text-sm font-semibold text-ink">正在看 {formatCompactDate(props.date)}（{relativeDayLabel(props.date)}），不是今天</p><button onClick={() => props.onDateChange(todayKey())} className="h-9 shrink-0 rounded-lg bg-primary px-3 text-sm font-bold text-white [@media(pointer:coarse)]:h-11">回到今天</button></div>}
     <SidebarMemo value={props.memo} variant="narrow" editorOpen={props.memoEditorOpen} focusRequest={props.memoFocusRequest} busy={props.memoBusy} onFocus={props.onMemoFocus} onChange={props.onMemoChange} onBlur={props.onMemoBlur} onComplete={props.onMemoComplete} />
     <div ref={swipeRef} className="space-y-4">
-      {overdueShown.length > 0 && <section className="surface overflow-visible border-alert/35"><div className="flex items-center justify-between border-b border-alert/20 bg-alert/[0.06] px-3 py-2"><h2 className="text-xs font-bold text-alert">逾期未完成</h2><span className="text-xs font-bold tabular-nums text-alert">{overdue.length}</span></div>{overdueShown.map(renderTask)}</section>}
-      <section className="surface overflow-visible"><div className="flex items-center gap-2 border-b border-ink/10 px-3 py-2.5 sm:px-4"><h2 className="shrink-0 text-sm font-bold text-ink">{isToday ? "今日清单" : "当日清单"}</h2><ProgressMeter completed={progress.completed} total={progress.total} />{progress.total > 0 && <span className={`ml-auto shrink-0 text-xs font-semibold tabular-nums ${remaining === 0 ? "text-primary" : "text-ink"}`}>{remaining === 0 ? "全部完成" : `还剩 ${remaining} 项`}</span>}</div>{pending.length ? <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} onTaskReorder={reorderTasks} /> : <div className="p-3"><EmptyState compact /></div>}</section>
-      {done.length > 0 && <section className="surface overflow-visible"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-3 py-2.5 text-left sm:px-4"><span className="flex items-center gap-2 text-sm font-bold text-ink"><CheckCircle2 className="h-4 w-4 text-primary" />已完成 <span className="text-[11px] font-medium text-muted">{done.length}</span></span><ChevronDown className={`h-4 w-4 text-muted transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <div className="border-t border-ink/10"><GroupedTaskGrid tasks={done} renderTask={renderTask} order={order} onReorder={updateOrder} /></div>}</section>}
+      {overdueShown.length > 0 && <section className="surface overflow-visible border-alert/35"><div className="flex items-center justify-between border-b border-alert/20 bg-alert/[0.06] px-3 py-2.5 sm:px-4"><h2 className="text-base font-bold text-alert">逾期未完成</h2><span className="text-[13px] font-semibold tabular-nums text-alert">{overdue.length}</span></div>{overdueShown.map(renderTask)}</section>}
+      <section className="surface overflow-visible"><div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">{isToday ? "今日清单" : "当日清单"}</h2><ProgressMeter completed={progress.completed} total={progress.total} />{progress.total > 0 && <span className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${remaining === 0 ? "text-primary" : "text-ink"}`}>{remaining === 0 ? "全部完成" : `还剩 ${remaining} 项`}</span>}</div>{pending.length ? <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} onTaskReorder={reorderTasks} /> : <div className="p-3"><EmptyState compact /></div>}</section>
+      {done.length > 0 && <section className="surface overflow-visible"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-3 py-2.5 text-left sm:px-4"><span className="flex items-center gap-2 text-base font-bold text-ink"><CheckCircle2 className="h-4 w-4 text-primary" />已完成 <span className="text-[13px] font-medium text-muted">{done.length}</span></span><ChevronDown className={`h-4 w-4 text-muted transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <div className="border-t border-ink/10">{done.map(renderTask)}</div>}</section>}
     </div>
   </main>;
 }
@@ -143,12 +144,6 @@ function GroupedTaskGrid({
 
   // 上课 / 作业两组（规则见 utils/taskGrouping.ts groupDayTasks）；作业组内的学科分组仍可整组拖拽排序
   const { classes, homework } = groupDayTasks(tasks, order);
-  const groupStyle: Record<TaskSubjectGroup, { accent: string; heading: string; title: string; count: string }> = {
-    chinese: { accent: "#D96A52", heading: "bg-[#FFF0EA]", title: "text-[#B64E39]", count: "text-[#B64E39]/60" },
-    math: { accent: "#5868C8", heading: "bg-[#EEF0FF]", title: "text-[#4056B5]", count: "text-[#4056B5]/60" },
-    english: { accent: "#9364C7", heading: "bg-[#F5EDFF]", title: "text-[#7546AE]", count: "text-[#7546AE]/60" },
-    other: { accent: "#738078", heading: "bg-[#EFF2F0]", title: "text-[#536159]", count: "text-[#536159]/60" },
-  };
 
   function handleDrop(targetKey: TaskSubjectGroup) {
     if (!dragKey || dragKey === targetKey) return;
@@ -162,21 +157,20 @@ function GroupedTaskGrid({
   }
 
   return (
-    <div className="divide-y divide-ink/10">
+    <div className="divide-y divide-ink/[0.07]">
       {classes.length > 0 && (
-        <section className="w-full overflow-visible border-l-4" style={{ borderLeftColor: "#0EA5E9" }}>
-          <div className="flex items-center justify-between bg-sky-100/80 px-3 py-2.5 sm:px-4"><h3 className="text-sm font-extrabold text-sky-800">上课</h3><span className="text-[10px] font-semibold tabular-nums text-sky-700/60">{classes.length}</span></div>
+        <section className="w-full overflow-visible">
+          <GroupHeading label="上课" dot={NEUTRAL_DOT} count={classes.length} />
           <div>
             <SortableTaskList tasks={classes} renderTask={renderTask} onReorder={onTaskReorder} />
           </div>
         </section>
       )}
       {homework.length > 0 && (
-        <div className="divide-y divide-ink/10">
+        <div className="divide-y divide-ink/[0.07]">
             {homework.map((group) => {
               const isDragging = dragKey === group.key;
               const isOver = dragOverKey === group.key && dragKey !== group.key;
-              const style = groupStyle[group.key];
               return (
                 <section
                   key={group.key}
@@ -185,13 +179,9 @@ function GroupedTaskGrid({
                   onDragEnd={() => { setDragKey(null); setDragOverKey(null); }}
                   onDragOver={(e) => { e.preventDefault(); setDragOverKey(group.key); }}
                   onDrop={(e) => { e.preventDefault(); handleDrop(group.key); setDragKey(null); setDragOverKey(null); }}
-                  className={`w-full overflow-visible border-l-4 bg-white transition-all ${isDragging ? "opacity-40" : ""}`}
-                  style={{ borderLeftColor: isOver ? "#245747" : style.accent }}
+                  className={`w-full overflow-visible transition-opacity ${isDragging ? "opacity-40" : ""}`}
                 >
-                  <h4 className={`flex cursor-grab items-center gap-1.5 px-3 py-2.5 text-sm font-bold active:cursor-grabbing sm:px-4 ${style.heading}`}>
-                    <GripVertical className="h-3 w-3 shrink-0 text-stone-300" />
-                    <span className={style.title}>{group.label}</span><span className="font-medium text-stone-500">作业</span><span className={`ml-auto text-[10px] font-semibold tabular-nums ${style.count}`}>{group.tasks.length}</span>
-                  </h4>
+                  <GroupHeading label={group.label} suffix="作业" dot={SUBJECT_DOT[group.key]} count={group.tasks.length} grip highlight={isOver} />
                   <SortableTaskList tasks={group.tasks} renderTask={renderTask} onReorder={onTaskReorder} />
                 </section>
               );

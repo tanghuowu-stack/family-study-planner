@@ -1,5 +1,6 @@
 import {
   addDays,
+  differenceInCalendarDays,
   endOfMonth,
   endOfWeek,
   format,
@@ -25,6 +26,28 @@ export const formatFullDate = (value: string) =>
 
 export const formatCompactDate = (value: string) =>
   format(fromDateKey(value), "M月d日", { locale: zhCN });
+
+/** 相对今天的口语说法：今天 / 昨天 / 明天 / 前天 / 后天 / N 天前 / N 天后 */
+export function relativeDayLabel(date: string, today: string = todayKey()): string {
+  const diff = differenceInCalendarDays(fromDateKey(date), fromDateKey(today));
+  if (diff === 0) return "今天";
+  if (diff === -1) return "昨天";
+  if (diff === 1) return "明天";
+  if (diff === -2) return "前天";
+  if (diff === 2) return "后天";
+  return diff < 0 ? `${-diff} 天前` : `${diff} 天后`;
+}
+
+/** 离开页面多久后回来，今日页自动回到今天 */
+export const RETURN_TO_TODAY_AFTER_HIDDEN_MS = 30 * 60 * 1000;
+
+/**
+ * 今日页是否应自动跳回今天：跨了零点（隔夜没关的 iPad 早上不该还停在昨天），
+ * 或页面在后台放了足够久（上次有人翻到别的日期后离开）。
+ */
+export function shouldReturnToToday(lastSeenToday: string, today: string, hiddenMs = 0): boolean {
+  return lastSeenToday !== today || hiddenMs >= RETURN_TO_TODAY_AFTER_HIDDEN_MS;
+}
 
 export const getWeekStartKey = (value: string | Date) =>
   toDateKey(startOfWeek(typeof value === "string" ? fromDateKey(value) : value, { weekStartsOn: 1 }));

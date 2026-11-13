@@ -14,7 +14,7 @@ import { addDays, endOfMonth, parseISO, startOfMonth } from "date-fns";
 import { db } from "./db";
 import { scheduleOccursOn } from "./taskRepository";
 import { getRepository } from "./repositoryProvider";
-import { isOccurrenceSchedule, taskShortName } from "../utils/taskMeta";
+import { isCourseTask, isOccurrenceSchedule, taskShortName } from "../utils/taskMeta";
 import { todayKey, toDateKey, toLocalDateKey } from "../utils/date";
 import { createTravelPauseCheck } from "../utils/travelPause";
 import { loadRestDays, saveRestDays, loadHiddenHabitCandidates, saveHiddenHabitCandidates } from "./appSettingsRepository";
@@ -129,6 +129,10 @@ export interface HabitCandidate {
   enabled: boolean;
   /** 已勾选项目的打卡起点（本地日）；未勾选恒为 undefined */
   streakStartDate?: string;
+  /** 是否上课类（isCourseTask 统一判定）：管理弹窗把未勾选的上课类折叠起来，只读派生、不落库 */
+  isCourse: boolean;
+  /** 命中 HABIT_GROUPS 分组时，它计入的那张月历卡的名字（如"钢琴"）；未分组为 undefined */
+  calendarTitle?: string;
 }
 
 /** 可成为打卡项目的活跃重复类任务（供「管理打卡项目」选择器）。已隐藏且未勾选的任务不出现 */
@@ -144,6 +148,8 @@ export async function getHabitCandidates(): Promise<HabitCandidate[]> {
       title: taskShortName(t),
       enabled: t.enableStreak === true,
       streakStartDate: t.enableStreak === true ? t.streakStartDate : undefined,
+      isCourse: isCourseTask(t),
+      calendarTitle: HABIT_GROUPS[t.subCategory]?.label,
     }));
 }
 

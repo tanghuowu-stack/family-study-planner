@@ -14,7 +14,7 @@ import { MonthPage } from "./pages/MonthPage";
 import { TaskManagementPage } from "./pages/TaskManagementPage";
 import { TimetablePage } from "./pages/TimetablePage";
 import type { Task, TaskDisplay, TaskDraft, TaskStatus } from "./types/task";
-import { fromDateKey, todayKey, toDateKey } from "./utils/date";
+import { fromDateKey, shouldReturnToToday, todayKey, toDateKey } from "./utils/date";
 import { isOccurrenceSchedule, itemSyncKey, taskSyncKey } from "./utils/taskMeta";
 import { archiveSidebarMemo, deleteSidebarMemoHistory, loadSidebarMemoState, restoreSidebarMemo, saveSidebarMemo, type MemoHistoryEntry, type SidebarMemoSetting } from "./data/appSettingsRepository";
 
@@ -151,6 +151,29 @@ export default function App() {
       window.removeEventListener("pagehide", flushMemo);
       if (memoSaveTimerRef.current) clearTimeout(memoSaveTimerRef.current);
     };
+  }, []);
+
+  // 今日页自动回到今天：跨零点（隔夜没关）或在后台放了很久再回来时触发，
+  // 避免孩子早上打开看到的还是昨天/别的日期的清单并在那一页上勾选。
+  useEffect(() => {
+    let lastSeenToday = todayKey();
+    let hiddenAt: number | null = null;
+    const check = (hiddenMs = 0) => {
+      const today = todayKey();
+      if (shouldReturnToToday(lastSeenToday, today, hiddenMs)) {
+        setSelectedDate(today);
+        if (lastSeenToday !== today) refresh(); // 日期没变也要重渲染，让"是不是今天"的判断更新
+      }
+      lastSeenToday = today;
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") { hiddenAt = Date.now(); return; }
+      check(hiddenAt === null ? 0 : Date.now() - hiddenAt);
+      hiddenAt = null;
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    const timer = setInterval(() => check(), 60_000);
+    return () => { document.removeEventListener("visibilitychange", onVisibility); clearInterval(timer); };
   }, []);
 
   // ── 云同步启动/切换 ─────────────────────────────────────────────────────────

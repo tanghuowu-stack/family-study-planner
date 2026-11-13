@@ -8,7 +8,7 @@ import { getCalendarAnnotation } from "../data/calendarAnnotations";
 import { getRepository } from "../data/repositoryProvider";
 import { taskRepository } from "../data/taskRepository";
 import type { PlanOverviewItem, TaskDisplay, TaskStatus } from "../types/task";
-import { formatFullDate, fromDateKey, toDateKey, todayKey } from "../utils/date";
+import { formatCompactDate, formatFullDate, fromDateKey, relativeDayLabel, toDateKey, todayKey } from "../utils/date";
 import { TASK_SUBJECT_GROUPS, groupDayTasks, normalizeSubjectOrder, type TaskSubjectGroup } from "../utils/taskGrouping";
 import { useGroupOrder } from "../hooks/useGroupOrder";
 import { itemSyncKey, taskSyncKey } from "../utils/taskMeta";
@@ -16,7 +16,7 @@ import { SidebarMemo } from "../components/SidebarMemo";
 
 function ProgressMeter({ completed, total }: { completed: number; total: number }) {
   const percentage = total === 0 ? 0 : (completed / total) * 100;
-  return <div className="flex min-w-0 w-24 flex-1 items-center gap-1.5 sm:w-32 sm:max-w-40" role="meter" aria-label="清单进度" aria-valuemin={0} aria-valuemax={total} aria-valuenow={completed}><div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-stone-200"><div className="h-full rounded-full bg-alert transition-all duration-500" style={{ width: `${percentage}%` }} /></div><span className="shrink-0 tabular-nums text-[11px] font-semibold text-ink">{completed}/{total}</span></div>;
+  return <div className="flex min-w-0 w-24 flex-1 items-center gap-1.5 sm:w-32 sm:max-w-40" role="meter" aria-label={`清单进度，已完成 ${completed}/${total}`} aria-valuemin={0} aria-valuemax={total} aria-valuenow={completed}><div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-stone-200"><div className="h-full rounded-full bg-alert transition-all duration-500" style={{ width: `${percentage}%` }} /></div></div>;
 }
 
 interface Props {
@@ -55,6 +55,8 @@ export function DayPage(props: Props) {
     }
     return result;
   }, { completed: 0, total: 0 });
+  // 「还剩 N 项」与进度条同一口径（有小项按小项、没有小项按任务），避免两个数字对不上
+  const remaining = progress.total - progress.completed;
   const move = (days: number) => props.onDateChange(toDateKey(addDays(fromDateKey(props.date), days)));
   const swipeRef = useSwipe<HTMLDivElement>(
     () => move(1),   // left swipe → next day
@@ -80,14 +82,15 @@ export function DayPage(props: Props) {
   return <main className="mx-auto w-full max-w-6xl overflow-x-hidden px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
     <header className="page-header">
       <div className="day-header-content grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 sm:gap-x-4">
-        <div className="min-w-0"><div className="flex min-w-0 flex-wrap content-center items-center gap-x-2 gap-y-1"><h1 className="page-title"><span className="whitespace-nowrap">{dateLabel}</span><span className="block whitespace-nowrap sm:ml-2 sm:inline">{weekdayLabel}</span></h1>{annotationLabels.length > 0 && <span title={annotationLabels.join(" · ")} className="max-w-full truncate text-[11px] font-semibold text-amber-700 sm:text-sm">{annotationLabels.join(" · ")}</span>}{!isToday && <span className="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">非今天</span>}{annotation.holidayStatus && <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{annotation.holidayStatus}</span>}</div></div>
+        <div className="min-w-0"><div className="flex min-w-0 flex-wrap content-center items-center gap-x-2 gap-y-1"><h1 className="page-title"><span className="whitespace-nowrap">{dateLabel}</span><span className="block whitespace-nowrap sm:ml-2 sm:inline">{weekdayLabel}</span></h1>{annotationLabels.length > 0 && <span title={annotationLabels.join(" · ")} className="max-w-full truncate text-[11px] font-semibold text-amber-700 sm:text-sm">{annotationLabels.join(" · ")}</span>}{annotation.holidayStatus && <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{annotation.holidayStatus}</span>}</div></div>
         <div className="day-header-actions flex flex-nowrap items-center gap-1 sm:gap-2"><button onClick={() => move(-1)} aria-label="前一天" title="前一天" className={navButton}><ChevronLeft className="h-5 w-5" /></button><button onClick={() => props.onDateChange(todayKey())} aria-label={isToday ? "今天" : "回到今天"} title="回到今天" disabled={isToday} className={`h-8 w-20 shrink-0 rounded-lg border text-sm font-bold transition-colors sm:h-10 sm:w-20 ${isToday ? "border-primary bg-primary text-white" : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"}`}>今天</button><button onClick={() => move(1)} aria-label="后一天" title="后一天" className={navButton}><ChevronRight className="h-5 w-5" /></button><button onClick={props.onOpenMonth} aria-label="打开月视图" title="打开月视图" className={`${navButton} hidden sm:flex`}><CalendarDays className="h-5 w-5" /></button><button onClick={props.onAddTask} aria-label="新建当日任务" title="新建任务" className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-alert text-white hover:bg-[#cf5b40] lg:flex lg:h-10 lg:w-10"><Plus className="h-5 w-5" /></button></div>
       </div>
     </header>
+    {!isToday && <div role="status" className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-sun/60 bg-sun/20 px-3 py-2 sm:px-4"><p className="min-w-0 text-sm font-semibold text-ink">正在看 {formatCompactDate(props.date)}（{relativeDayLabel(props.date)}），不是今天</p><button onClick={() => props.onDateChange(todayKey())} className="h-9 shrink-0 rounded-lg bg-primary px-3 text-sm font-bold text-white [@media(pointer:coarse)]:h-11">回到今天</button></div>}
     <SidebarMemo value={props.memo} variant="narrow" editorOpen={props.memoEditorOpen} focusRequest={props.memoFocusRequest} busy={props.memoBusy} onFocus={props.onMemoFocus} onChange={props.onMemoChange} onBlur={props.onMemoBlur} onComplete={props.onMemoComplete} />
     <div ref={swipeRef} className="space-y-4">
       {overdue.length > 0 && <section className="surface overflow-visible border-alert/35"><div className="flex items-center justify-between border-b border-alert/20 bg-alert/[0.06] px-3 py-2"><h2 className="text-xs font-bold text-alert">逾期未完成</h2><span className="text-xs font-bold tabular-nums text-alert">{overdue.length}</span></div>{overdue.map(renderTask)}</section>}
-      <section className="surface overflow-visible"><div className="flex items-center gap-2 border-b border-ink/10 px-3 py-2.5 sm:px-4"><h2 className="shrink-0 text-sm font-bold text-ink">{isToday ? "今日清单" : "当日清单"}</h2><ProgressMeter completed={progress.completed} total={progress.total} /><span className="ml-auto shrink-0 text-[11px] text-muted">{pending.length} 项待完成</span></div>{pending.length ? <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} onTaskReorder={reorderTasks} /> : <div className="p-3"><EmptyState compact /></div>}</section>
+      <section className="surface overflow-visible"><div className="flex items-center gap-2 border-b border-ink/10 px-3 py-2.5 sm:px-4"><h2 className="shrink-0 text-sm font-bold text-ink">{isToday ? "今日清单" : "当日清单"}</h2><ProgressMeter completed={progress.completed} total={progress.total} />{progress.total > 0 && <span className={`ml-auto shrink-0 text-xs font-semibold tabular-nums ${remaining === 0 ? "text-primary" : "text-ink"}`}>{remaining === 0 ? "全部完成" : `还剩 ${remaining} 项`}</span>}</div>{pending.length ? <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} onTaskReorder={reorderTasks} /> : <div className="p-3"><EmptyState compact /></div>}</section>
       {done.length > 0 && <section className="surface overflow-visible"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-3 py-2.5 text-left sm:px-4"><span className="flex items-center gap-2 text-sm font-bold text-ink"><CheckCircle2 className="h-4 w-4 text-primary" />已完成 <span className="text-[11px] font-medium text-muted">{done.length}</span></span><ChevronDown className={`h-4 w-4 text-muted transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <div className="border-t border-ink/10"><GroupedTaskGrid tasks={done} renderTask={renderTask} order={order} onReorder={updateOrder} /></div>}</section>}
     </div>
   </main>;

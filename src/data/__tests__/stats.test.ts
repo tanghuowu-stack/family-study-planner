@@ -95,6 +95,36 @@ describe("getHabitCandidates", () => {
   });
 });
 
+describe("getHabitCandidates 的只读派生字段（管理弹窗分组与卡片名提示）", () => {
+  const recurring = (id: string, overrides: Partial<Task>) => makeTask(id, { timeType: "recurring", schedulePattern: "weeklyRecurring", date: undefined, startDate: "2026-07-01", recurrence: { frequency: "weekly", weekdays: [6], startDate: "2026-07-01" }, ...overrides });
+
+  it("1c. isCourse 与 isCourseTask 同口径：课外上课、游泳课算上课，课外作业、钢琴练习不算", async () => {
+    await db.tasks.bulkAdd([
+      recurring("fce-class", { mainCategory: "extraHomework", subCategory: "english", extraContentType: "class" }),
+      recurring("fce-homework", { mainCategory: "extraHomework", subCategory: "english", extraContentType: "homework" }),
+      recurring("swim", { mainCategory: "interestClass", subCategory: "swimming" }),
+      recurring("piano-practice", { mainCategory: "interestClass", subCategory: "pianoPractice" }),
+    ]);
+    const byId = new Map((await getHabitCandidates()).map((c) => [c.taskId, c]));
+    expect(byId.get("fce-class")?.isCourse).toBe(true);
+    expect(byId.get("swim")?.isCourse).toBe(true);
+    expect(byId.get("fce-homework")?.isCourse).toBe(false);
+    expect(byId.get("piano-practice")?.isCourse).toBe(false);
+  });
+
+  it("1d. calendarTitle：钢琴练习计入「钢琴」月历卡，与 getHabitCalendars 的卡片名一致；未分组任务为 undefined", async () => {
+    await db.tasks.bulkAdd([
+      recurring("piano-practice", { title: "钢琴练习：车尔尼", mainCategory: "interestClass", subCategory: "pianoPractice", schedulePattern: "dailyRecurring", recurrence: { frequency: "daily", startDate: "2026-07-01" }, enableStreak: true, streakStartDate: "2026-07-01" }),
+      recurring("fce-homework", { mainCategory: "extraHomework", subCategory: "english", extraContentType: "homework" }),
+    ]);
+    const byId = new Map((await getHabitCandidates()).map((c) => [c.taskId, c]));
+    expect(byId.get("piano-practice")?.calendarTitle).toBe("钢琴");
+    expect(byId.get("fce-homework")?.calendarTitle).toBeUndefined();
+    const cards = await getHabitCalendars("2026-07", "2026-07-10");
+    expect(cards.map((card) => card.title)).toEqual([byId.get("piano-practice")?.calendarTitle]);
+  });
+});
+
 describe("隐藏/取消隐藏打卡候选（2026-08-12，「奥数暑假班」这类噪音项清理）", () => {
   const noise = () => makeTask("noise", { timeType: "recurring", schedulePattern: "dailyRecurring", date: undefined, startDate: "2026-07-01", recurrence: { frequency: "daily", startDate: "2026-07-01" } });
 

@@ -1,7 +1,8 @@
 import { CalendarPlus, CalendarX, Check, Copy, MoreHorizontal, Pencil, Trash2, TriangleAlert } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChecklistItem, TaskDisplay, TaskStatus } from "../types/task";
-import { STATUS_META, canEndRecurring, canExtendRecurring, taskShortName } from "../utils/taskMeta";
+import { STATUS_META, canEndRecurring, canExtendRecurring, isOccurrenceSchedule, taskShortName } from "../utils/taskMeta";
+import { formatCompactDate } from "../utils/date";
 
 interface Props {
   task: TaskDisplay;
@@ -39,14 +40,34 @@ type AnimState = "idle" | "checking" | "unchecking";
 
 function checkboxClass(animState: AnimState, checked: boolean, size: "md" | "sm" = "md"): string {
   const base = size === "md"
-    ? "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-2 transition-all duration-300"
-    : "flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-all duration-200";
+    ? "flex h-7 w-7 shrink-0 items-center justify-center rounded-md border-2 transition-all duration-300"
+    : "flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-all duration-200";
   if (animState === "checking") return `${base} scale-110 border-primary bg-primary text-white`;
   if (animState === "unchecking") return `${base} scale-95 border-stone-300 bg-stone-100 text-stone-300`;
   if (checked) return `${base} border-primary bg-primary text-white`;
   return size === "md"
     ? `${base} border-stone-300 text-transparent hover:border-primary`
-    : `${base} border-stone-300`;
+    : `${base} border-stone-300 text-transparent`;
+}
+
+/**
+ * 带小项的非重复任务：左侧不再是可点的整体勾选框，而是只读进度环。
+ * 小项全部勾完后数据层自动把任务记为完成（recomputeStatusFromChecklist），
+ * 避免孩子点偏到主框把所有小项一次性标完成。
+ */
+function ChecklistRing({ completed, total, done }: { completed: number; total: number; done: boolean }) {
+  const radius = 11;
+  const circumference = 2 * Math.PI * radius;
+  const ratio = done ? 1 : total === 0 ? 0 : completed / total;
+  return (
+    <span role="img" aria-label={done ? "小项已全部完成" : `小项已完成 ${completed}/${total}`} title="勾完全部小项后自动完成" className="relative flex h-7 w-7 shrink-0 items-center justify-center">
+      <svg viewBox="0 0 28 28" className="h-7 w-7 -rotate-90">
+        <circle cx="14" cy="14" r={radius} strokeWidth="3" className={`stroke-stone-200 transition-all duration-300 ${done ? "fill-primary" : "fill-none"}`} />
+        <circle cx="14" cy="14" r={radius} strokeWidth="3" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - ratio)} className="fill-none stroke-primary transition-all duration-300" />
+      </svg>
+      {done && <Check className="absolute h-4 w-4 text-white" strokeWidth={3} />}
+    </span>
+  );
 }
 
 export function TaskItem({ task, compact = false, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onExtend, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onRetrySync, onRetryItemSync, onCopy }: Props) {
@@ -56,15 +77,34 @@ export function TaskItem({ task, compact = false, unsynced, unsyncedItemIds, onS
   const [optimisticDone, setOptimisticDone] = useState<boolean | null>(null);
   const [optimisticItems, setOptimisticItems] = useState<Record<string, boolean>>({});
 
+  const menuRef = useRef<HTMLDivElement>(null);
+
   const effectiveStatus = task.occurrenceStatus === "postponed" && task.overrideDate ? "todo" : task.status;
-  const done = optimisticDone !== null ? optimisticDone : effectiveStatus === "done";
+  const statusDone = optimisticDone !== null ? optimisticDone : effectiveStatus === "done";
   const hasChecklist = !!task.checklistItems?.length;
   const displayItems = task.checklistItems?.map((item) => ({ ...item, done: optimisticItems[item.id] ?? item.done })) ?? [];
   const completedItems = displayItems.filter((item) => item.done).length;
+  // 重复类任务的小项是跨天共用的一份，某天是否完成记在当天的单日状态上，必须保留整体勾选框；
+  // 其余带小项的任务由小项驱动完成，左侧只显示进度环。
+  const ringMode = hasChecklist && !isOccurrenceSchedule(task);
+  const done = ringMode && Object.keys(optimisticItems).length > 0 ? completedItems === displayItems.length : statusDone;
 
   // 父组件刷新后清除乐观覆盖
   useEffect(() => { setOptimisticDone(null); }, [task.status, task.id]);
   useEffect(() => { setOptimisticItems({}); }, [task.checklistItems]);
+
+  // 操作菜单：点菜单外或按 Esc 关闭
+  useEffect(() => {
+    if (!menu) return;
+    const closeOnOutside = (event: PointerEvent) => { if (!menuRef.current?.contains(event.target as Node)) setMenu(false); };
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setMenu(false); };
+    document.addEventListener("pointerdown", closeOnOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [menu]);
 
   const handleStatusChange = (newStatus: TaskStatus) => {
     const completing = newStatus === "done";
@@ -86,15 +126,20 @@ export function TaskItem({ task, compact = false, unsynced, unsyncedItemIds, onS
 
   return (
     <div className={`group relative flex items-start gap-2.5 border-b border-ink/[0.07] last:border-0 hover:bg-stone-50/70 ${compact ? "px-2.5 py-2.5 sm:px-3" : "px-4 py-3"} ${done || effectiveStatus === "cancelled" ? "text-stone-400" : "text-ink"}`}>
-      <button aria-label={done ? "标记为未完成" : "标记为完成"} onClick={() => handleStatusChange(done ? "todo" : "done")} className={checkboxClass(checkState, done)}>
-        <Check className="h-4 w-4" strokeWidth={3} />
-      </button>
+      {ringMode ? (
+        <ChecklistRing completed={completedItems} total={displayItems.length} done={done} />
+      ) : (
+        // 视觉 28px，点击热区 44px（负外边距抵消，不改变行内排版）
+        <button aria-label={done ? "标记为未完成" : "标记为完成"} onClick={() => handleStatusChange(done ? "todo" : "done")} className="-m-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg">
+          <span className={checkboxClass(checkState, done)}><Check className="h-4 w-4" strokeWidth={3} /></span>
+        </button>
+      )}
 
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 pt-1">
         <div className="flex min-w-0 items-start gap-2">
           {formatTime(task) && <span className="mt-0.5 shrink-0 rounded bg-ink/[0.06] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-muted">{formatTime(task).trim()}</span>}
           <div className={`min-w-0 flex-1 font-semibold leading-5 ${compact ? "text-sm" : "text-base"} ${done || effectiveStatus === "cancelled" ? "line-through" : ""}`}>{taskShortName(task)}</div>
-          {hasChecklist && <span className="mt-0.5 inline-flex shrink-0 items-center gap-1.5 text-[11px] text-muted"><span className="relative h-1 w-10 overflow-hidden rounded-full bg-stone-200"><span className="absolute inset-y-0 left-0 rounded-full bg-primary transition-all" style={{ width: `${(completedItems / displayItems.length) * 100}%` }} /></span><span className="tabular-nums">{completedItems}/{displayItems.length}</span></span>}
+          {hasChecklist && <span className="mt-0.5 inline-flex shrink-0 items-center gap-1.5 text-[11px] text-muted">{!ringMode && <span className="relative h-1 w-10 overflow-hidden rounded-full bg-stone-200"><span className="absolute inset-y-0 left-0 rounded-full bg-primary transition-all" style={{ width: `${(completedItems / displayItems.length) * 100}%` }} /></span>}<span className="tabular-nums">{completedItems}/{displayItems.length}</span></span>}
           {unsynced && <UnsyncedBadge onRetry={onRetrySync} />}
         </div>
 
@@ -102,7 +147,7 @@ export function TaskItem({ task, compact = false, unsynced, unsyncedItemIds, onS
 
         {/* Checklist 小项 */}
         {hasChecklist && (
-          <div className="mt-1 space-y-0.5 border-l border-ink/10 pl-2">
+          <div className="mt-1 border-l border-ink/10 pl-1.5">
             {task.checklistItems!.map((item) => {
               const optimisticItemDone = optimisticItems[item.id] ?? item.done;
               return (
@@ -121,19 +166,19 @@ export function TaskItem({ task, compact = false, unsynced, unsyncedItemIds, onS
         {/* 顺延/延期标注 */}
         {(task.rolledFromDate || task.occurrenceStatus === "postponed") && (
           <div className="mt-1 flex flex-wrap gap-2 text-xs">
-            {task.rolledFromDate && <span className="text-amber-700">由 {task.rolledFromDate} 顺延</span>}
+            {task.rolledFromDate && <span className="text-amber-700">原定 {formatCompactDate(task.rolledFromDate)}</span>}
             {task.occurrenceStatus === "postponed" && task.overrideDate && <span className="text-violet-700">已延期到 {task.overrideDate}</span>}
             {task.overrideNote && <span className="text-stone-400">{task.overrideNote}</span>}
           </div>
         )}
       </div>
 
-      {effectiveStatus !== "todo" && (
+      {effectiveStatus !== "todo" && effectiveStatus !== "overdue" && (
         <span className={`mt-1 hidden shrink-0 rounded-full px-2 py-0.5 text-[11px] sm:block ${STATUS_META[effectiveStatus].className}`}>{STATUS_META[effectiveStatus].label}</span>
       )}
 
-      <div className="relative">
-        <button aria-label="任务操作" onClick={() => setMenu(!menu)} className="rounded-lg p-1.5 text-stone-400 opacity-70 hover:bg-stone-100 hover:text-ink group-hover:opacity-100">
+      <div ref={menuRef} className="relative">
+        <button aria-label="任务操作" aria-expanded={menu} onClick={() => setMenu(!menu)} className="rounded-lg p-1.5 text-stone-400 opacity-70 hover:bg-stone-100 hover:text-ink group-hover:opacity-100 [@media(pointer:coarse)]:-m-2 [@media(pointer:coarse)]:p-3.5">
           <MoreHorizontal className="h-4 w-4" />
         </button>
         {menu && (
@@ -174,13 +219,12 @@ function ChecklistRow({ item, animState, unsynced, onToggle, onRetrySync }: {
   onRetrySync?: () => void;
 }) {
   return (
-    <div className={`flex items-center gap-2 rounded-md px-1 py-1 ${item.done ? "text-stone-400" : "text-stone-600"}`}>
-      <button type="button" onClick={onToggle} className="shrink-0">
-        <span className={checkboxClass(animState, item.done, "sm")}>
-          {item.done ? "✓" : ""}
-        </span>
+    <div className={`flex items-center gap-1 ${item.done ? "text-stone-400" : "text-stone-600"}`}>
+      {/* 整行可点；触屏上行高 44px，鼠标设备保持紧凑 */}
+      <button type="button" role="checkbox" aria-checked={item.done} onClick={onToggle} className="flex min-h-8 min-w-0 flex-1 items-center gap-2.5 rounded-md px-1.5 py-1 text-left hover:bg-stone-100/70 [@media(pointer:coarse)]:min-h-11">
+        <span className={checkboxClass(animState, item.done, "sm")}><Check className="h-3.5 w-3.5" strokeWidth={3} /></span>
+        <span className={`min-w-0 flex-1 text-[13px] leading-5 ${item.done ? "line-through" : ""}`}>{item.title}</span>
       </button>
-      <span className={`min-w-0 flex-1 text-[13px] leading-5 ${item.done ? "line-through" : ""}`}>{item.title}</span>
       {unsynced && <UnsyncedBadge onRetry={onRetrySync} />}
     </div>
   );

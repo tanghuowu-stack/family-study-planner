@@ -4,7 +4,7 @@
  * 视觉遵守 docs/style.md：primary/mint 主题、卡片 rounded-2xl border-stone-100，
  * 完成绿（primary）、漏卡红（rose，见 style.md §功能色补充）、off 灰（stone）。
  */
-import { ChevronDown, ChevronLeft, ChevronRight, ListChecks, CalendarOff, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ListChecks, CalendarOff } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { addDays, addMonths, endOfMonth, getDay, parseISO, startOfMonth } from "date-fns";
 import {
@@ -125,121 +125,94 @@ function MonthGrid({ days }: { days: { date: string; status: HabitDayStatus }[] 
   );
 }
 
-/** 管理打卡项目：勾选/取消即时调 setHabitEnabled */
+/** 管理打卡项目：勾选/取消即时调 setHabitEnabled；打卡起点改完点「确定」才保存 */
 function ManageDialog({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
   const [candidates, setCandidates] = useState<HabitCandidate[] | null>(null);
   const [hidden, setHidden] = useState<{ taskId: string; title: string }[]>([]);
   const [hiddenOpen, setHiddenOpen] = useState(false);
+  const [coursesOpen, setCoursesOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [error, setError] = useState("");
   const load = useCallback(() => {
     getHabitCandidates().then(setCandidates).catch(() => setCandidates([]));
     getHiddenHabitCandidates().then(setHidden).catch(() => setHidden([]));
   }, []);
   useEffect(load, [load]);
 
-  const toggle = async (c: HabitCandidate) => {
-    setBusy(c.taskId);
+  const run = async (taskId: string, action: () => Promise<void>, refreshCalendars = true) => {
+    setBusy(taskId);
+    setError("");
     try {
-      await setHabitEnabled(c.taskId, !c.enabled);
+      await action();
       load();
-      onChanged();
+      if (refreshCalendars) onChanged();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "保存失败，请重试");
     } finally {
       setBusy(null);
     }
   };
 
-  const changeStart = async (taskId: string, date: string) => {
-    setEditingId(null);
-    if (!date) return;
-    setBusy(taskId);
-    try {
-      await setHabitStartDate(taskId, date);
-      load();
-      onChanged();
-    } finally {
-      setBusy(null);
-    }
-  };
+  // 已勾选的始终留在主列表（否则找不到地方取消）；没勾选的上课类一般不用来打卡，折叠起来减少干扰
+  const mainList = candidates?.filter((c) => c.enabled || !c.isCourse) ?? [];
+  const courseList = candidates?.filter((c) => !c.enabled && c.isCourse) ?? [];
 
-  const hide = async (taskId: string) => {
-    setBusy(taskId);
-    try {
-      await hideHabitCandidate(taskId);
-      load();
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const unhide = async (taskId: string) => {
-    setBusy(taskId);
-    try {
-      await unhideHabitCandidate(taskId);
-      load();
-    } finally {
-      setBusy(null);
-    }
-  };
+  const renderCandidate = (c: HabitCandidate) => (
+    <div key={c.taskId} className="border-b border-ink/[0.07] py-1 last:border-0">
+      <div className="flex items-center gap-2">
+        <label className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-sm">
+          <input type="checkbox" checked={c.enabled} disabled={busy === c.taskId} onChange={() => void run(c.taskId, () => setHabitEnabled(c.taskId, !c.enabled))} className="h-5 w-5 shrink-0 rounded accent-primary" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-ink">{c.title}</span>
+            {c.calendarTitle && c.calendarTitle !== c.title && <span className="block text-xs text-muted">计入「{c.calendarTitle}」月历</span>}
+          </span>
+        </label>
+        {!c.enabled && (
+          <button onClick={() => void run(c.taskId, () => hideHabitCandidate(c.taskId), false)} disabled={busy === c.taskId} title="从这个列表里隐藏，任务本身不受影响" className="min-h-11 shrink-0 rounded-lg px-2 text-xs text-muted hover:text-ink disabled:opacity-50">
+            不再提示
+          </button>
+        )}
+      </div>
+      {c.enabled && c.streakStartDate && (
+        <StartDateEditor key={c.streakStartDate} title={c.title} saved={c.streakStartDate} disabled={busy === c.taskId} onSave={(date) => run(c.taskId, () => setHabitStartDate(c.taskId, date))} />
+      )}
+    </div>
+  );
 
   return (
     <Dialog onClose={onClose} title="管理打卡项目">
+      <p className="mt-1 text-xs text-muted">勾选后立刻生效，每个项目各有一张月历。</p>
       {candidates === null ? (
         <p className="mt-3 text-sm text-muted">加载中…</p>
       ) : candidates.length === 0 ? (
         <p className="mt-3 text-sm text-muted">还没有可作为打卡的重复任务，先在任务里创建每天/每周重复的任务吧。</p>
       ) : (
-        <div className="mt-3 max-h-72 space-y-1 overflow-y-auto">
-          {candidates.map((c) => (
-            <div key={c.taskId} className="rounded-lg px-2 py-2 hover:bg-mint/40">
-              <div className="flex items-center gap-2">
-                <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-sm">
-                  <input type="checkbox" checked={c.enabled} disabled={busy === c.taskId} onChange={() => toggle(c)} className="h-4 w-4 shrink-0 rounded" />
-                  <span className="min-w-0 flex-1 truncate text-ink">{c.title}</span>
-                </label>
-                {!c.enabled && (
-                  <button onClick={() => hide(c.taskId)} disabled={busy === c.taskId} aria-label={`不再显示"${c.title}"`} title="不再显示这个任务" className="shrink-0 rounded-lg p-1 text-stone-400 hover:bg-stone-100 hover:text-rose-500 disabled:opacity-50">
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-              {c.enabled && c.streakStartDate && (
-                editingId === c.taskId ? (
-                  <input
-                    type="date"
-                    autoFocus
-                    defaultValue={c.streakStartDate}
-                    max={todayKey()}
-                    onBlur={(e) => changeStart(c.taskId, e.target.value)}
-                    onChange={(e) => changeStart(c.taskId, e.target.value)}
-                    className="ml-6 mt-1 rounded-lg border px-2 py-1 text-xs text-stone-700"
-                  />
-                ) : (
-                  <button
-                    onClick={() => setEditingId(c.taskId)}
-                    disabled={busy === c.taskId}
-                    className="ml-6 mt-0.5 text-xs text-muted hover:text-primary hover:underline"
-                  >
-                    打卡起点 {c.streakStartDate}
-                  </button>
-                )
-              )}
+        <div className="mt-2 max-h-[60vh] overflow-y-auto">
+          {mainList.map(renderCandidate)}
+          {courseList.length > 0 && (
+            <div className="border-t border-ink/10">
+              <button onClick={() => setCoursesOpen(!coursesOpen)} aria-expanded={coursesOpen} className="flex min-h-11 w-full items-center justify-between text-left text-xs text-muted">
+                <span>上课类 {courseList.length} 项（一般不用打卡）</span>
+                <ChevronDown className={`h-3.5 w-3.5 transition ${coursesOpen ? "rotate-180" : ""}`} />
+              </button>
+              {coursesOpen && <div>{courseList.map(renderCandidate)}</div>}
             </div>
-          ))}
+          )}
         </div>
       )}
+      {error && <p role="alert" className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</p>}
       {hidden.length > 0 && (
-        <div className="mt-3 border-t pt-2">
-          <button onClick={() => setHiddenOpen(!hiddenOpen)} className="flex w-full items-center justify-between text-xs text-muted">
+        <div className="mt-2 border-t border-ink/10">
+          <button onClick={() => setHiddenOpen(!hiddenOpen)} aria-expanded={hiddenOpen} className="flex min-h-11 w-full items-center justify-between text-xs text-muted">
             已隐藏 {hidden.length} 项
             <ChevronDown className={`h-3.5 w-3.5 transition ${hiddenOpen ? "rotate-180" : ""}`} />
           </button>
           {hiddenOpen && (
-            <div className="mt-1 space-y-0.5">
+            <div className="space-y-0.5">
               {hidden.map((h) => (
-                <div key={h.taskId} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted hover:bg-mint/40">
+                <div key={h.taskId} className="flex items-center gap-2 text-xs text-muted">
                   <span className="min-w-0 flex-1 truncate">{h.title}</span>
-                  <button onClick={() => unhide(h.taskId)} disabled={busy === h.taskId} className="shrink-0 text-primary hover:underline disabled:opacity-50">取消隐藏</button>
+                  <button onClick={() => void run(h.taskId, () => unhideHabitCandidate(h.taskId), false)} disabled={busy === h.taskId} className="min-h-11 shrink-0 px-2 text-primary hover:underline disabled:opacity-50">恢复显示</button>
                 </div>
               ))}
             </div>
@@ -248,6 +221,30 @@ function ManageDialog({ onClose, onChanged }: { onClose: () => void; onChanged: 
       )}
       <button onClick={onClose} className="mt-4 w-full rounded-xl border bg-white px-4 py-2 text-sm text-stone-500">完成</button>
     </Dialog>
+  );
+}
+
+/**
+ * 打卡起点：一个看得出能改的日期框。改动只进本地草稿，点「确定」才保存——
+ * 日期框每拨一下月/日都会触发 change，边改边存会存进中间值。
+ * 保存成功后父组件用新起点做 key 重建本组件，草稿随之归位。
+ */
+function StartDateEditor({ title, saved, disabled, onSave }: { title: string; saved: string; disabled: boolean; onSave: (date: string) => Promise<void> }) {
+  const [draft, setDraft] = useState(saved);
+  const changed = draft !== "" && draft !== saved;
+  return (
+    <div className="mb-2 ml-[1.875rem] flex flex-wrap items-center gap-2 text-xs text-muted">
+      <label className="flex items-center gap-2">
+        <span className="shrink-0">打卡起点</span>
+        <input type="date" aria-label={`${title}的打卡起点`} value={draft} max={todayKey()} disabled={disabled} onChange={(event) => setDraft(event.target.value)} className="h-9 rounded-lg border px-2 text-sm text-ink" />
+      </label>
+      {changed && (
+        <>
+          <button onClick={() => void onSave(draft)} disabled={disabled} className="h-9 rounded-lg bg-primary px-3 text-xs font-semibold text-white disabled:opacity-50">确定</button>
+          <button onClick={() => setDraft(saved)} disabled={disabled} className="h-9 rounded-lg px-2 text-xs text-muted hover:text-ink">取消</button>
+        </>
+      )}
+    </div>
   );
 }
 

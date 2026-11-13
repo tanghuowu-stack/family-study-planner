@@ -1,4 +1,4 @@
-import { CalendarPlus, CalendarX, Check, Copy, MoreHorizontal, Pencil, Trash2, TriangleAlert } from "lucide-react";
+import { CalendarPlus, CalendarX, Check, ChevronDown, Copy, MoreHorizontal, Pencil, Trash2, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ChecklistItem, TaskDisplay, TaskStatus } from "../types/task";
 import { STATUS_META, canEndRecurring, canExtendRecurring, isOccurrenceSchedule, taskShortName } from "../utils/taskMeta";
@@ -7,6 +7,8 @@ import { formatCompactDate } from "../utils/date";
 interface Props {
   task: TaskDisplay;
   compact?: boolean;
+  /** 今日页正在看的日期：在这一天之前就做完的小项收成一行"已完成 N 项" */
+  viewDate?: string;
   unsynced?: boolean; // 任务自身完成状态未同步到云端
   unsyncedItemIds?: Set<string>; // 哪些清单小项未同步到云端
   onStatusChange?: (task: TaskDisplay, status: TaskStatus) => void | Promise<void>;
@@ -73,8 +75,9 @@ function ChecklistRing({ completed, total, done }: { completed: number; total: n
   );
 }
 
-export function TaskItem({ task, compact = false, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onExtend, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onRetrySync, onRetryItemSync, onCopy }: Props) {
+export function TaskItem({ task, compact = false, viewDate, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onExtend, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onRetrySync, onRetryItemSync, onCopy }: Props) {
   const [menu, setMenu] = useState(false);
+  const [showEarlier, setShowEarlier] = useState(false);
   // 菜单离屏幕底部（含底部导航栏）太近时向上展开，避免被遮住
   const [menuAbove, setMenuAbove] = useState(false);
   const toggleMenu = (button: HTMLButtonElement) => {
@@ -184,23 +187,41 @@ export function TaskItem({ task, compact = false, unsynced, unsyncedItemIds, onS
 
         {task.note && !task.overrideNote && <div className="min-w-0 truncate text-[13px] text-muted">{task.note}</div>}
 
-        {/* Checklist 小项 */}
-        {hasChecklist && (
-          <div className="mt-1 border-l border-ink/10 pl-1.5">
-            {task.checklistItems!.map((item) => {
-              const optimisticItemDone = optimisticItems[item.id] ?? item.done;
-              return (
-              <ChecklistRow
-                key={item.id}
-                item={{ ...item, done: optimisticItemDone }}
-                animState={itemAnim[item.id] ?? "idle"}
-                unsynced={unsyncedItemIds?.has(item.id)}
-                onToggle={() => handleChecklistToggle(item.id, item.done)}
-                onRetrySync={() => onRetryItemSync?.(item.id)}
-              />);
-            })}
-          </div>
-        )}
+        {/* Checklist 小项：在查看日之前就做完的收成一行"已完成 N 项"（点开可看、可取消勾选）；
+            当天刚勾的仍原地划掉，让孩子看到反馈。重复任务的小项按天显示，不会有"之前做完的" */}
+        {hasChecklist && (() => {
+          const rows = task.checklistItems!.map((item) => {
+            const optimisticItemDone = optimisticItems[item.id] ?? item.done;
+            const doneEarlier = !!viewDate && item.done && optimisticItems[item.id] !== false && (!item.completedDate || item.completedDate < viewDate);
+            return { item, optimisticItemDone, doneEarlier };
+          });
+          const earlier = rows.filter((row) => row.doneEarlier);
+          const render = ({ item, optimisticItemDone }: typeof rows[number]) => (
+            <ChecklistRow
+              key={item.id}
+              item={{ ...item, done: optimisticItemDone }}
+              animState={itemAnim[item.id] ?? "idle"}
+              unsynced={unsyncedItemIds?.has(item.id)}
+              onToggle={() => handleChecklistToggle(item.id, item.done)}
+              onRetrySync={() => onRetryItemSync?.(item.id)}
+            />
+          );
+          return (
+            <div className="mt-1 border-l border-ink/10 pl-1.5">
+              {rows.filter((row) => !row.doneEarlier).map(render)}
+              {earlier.length > 0 && (
+                <>
+                  <button type="button" onClick={() => setShowEarlier((value) => !value)} aria-expanded={showEarlier}
+                    className="flex min-h-8 w-full items-center gap-2 rounded-md px-1.5 text-left text-[13px] text-muted hover:bg-stone-100/70 [@media(pointer:coarse)]:min-h-11">
+                    <Check className="h-4 w-4 text-primary" strokeWidth={3} />之前已完成 {earlier.length} 项
+                    <ChevronDown className={`h-3.5 w-3.5 transition ${showEarlier ? "rotate-180" : ""}`} />
+                  </button>
+                  {showEarlier && earlier.map(render)}
+                </>
+              )}
+            </div>
+          );
+        })()}
 
         {/* 顺延/延期标注 */}
         {(task.rolledFromDate || task.occurrenceStatus === "postponed") && (

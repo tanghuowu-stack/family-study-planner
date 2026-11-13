@@ -6,6 +6,7 @@ import { SidebarMemo } from "./components/SidebarMemo";
 import { ExtendRecurringDialog } from "./components/ExtendRecurringDialog";
 import { getRepository, isCloudMode, setCloudMode } from "./data/repositoryProvider";
 import { cloudRepository, setCloudSyncErrorHandler } from "./data/cloudRepository";
+import { taskRepository } from "./data/taskRepository";
 import { loadAuthState } from "./lib/cloudAuth";
 import { startRealtimeSync, stopRealtimeSync } from "./lib/realtimeSync";
 import { StatsPage } from "./pages/StatsPage";
@@ -265,6 +266,9 @@ export default function App() {
     if (synced) { clearUnsynced(setUnsyncedItems, key); notify("已同步"); }
     else notifyFailure("⚠️ 仍未同步，请检查网络");
   };
+  // 编辑以库里的任务本体为基准：今日页传来的是按天展示的快照（小项勾选按那一天回放、状态按单日覆盖），
+  // 直接拿它做草稿保存，会把展示值写回库里（比如重复任务别的日子勾过的小项被清掉）
+  const editTask = async (task: Task) => { const fresh = await taskRepository.getTask(task.id); setForm({ open: true, task: fresh ?? task }); };
   const copyTask = async (task: Task) => { const taskDate = task.date ?? task.startDate ?? selectedDate; const defaultDate = toDateKey(addDays(fromDateKey(taskDate), 1)); const date = prompt("复制到哪一天？请输入 YYYY-MM-DD", defaultDate); if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return; await repo().copyToDate(task.id, date); refresh(); notify(`已复制到 ${date}`); };
   const deleteTask = async (task: Task) => { if (!confirm(`确定删除"${task.title}"吗？${task.timeType === "recurring" ? "这会删除整个重复任务。" : ""}`)) return; await repo().remove(task.id); refresh(); notify("任务已删除"); };
   // 结束长期重复任务：今天起不再排期，但任务本体保留、历史记录与统计月历卡片继续可见（区别于删除的软删）
@@ -281,7 +285,7 @@ export default function App() {
   const cancelOccurrence = async (task: TaskDisplay) => { if (!task.occurrenceDate || !confirm("这一次跳过吗？只影响这一天，以后照常安排。")) return; await repo().setOccurrence(task.id, task.occurrenceDate, "cancelled"); refresh(); notify("这一次已跳过"); };
   const postponeOccurrence = async (task: TaskDisplay) => { if (!task.occurrenceDate) return; const date = prompt("这一次改到哪一天？请输入 YYYY-MM-DD", task.overrideDate ?? task.occurrenceDate); if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return; const note = prompt("调整备注（可选）", task.overrideNote ?? "") ?? ""; await repo().setOccurrence(task.id, task.occurrenceDate, "postponed", date, note); refresh(); notify(`这一次已改到 ${date}`); };
   const openDay = (date: string) => { setSelectedDate(date); setPage("today"); window.scrollTo({ top: 0, behavior: "smooth" }); };
-  const actions = { onStatusChange: changeStatus, onChecklistToggle: toggleChecklist, onCopy: copyTask, onEdit: (task: Task) => setForm({ open: true, task }), onDelete: deleteTask, onEnd: endTask, onExtend: extendTask, onOccurrenceCancel: cancelOccurrence, onOccurrencePostpone: postponeOccurrence, unsyncedTasks, unsyncedItems, onRetrySync: retryTaskSync, onRetryItemSync: retryItemSync };
+  const actions = { onStatusChange: changeStatus, onChecklistToggle: toggleChecklist, onCopy: copyTask, onEdit: editTask, onDelete: deleteTask, onEnd: endTask, onExtend: extendTask, onOccurrenceCancel: cancelOccurrence, onOccurrencePostpone: postponeOccurrence, unsyncedTasks, unsyncedItems, onRetrySync: retryTaskSync, onRetryItemSync: retryItemSync };
   return <div className="min-h-screen bg-paper text-ink">
     <aside className="fixed inset-y-0 left-0 z-50 hidden w-56 flex-col overflow-y-auto bg-ink px-3 py-5 text-white lg:flex">
       <button onClick={() => setPage("today")} className="flex items-center gap-3 px-2 text-left">

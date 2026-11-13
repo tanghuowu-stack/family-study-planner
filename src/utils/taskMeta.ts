@@ -1,4 +1,4 @@
-import type { CourseStatus, ExtraContentType, MainCategory, PlanPeriod, RolloverMode, SchedulePattern, TaskDraft, TaskStatus, TaskTimeType, SubCategory } from "../types/task";
+import type { ChecklistItem, CourseStatus, ExtraContentType, MainCategory, PlanPeriod, RolloverMode, SchedulePattern, TaskDraft, TaskStatus, TaskTimeType, SubCategory } from "../types/task";
 import { addDays, getDay, startOfWeek } from "date-fns";
 import { fromDateKey, todayKey, toDateKey } from "./date";
 
@@ -274,6 +274,15 @@ export function defaultRollover(task: { mainCategory: MainCategory; subCategory:
   const auto = task.mainCategory === "extraHomework" || task.mainCategory === "readingPlan" || task.subCategory === "pianoPractice";
   return auto ? { rolloverMode: "autoNextDay", allowRollover: true } : { rolloverMode: "keepOverdue", allowRollover: false };
 }
+
+/**
+ * 重复类任务的小项按天看（2026-11-13）：小项是所有日子共用的一份，某天只有"在这一天勾的"才算已勾，
+ * 其余显示未勾——每天从空白开始。判定靠小项上的 completedDate（勾选日）；以前不分天，
+ * 今天勾过的小项明天打开还是勾着的。已知边界：每个小项只记最后一次勾选日，周一勾过、周二又勾，
+ * 翻回周一时这一项显示未勾（周一那次的完成状态仍记在单日状态表里，不受影响）。
+ */
+export const checklistOnDay = (items: ChecklistItem[] | undefined, date: string): ChecklistItem[] | undefined =>
+  items?.map((item) => ({ ...item, done: item.done && item.completedDate === date }));
 
 /** 兴趣班任务应写入的内容类型：勾了"算作上课"记 class，否则不写（钢琴/游泳/轮滑不依赖它，照样算上课） */
 export const interestContentType = (isClass: boolean): ExtraContentType | undefined => isClass ? "class" : undefined;

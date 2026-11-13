@@ -8,7 +8,7 @@ import { getMonthBounds, getMonthKey, getWeekEndKey, getWeekStartKey, isDateInRa
 import { scheduleOccursOn } from "../utils/recurrence";
 import { createTravelPauseCheck } from "../utils/travelPause";
 export { scheduleOccursOn } from "../utils/recurrence";
-import { defaultSortOrder, isCourseTask, isOccurrenceSchedule, subCategoryLabel } from "../utils/taskMeta";
+import { defaultSortOrder, isCourseTask, isOccurrenceSchedule, subCategoryLabel, checklistOnDay } from "../utils/taskMeta";
 import { TASK_SUBJECT_GROUPS, taskSubjectGroup } from "../utils/taskGrouping";
 
 const makeId = () => crypto.randomUUID();
@@ -238,6 +238,26 @@ const completionStampFor = (dateKey: string, nowIso: string) =>
 const checklistAsOf = (items: ChecklistItem[] | undefined, date: string) =>
   items?.map((item) => ({ ...item, done: item.done && !!item.completedDate && item.completedDate <= date }));
 
+/** 重复类整体勾完成/取消时，同步这一天的小项（只动这一天的，别的日子勾的不动） */
+async function stampOccurrenceChecklist(taskId: string, day: string, done: boolean): Promise<void> {
+  await db.transaction("rw", db.tasks, async () => {
+    const task = await db.tasks.get(taskId);
+    if (!task?.checklistItems?.length) return;
+    let changed = false;
+    const items = task.checklistItems.map((item) => {
+      if (done) {
+        if (item.done && item.completedDate === day) return item;
+        changed = true;
+        return { ...item, done: true, completedDate: day };
+      }
+      if (item.completedDate !== day) return item;
+      changed = true;
+      return { ...item, done: false, completedDate: undefined };
+    });
+    if (changed) await db.tasks.update(taskId, { checklistItems: items, updatedAt: new Date().toISOString() });
+  });
+}
+
 const asStillOwed = (task: Task, date: string): TaskDisplay => ({
   ...task,
   status: "todo",
@@ -299,6 +319,9 @@ async function recomputeStatusFromChecklist(taskId: string, beforeSnapshot?: Tas
 }
 
 export const taskRepository = {
+  /** 读取库里的任务本体（不含任何按天展示的覆盖），编辑表单用它做基准 */
+  async getTask(id: string): Promise<Task | undefined> { return db.tasks.get(id); },
+
   async listAll() { return (await db.tasks.toArray()).filter((task) => isActiveTask(task) && task.mainCategory !== "readingPlan").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)); },
 
   async getTasksForDate(date: string, options?: { forCalendar?: boolean }): Promise<TaskDisplay[]> {
@@ -316,11 +339,11 @@ export const taskRepository = {
         const pendingDate = findPendingOccurrenceDate(task, date, byTaskAndDate, paused);
         if (pendingDate) {
           const occurrence = byTaskAndDate.get(`${task.id}:${pendingDate}`);
-          result.push({ ...task, status: occurrence?.status as TaskStatus ?? "todo", occurrenceDate: pendingDate, occurrenceStatus: occurrence?.status ?? "todo", overrideDate: occurrence?.overrideDate, overrideNote: occurrence?.overrideNote, rolledFromDate: pendingDate });
+          result.push({ ...task, checklistItems: checklistOnDay(task.checklistItems, pendingDate), status: occurrence?.status as TaskStatus ?? "todo", occurrenceDate: pendingDate, occurrenceStatus: occurrence?.status ?? "todo", overrideDate: occurrence?.overrideDate, overrideNote: occurrence?.overrideNote, rolledFromDate: pendingDate });
         } else if (scheduleOccursOn(task, date)) {
           const occurrence = byTaskAndDate.get(`${task.id}:${date}`);
           if (occurrence?.status !== "cancelled" && occurrence?.status !== "postponed") {
-            result.push({ ...task, status: occurrence?.status as TaskStatus ?? "todo", occurrenceDate: date, occurrenceStatus: occurrence?.status ?? "todo", overrideDate: occurrence?.overrideDate, overrideNote: occurrence?.overrideNote });
+            result.push({ ...task, checklistItems: checklistOnDay(task.checklistItems, date), status: occurrence?.status as TaskStatus ?? "todo", occurrenceDate: date, occurrenceStatus: occurrence?.status ?? "todo", overrideDate: occurrence?.overrideDate, overrideNote: occurrence?.overrideNote });
           }
         } else if (!options?.forCalendar && task.allowRollover && task.rolloverMode === "autoNextDay") {
           // 顺延来的那一次在今天做完了，而今天既没有自己的排期、也没有别的欠账：
@@ -328,7 +351,7 @@ export const taskRepository = {
           // 任务会从今日页整条消失。已完成的事实必须能在完成那天找到——与 singleDate 的
           // rolledOverCompletedLate 同一原则（2026-09-12）。
           const settled = occurrences.find((o) => o.taskId === task.id && o.status === "done" && o.occurrenceDate < date && !!o.completedAt && toLocalDateKey(o.completedAt) === date);
-          if (settled) result.push({ ...task, status: "done", occurrenceDate: settled.occurrenceDate, occurrenceStatus: "done", overrideDate: settled.overrideDate, overrideNote: settled.overrideNote, rolledFromDate: settled.occurrenceDate });
+          if (settled) result.push({ ...task, checklistItems: checklistOnDay(task.checklistItems, settled.occurrenceDate), status: "done", occurrenceDate: settled.occurrenceDate, occurrenceStatus: "done", overrideDate: settled.overrideDate, overrideNote: settled.overrideNote, rolledFromDate: settled.occurrenceDate });
         }
       } else if (scheduleOccursOn(task, date)) {
         // dateRange 整体任务只有一个 status 字段（R6：不产生逐日 occurrence），完成后窗口内
@@ -375,7 +398,7 @@ export const taskRepository = {
 
     for (const occurrence of occurrences.filter((item) => item.status === "postponed" && item.overrideDate === date)) {
       const task = tasks.find((item) => item.id === occurrence.taskId);
-      if (task && task.mainCategory !== "readingPlan" && isActiveTask(task) && task.childVisible && (!options?.forCalendar || (task.calendarVisibility !== "hide" && isCalendarPlanTask(task)))) result.push({ ...task, status: "todo", occurrenceDate: occurrence.occurrenceDate, occurrenceStatus: "postponed", overrideDate: date, overrideNote: occurrence.overrideNote });
+      if (task && task.mainCategory !== "readingPlan" && isActiveTask(task) && task.childVisible && (!options?.forCalendar || (task.calendarVisibility !== "hide" && isCalendarPlanTask(task)))) result.push({ ...task, checklistItems: checklistOnDay(task.checklistItems, occurrence.occurrenceDate), status: "todo", occurrenceDate: occurrence.occurrenceDate, occurrenceStatus: "postponed", overrideDate: date, overrideNote: occurrence.overrideNote });
     }
 
     const unique = new Map<string, TaskDisplay>();
@@ -875,6 +898,9 @@ export const taskRepository = {
     if (isOccurrenceSchedule(task)) {
       if (!task.occurrenceDate) throw new Error("重复类任务缺少单日日期，无法记录完成状态");
       const result = await this.setOccurrence(task.id, task.occurrenceDate, status);
+      // 整体勾完成 → 这一天的小项全部记为这天勾的；整体取消完成 → 清掉这一天勾的小项（别的日子勾的不动）。
+      // 否则会出现"整体已完成、小项 0/2"。小项按天显示，见 checklistOnDay。
+      if (status === "done" || status === "todo") await stampOccurrenceChecklist(task.id, task.occurrenceDate, status === "done");
       onLocalWrite?.();
       return result;
     }
@@ -949,12 +975,22 @@ export const taskRepository = {
     let parentId: string | undefined;
 
     if (isOccurrenceSchedule(snapshot)) {
-      // R1：重复类任务本体 status/completedAt 不动，完成状态只写 occurrence 表
+      // R1：重复类任务本体 status/completedAt 不动，完成状态只写 occurrence 表。
+      // 小项按"这一次"的日期记：勾上记 completedDate = 单日日期，界面只把这一天勾的显示为已勾（checklistOnDay）。
+      const day = occurrenceDate ?? recordDate;
+      const toggleOnDay = (current: ChecklistItem[]) => current.map((item) => {
+        if (item.id !== itemId) return item;
+        const shownDone = item.done && item.completedDate === day;
+        const target = opts?.done ?? !shownDone;
+        if (target) return { ...item, done: true, completedDate: day };
+        // 取消只清这一天勾的；别的日子勾的这一天本来就显示未勾，不动它
+        return item.completedDate === day ? { ...item, done: false, completedDate: undefined } : item;
+      });
       await db.transaction("rw", db.tasks, db.taskOccurrenceStatuses, db.activityLogs, async () => {
         const task = await db.tasks.get(taskId);
         if (!task?.checklistItems) return;
-        const items = applyToggle(task.checklistItems);
-        const allDone = items.every((item) => item.done);
+        const items = toggleOnDay(task.checklistItems);
+        const allDone = items.every((item) => item.done && item.completedDate === day);
         await db.tasks.update(taskId, { checklistItems: items, updatedAt: now });
         if (occurrenceDate) {
           const id = `${taskId}:${occurrenceDate}`;

@@ -5,7 +5,7 @@ import { getRepository } from "../data/repositoryProvider";
 import { loadCustomTaskCategories, type CustomTaskCategories } from "../data/appSettingsRepository";
 import type { Course, CourseStatus, ExtraContentType, MainCategory, PlanPeriod, Task } from "../types/task";
 import { fmtDate, formatSpecificDates, getWeekEndKey, todayKey } from "../utils/date";
-import { COURSE_MAIN_OPTIONS, COURSE_STATUS_META, MAIN_CATEGORY_META, SUB_CATEGORY_OPTIONS, WEEKDAY_LABELS, canEndRecurring, canExtendRecurring, interestContentType, isCourseTask, isEndedRecurring, isValidSubCategory, subCategoryLabel, taskShortName } from "../utils/taskMeta";
+import { COURSE_MAIN_OPTIONS, COURSE_STATUS_META, MAIN_CATEGORY_META, SUB_CATEGORY_OPTIONS, WEEKDAY_LABELS, canEndRecurring, canExtendRecurring, interestContentType, isCourseTask, isEndedRecurring, isValidSubCategory, subCategoryLabel, taskShortName, checklistOnDay, isOccurrenceSchedule } from "../utils/taskMeta";
 import { taskSubjectGroup } from "../utils/taskGrouping";
 import { GroupHeading, SUBJECT_DOT } from "../components/GroupHeading";
 
@@ -126,7 +126,9 @@ function TaskRow({ task, selected, selecting, onToggle, onCopy, onEdit, onDelete
   const [menu, setMenu] = useState(false);
   const [menuAbove, setMenuAbove] = useState(false);
   const finished = ["done", "cancelled"].includes(task.status);
-  const checklist = task.checklistItems?.length ? ` · 小项 ${task.checklistItems.filter((item) => item.done).length}/${task.checklistItems.length}` : "";
+  // 重复任务的小项按天算，这里显示今天的进度
+  const shownItems = isOccurrenceSchedule(task) ? checklistOnDay(task.checklistItems, todayKey()) : task.checklistItems;
+  const checklist = shownItems?.length ? ` · 小项${isOccurrenceSchedule(task) ? "（今天）" : ""} ${shownItems.filter((item) => item.done).length}/${shownItems.length}` : "";
   const toggleMenu = (button: HTMLButtonElement) => {
     if (!menu) {
       const bounds = button.getBoundingClientRect();

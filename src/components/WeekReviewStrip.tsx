@@ -7,15 +7,16 @@ import { formatCompactDate, todayKey, toDateKey } from "../utils/date";
 import { SUBJECT_DOT } from "./GroupHeading";
 
 /**
- * 月视图顶部的"本周"条：7 天各自完成几件 + 到今天为止还没完成的事。
- * 口径见 data/weekReview.ts：每件事只算一次，完成看现在的状态。点某一天或某一件事进入那天的今日页。
+ * 月视图顶部的"本周"条：7 天各自完成几件。默认只显示这一行；点某一天，下方展开那天还没完成的事
+ * （未来的日子是还没做的安排），再点一次收起。展开区里点某件事或"打开这一天"进入那天的今日页。
+ * 口径见 data/weekReview.ts：每件事只算一次，完成看现在的状态。
  */
 export function WeekReviewStrip({ refreshKey, onOpenDay }: { refreshKey: number; onOpenDay: (date: string) => void }) {
   const [anchor, setAnchor] = useState(todayKey);
   const [review, setReview] = useState<WeekReview | null>(null);
-  const [showAll, setShowAll] = useState(false);
+  const [openDate, setOpenDate] = useState<string | null>(null);
   useEffect(() => { void getWeekReview(anchor).then(setReview); }, [anchor, refreshKey]);
-  useEffect(() => { setShowAll(false); }, [anchor]);
+  useEffect(() => { setOpenDate(null); }, [anchor]);
   if (!review) return null;
 
   const today = todayKey();
@@ -25,7 +26,7 @@ export function WeekReviewStrip({ refreshKey, onOpenDay }: { refreshKey: number;
   const total = counted.reduce((sum, day) => sum + day.total, 0);
   const shift = (days: number) => setAnchor(toDateKey(addDays(parseISO(review.weekStart), days)));
   const title = isThisWeek ? "本周" : review.weekEnd < today ? "那一周" : "下一周";
-  const visibleUnfinished = showAll ? review.unfinished : review.unfinished.slice(0, 6);
+  const openDay = review.days.find((day) => day.date === openDate) ?? null;
 
   return (
     <section className="surface mb-4 overflow-hidden" aria-label="本周完成情况">
@@ -45,8 +46,9 @@ export function WeekReviewStrip({ refreshKey, onOpenDay }: { refreshKey: number;
           const ratio = day.total ? day.done / day.total : 0;
           const allDone = day.total > 0 && day.done === day.total;
           return (
-            <button key={day.date} onClick={() => onOpenDay(day.date)} aria-label={`${format(parseISO(day.date), "M月d日 EEEE", { locale: zhCN })}，${day.isFuture ? `安排了 ${day.total} 件` : `完成 ${day.done}/${day.total}`}`}
-              className={`flex min-h-[4.75rem] flex-col items-center gap-1 px-0.5 py-2 hover:bg-mint/30 ${day.isToday ? "bg-mint/40" : ""}`}>
+            <button key={day.date} onClick={() => setOpenDate(openDate === day.date ? null : day.date)} aria-expanded={openDate === day.date} aria-label={`${format(parseISO(day.date), "M月d日 EEEE", { locale: zhCN })}，${day.isFuture ? `安排了 ${day.total} 件` : `完成 ${day.done}/${day.total}`}`}
+              className={`relative flex min-h-[4.75rem] flex-col items-center gap-1 px-0.5 py-2 hover:bg-mint/30 ${openDate === day.date ? "bg-primary/10" : day.isToday ? "bg-mint/40" : ""}`}>
+              {openDate === day.date && <span aria-hidden className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary" />}
               <span className={`text-[13px] ${day.isToday ? "font-bold text-primary" : "text-muted"}`}>{format(parseISO(day.date), "EEEEE", { locale: zhCN })}</span>
               <span className={`text-[13px] tabular-nums ${day.isToday ? "font-bold text-primary" : "font-semibold text-ink"}`}>{parseISO(day.date).getDate()}</span>
               {day.total === 0 ? <span className="text-[13px] text-stone-300">–</span>
@@ -60,25 +62,26 @@ export function WeekReviewStrip({ refreshKey, onOpenDay }: { refreshKey: number;
         })}
       </div>
 
-      {review.unfinished.length > 0 && (
+      {openDay && (
         <div className="border-t border-ink/10 px-3 pb-2 pt-3 sm:px-4">
-          <h3 className="text-[13px] font-semibold text-ink">还没完成 <span className="font-medium text-muted">{review.unfinished.length}</span></h3>
-          <ul className="mt-1 divide-y divide-ink/[0.07]">
-            {visibleUnfinished.map((item) => (
+          <div className="flex items-center gap-2">
+            <h3 className="text-[13px] font-semibold text-ink">{format(parseISO(openDay.date), "M月d日 EEEE", { locale: zhCN })}</h3>
+            <span className="text-[13px] text-muted">{openDay.total === 0 ? "没有安排" : openDay.isFuture ? `安排了 ${openDay.total} 件` : openDay.pending.length ? `还没完成 ${openDay.pending.length} 件` : "都完成了"}</span>
+            <button onClick={() => onOpenDay(openDay.date)} className="ml-auto inline-flex min-h-9 items-center gap-0.5 rounded-lg px-2 text-[13px] font-semibold text-primary hover:bg-primary/10">打开这一天<ChevronRight className="h-4 w-4" /></button>
+          </div>
+          {openDay.pending.length > 0 && <ul className="mt-1 divide-y divide-ink/[0.07]">
+            {openDay.pending.map((item) => (
               <li key={item.key}>
                 <button onClick={() => onOpenDay(item.date)} className="flex min-h-11 w-full items-center gap-2 text-left hover:bg-stone-50">
                   <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: SUBJECT_DOT[item.subject] }} />
                   <span className="min-w-0 flex-1 truncate text-[15px] text-ink">{item.title}</span>
-                  <span className="shrink-0 text-[13px] text-muted">{item.date === today ? "今天" : format(parseISO(item.date), "EEE", { locale: zhCN })}</span>
                   <ChevronRight className="h-4 w-4 shrink-0 text-stone-300" />
                 </button>
               </li>
             ))}
-          </ul>
-          {review.unfinished.length > visibleUnfinished.length && <button onClick={() => setShowAll(true)} className="mt-1 min-h-9 text-[13px] font-semibold text-primary">再看 {review.unfinished.length - visibleUnfinished.length} 件</button>}
+          </ul>}
         </div>
       )}
-      {review.unfinished.length === 0 && total > 0 && <p className="border-t border-ink/10 px-3 py-3 text-[13px] font-semibold text-primary sm:px-4">到今天为止都完成了</p>}
     </section>
   );
 }

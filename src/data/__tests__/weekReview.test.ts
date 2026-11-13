@@ -40,6 +40,11 @@ describe("getWeekReview 本周回看", () => {
     expect(review.days.find((day) => day.date === "2026-11-13")?.isFuture).toBe(true);
     expect(review.days.find((day) => day.date === TODAY)?.isToday).toBe(true);
     expect(review.unfinished.map((item) => item.title)).toEqual(["周二作业"]);
+    // 点开某一天时列出的：周一做完了是空的；周二列没做完的；周五（未来）列安排了的
+    const pendingOf = (date: string) => review.days.find((day) => day.date === date)!.pending.map((item) => item.title);
+    expect(pendingOf("2026-11-09")).toEqual([]);
+    expect(pendingOf("2026-11-10")).toEqual(["周二作业"]);
+    expect(pendingOf("2026-11-13")).toEqual(["周五作业"]);
   });
 
   it("2. 顺延任务每天都出现，但只算一次、算在它本周第一次出现的那天", async () => {
@@ -75,6 +80,7 @@ describe("getWeekReview 本周回看", () => {
     const review = await getWeekReview(TODAY, TODAY);
     expect(counts(review)).toMatchObject({ "11-09": "1/1", "11-10": "0/0", "11-11": "0/1", "11-12": "0/1", "11-15": "0/1" });
     expect(review.unfinished.map((item) => item.date)).toEqual(["2026-11-11", "2026-11-12"]);
+    expect(review.days.find((day) => day.date === "2026-11-10")!.pending).toEqual([]); // 跳过的那天不列
     expect(review.unfinished.every((item) => item.taskId === task.id)).toBe(true);
   });
 
@@ -84,6 +90,54 @@ describe("getWeekReview 本周回看", () => {
     const review = await getWeekReview(TODAY, TODAY);
     expect(review.days.reduce((sum, day) => sum + day.total, 0)).toBe(0);
     expect(review.unfinished).toEqual([]);
+  });
+
+  describe("几天内做完的任务只算在最后一天（截止日）", () => {
+    const range = (title: string, startDate: string, endDate: string) =>
+      taskRepository.create(draft({ title, timeType: "dateRange", date: undefined, startDate, endDate }));
+    const pendingOf = (review: Awaited<ReturnType<typeof getWeekReview>>, date: string) => review.days.find((day) => day.date === date)!.pending.map((item) => item.title);
+
+    it("8. 周一到周五的任务、今天周四还没做完：前四天都不算没完成，只在周五（未来）计 1 件", async () => {
+      await range("五天的作业", "2026-11-09", "2026-11-13");
+      const review = await getWeekReview(TODAY, TODAY);
+      expect(counts(review)).toMatchObject({ "11-09": "0/0", "11-10": "0/0", "11-11": "0/0", "11-12": "0/0", "11-13": "0/1" });
+      expect(review.unfinished).toEqual([]);
+      expect(pendingOf(review, "2026-11-13")).toEqual(["五天的作业"]);
+    });
+
+    it("9. 截止日已过（周一到周三）还没做完：只在周三算没完成，周一周二不算", async () => {
+      await range("三天的作业", "2026-11-09", "2026-11-11");
+      const review = await getWeekReview(TODAY, TODAY);
+      expect(counts(review)).toMatchObject({ "11-09": "0/0", "11-10": "0/0", "11-11": "0/1" });
+      expect(review.unfinished).toEqual([expect.objectContaining({ title: "三天的作业", date: "2026-11-11" })]);
+    });
+
+    it("10. 截止日就是今天、还没做完：今天算没完成", async () => {
+      await range("今天截止", "2026-11-10", TODAY);
+      const review = await getWeekReview(TODAY, TODAY);
+      expect(counts(review)[TODAY.slice(5)]).toBe("0/1");
+      expect(pendingOf(review, TODAY)).toEqual(["今天截止"]);
+    });
+
+    it("11. 提前做完：本周到期的算在截止日且为完成；下周才到期的算在完成那天，没做完的本周不计", async () => {
+      const { task: dueFri } = await range("周五截止", "2026-11-09", "2026-11-13");
+      const { task: dueNextWeek } = await range("下周二截止", "2026-11-11", "2026-11-17");
+      await range("下周二截止·未做", "2026-11-11", "2026-11-17");
+      await taskRepository.setDisplayStatus({ ...dueFri } as TaskDisplay, "done", "2026-11-10");
+      await taskRepository.setDisplayStatus({ ...dueNextWeek } as TaskDisplay, "done", "2026-11-11");
+      const review = await getWeekReview(TODAY, TODAY);
+      expect(counts(review)).toMatchObject({ "11-10": "0/0", "11-11": "1/1", "11-13": "1/1" });
+      expect(review.days.reduce((sum, day) => sum + day.total, 0)).toBe(2);
+      expect(review.unfinished).toEqual([]);
+    });
+
+    it("12. 上周就到期、还没做完的：几天内做完的任务过了截止日不会顺延到之后的日子（今日页现有规则），本周不计", async () => {
+      await taskRepository.create(draft({ title: "上周的几天作业", timeType: "dateRange", date: undefined, startDate: "2026-11-04", endDate: "2026-11-06", rolloverMode: "autoNextDay", allowRollover: true }));
+      const review = await getWeekReview(TODAY, TODAY);
+      const total = review.days.reduce((sum, day) => sum + day.total, 0);
+      expect(total).toBe(0);
+      expect(review.unfinished).toEqual([]);
+    });
   });
 
   it("7. 传入周内任意一天都回到同一周；只读，不写任何数据", async () => {

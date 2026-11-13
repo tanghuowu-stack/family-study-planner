@@ -106,27 +106,27 @@ function HabitMatrix({ calendars, restDays }: { calendars: HabitCalendar[]; rest
         <table className="w-full border-separate border-spacing-0 text-center">
           <thead>
             <tr>
-              <th scope="col" className="sticky left-0 z-10 min-w-[7.5rem] border-b border-ink/10 bg-white px-3 shadow-[1px_0_0_rgba(32,41,37,0.08)] py-2 text-left text-[13px] font-semibold text-muted sm:px-4">项目</th>
+              <th scope="col" className="sticky left-0 z-10 min-w-[6.5rem] border-b border-ink/10 bg-white px-3 shadow-[1px_0_0_rgba(32,41,37,0.08)] py-2 text-left text-[13px] font-semibold text-muted sm:px-4">项目</th>
               {days.map((date) => {
                 const weekday = getDay(parseISO(date));
                 const isToday = date === today;
                 const isRest = restDays.has(date);
                 return (
                   <th key={date} scope="col" data-today={isToday || undefined} title={isRest ? "休息日" : undefined}
-                    className={`min-w-[1.625rem] border-b border-ink/10 px-0 py-1.5 align-bottom text-[13px] font-medium ${isToday ? "bg-mint/60 text-primary" : isRest ? "bg-stone-100 text-muted" : weekday === 0 || weekday === 6 ? "text-muted" : "text-ink"}`}>
+                    className={`min-w-[1.375rem] border-b border-ink/10 px-0 xl:min-w-[1.5rem] py-1.5 align-bottom text-[13px] font-medium ${isToday ? "bg-mint/60 text-primary" : isRest ? "bg-stone-100 text-muted" : weekday === 0 || weekday === 6 ? "text-muted" : "text-ink"}`}>
                     <span className="block leading-4 tabular-nums">{Number(date.slice(8))}</span>
                     <span className={`block text-[13px] leading-4 ${isToday ? "font-bold" : "text-muted"}`}>{isRest ? "休" : WEEKDAY_SHORT[weekday]}</span>
                   </th>
                 );
               })}
-              <th scope="col" className="min-w-[4.5rem] border-b border-ink/10 bg-white px-3 py-2 text-right text-[13px] font-semibold text-muted sm:px-4">本月</th>
+              <th scope="col" className="min-w-[3.5rem] border-b border-ink/10 bg-white py-2 pl-1 pr-3 text-right text-[13px] font-semibold text-muted sm:px-4">本月</th>
             </tr>
           </thead>
           <tbody>
             {calendars.map((cal) => (
               <tr key={cal.taskId}>
                 <th scope="row" className="sticky left-0 z-10 border-b border-ink/[0.07] bg-white px-3 shadow-[1px_0_0_rgba(32,41,37,0.08)] py-2.5 text-left sm:px-4">
-                  <span className="block max-w-[9rem] truncate text-[15px] font-semibold text-ink sm:max-w-[12rem]" title={cal.title}>{cal.title}</span>
+                  <span className="block max-w-[8rem] truncate text-[15px] font-semibold text-ink xl:max-w-[12rem]" title={cal.title}>{cal.title}</span>
                   <span className="block text-[13px] font-medium text-muted">{cal.currentStreak > 0 ? <>🔥 连续 {cal.currentStreak} 天</> : "还没开始连续"}</span>
                 </th>
                 {cal.days.map((day) => {
@@ -138,7 +138,7 @@ function HabitMatrix({ calendars, restDays }: { calendars: HabitCalendar[]; rest
                     </td>
                   );
                 })}
-                <td className="border-b border-ink/[0.07] px-3 py-2.5 text-right text-[15px] font-semibold tabular-nums text-ink sm:px-4">{cal.monthCompletedDays}<span className="text-[13px] font-medium text-muted"> 天</span></td>
+                <td className="border-b border-ink/[0.07] py-2.5 pl-1 pr-3 text-right text-[15px] font-semibold tabular-nums text-ink sm:px-4">{cal.monthCompletedDays}<span className="text-[13px] font-medium text-muted"> 天</span></td>
               </tr>
             ))}
           </tbody>

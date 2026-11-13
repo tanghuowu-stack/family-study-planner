@@ -19,7 +19,7 @@ export function StatsPage() {
     setCourseStats(await taskRepository.getCourseStatistics(courseStart, courseEnd));
     setMessage("");
   };
-  return <main className="mx-auto w-full max-w-5xl px-4 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10"><header className="page-header"><h1 className="page-title">打卡</h1></header>
+  return <main className="mx-auto w-full max-w-5xl lg:max-w-none xl:max-w-6xl px-4 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10"><header className="page-header"><h1 className="page-title">打卡</h1></header>
     <HabitSection />
     <section className="surface mt-6 p-4 sm:p-5"><h2 className="text-base font-bold text-ink">课程节数统计</h2><div className="mt-3 flex flex-wrap items-end gap-2"><label className="text-[13px] text-muted">开始日期<input type="date" value={courseStart} onChange={(event) => setCourseStart(event.target.value)} className="mt-1 block min-h-11 rounded-lg border px-2.5 text-sm text-stone-700" /></label><label className="text-[13px] text-muted">结束日期<input type="date" value={courseEnd} onChange={(event) => setCourseEnd(event.target.value)} className="mt-1 block min-h-11 rounded-lg border px-2.5 text-sm text-stone-700" /></label><button onClick={countCourses} className="min-h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-white">统计</button></div>{message && <p role="alert" className="mt-3 text-sm text-rose-700">{message}</p>}{courseStats && <CourseStatistics data={courseStats} />}</section>
   </main>;

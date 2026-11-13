@@ -51,6 +51,92 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 1500): 
   throw lastError;
 }
 
+// ─── 勾选类写入的在途保护（2026-11） ────────────────────────────────────────────
+//
+// 勾选一次要串行发 3~4 个请求（任务行 → 小项行 → 查旧小项 → 单日状态）。这期间有两类竞态：
+// 1. 同一任务连点两下：两组请求并发，后发的小项行可能先到，云端最终停在较旧的状态；
+// 2. 第一个请求的 Realtime 回声触发拉取，读到"新任务行 + 旧小项行"，而任务行的 updated_at
+//    被云端触发器改成服务器时间、不比本地旧，LWW 放行 → 刚勾的小项在界面上弹回去。
+// 对策：同一任务的云端写入排队串行，并且每次都推"执行时本地最新"的数据；
+//       拉取合并时跳过"正在写、或拉取期间写过"的记录，等写完后的下一次拉取再对齐。
+
+let writeSeq = 0;
+const inflightWrites = new Map<string, number>();
+const lastWriteSeq = new Map<string, number>();
+const syncChains = new Map<string, Promise<unknown>>();
+
+function beginCloudWrite(keys: string[]): void {
+  for (const key of keys) {
+    inflightWrites.set(key, (inflightWrites.get(key) ?? 0) + 1);
+    lastWriteSeq.set(key, ++writeSeq);
+  }
+}
+
+function endCloudWrite(keys: string[]): void {
+  for (const key of keys) {
+    const left = (inflightWrites.get(key) ?? 1) - 1;
+    if (left > 0) inflightWrites.set(key, left); else inflightWrites.delete(key);
+    lastWriteSeq.set(key, ++writeSeq);
+  }
+}
+
+/**
+ * 拉取开始前调用，返回的判定在合并时使用：某条记录（任务 id / 单日状态 id）
+ * 此刻正在上传，或在这次拉取发起之后上传过，就不要用拉到的数据覆盖本地。
+ */
+export function createPullGuard(): (id: string) => boolean {
+  const seqAtFetchStart = writeSeq;
+  return (id) => inflightWrites.has(id) || (lastWriteSeq.get(id) ?? 0) > seqAtFetchStart;
+}
+
+/**
+ * 把一次勾选的云端上传排进该任务的串行队列。guardKeys 从入队起到上传结束都受拉取保护。
+ * job 内必须读取执行时刻的本地数据，不要闭包入队时的快照。
+ */
+function enqueueCompletionSync<T>(taskId: string, guardKeys: string[], job: () => Promise<T>): Promise<T> {
+  beginCloudWrite(guardKeys);
+  const previous = syncChains.get(taskId) ?? Promise.resolve();
+  const run = previous.then(job, job).finally(() => {
+    endCloudWrite(guardKeys);
+    if (syncChains.get(taskId) === run) syncChains.delete(taskId);
+  });
+  syncChains.set(taskId, run);
+  return run;
+}
+
+/** 勾选类写入的云端阶段：任务本体（含小项）→ 单日状态 → 联动的父任务。返回是否全部同步成功 */
+async function pushCompletionToCloud(familyId: string, taskId: string, occurrenceDate?: string, parentId?: string): Promise<boolean> {
+  let synced = true;
+  const updated = await db.tasks.get(taskId);
+  if (updated) {
+    await withRetry(() => upsertTask(updated, familyId)).catch((e) => {
+      notifySyncError("任务云端同步失败", e);
+      synced = false;
+    });
+  }
+  if (occurrenceDate) {
+    const occ = await db.taskOccurrenceStatuses.get(`${taskId}:${occurrenceDate}`);
+    if (occ) {
+      await withRetry(() => upsertOccurrence(occ, familyId)).catch((e) => {
+        notifySyncError("单日状态云端同步失败", e);
+        synced = false;
+      });
+    }
+  }
+  if (parentId) {
+    const parent = await db.tasks.get(parentId);
+    if (parent) {
+      await withRetry(() => upsertTask(parent, familyId)).catch((e) =>
+        notifySyncError("父任务云端同步失败", e)
+      );
+    }
+  }
+  return synced;
+}
+
+const completionGuardKeys = (taskId: string, occurrenceDate?: string, parentId?: string) =>
+  [taskId, ...(occurrenceDate ? [`${taskId}:${occurrenceDate}`] : []), ...(parentId ? [parentId] : [])];
+
 // ─── helpers (reuse from cloudUpload logic) ─────────────────────────────────
 
 function stripUndefined<T extends object>(obj: T): T {
@@ -314,7 +400,9 @@ function courseToRow(course: Course, familyId: string): Record<string, unknown> 
  */
 // table 传入的是 Dexie 表实例；其 bulkGet/bulkPut 重载类型与结构化约束难以对齐，
 // 故放宽为 any，类型安全由泛型 incoming: T[] 保证（写入项与目标表同源）。
-export async function lwwMerge<T extends { id: string; updatedAt: string }>(table: { bulkGet(keys: string[]): Promise<(T | undefined)[]>; bulkPut(items: T[]): Promise<unknown> } | any, incoming: T[]): Promise<void> {
+export async function lwwMerge<T extends { id: string; updatedAt: string }>(table: { bulkGet(keys: string[]): Promise<(T | undefined)[]>; bulkPut(items: T[]): Promise<unknown> } | any, incoming: T[], shouldSkip?: (id: string) => boolean): Promise<void> {
+  // shouldSkip：本机正在上传（或拉取期间上传过）的记录不参与合并，见 createPullGuard
+  if (shouldSkip) incoming = incoming.filter((r) => !shouldSkip(r.id));
   if (incoming.length === 0) return;
   const locals: (T | undefined)[] = await table.bulkGet(incoming.map((r) => r.id));
   const localUpdatedAt = new Map<string, string | undefined>();
@@ -331,6 +419,7 @@ export async function lwwMerge<T extends { id: string; updatedAt: string }>(tabl
 async function fetchAndCacheTasks(familyId: string): Promise<Task[]> {
   if (!supabase) return db.tasks.toArray();
 
+  const beingWritten = createPullGuard(); // 必须在发请求之前取，才能覆盖"拉取途中写完"的记录
   const [{ data: tasksData, error: tasksError }, { data: checklistData }] = await Promise.all([
     supabase.from("tasks").select("*").eq("family_id", familyId),
     supabase.from("task_checklist_items").select("*").eq("family_id", familyId).order("sort_order"),
@@ -354,7 +443,7 @@ async function fetchAndCacheTasks(familyId: string): Promise<Task[]> {
   });
 
   // cache to local IndexedDB（LWW：本地更新的记录不被云端旧值覆盖）
-  await lwwMerge(db.tasks, tasks).catch((e) =>
+  await lwwMerge(db.tasks, tasks, beingWritten).catch((e) =>
     console.warn("[cloudRepository] 缓存到本地失败", e)
   );
 
@@ -364,6 +453,7 @@ async function fetchAndCacheTasks(familyId: string): Promise<Task[]> {
 /** Load all occurrence statuses from Supabase */
 async function fetchOccurrences(familyId: string): Promise<TaskOccurrenceStatus[]> {
   if (!supabase) return db.taskOccurrenceStatuses.toArray();
+  const beingWritten = createPullGuard();
   const { data, error } = await supabase
     .from("task_occurrence_statuses")
     .select("*")
@@ -385,7 +475,7 @@ async function fetchOccurrences(familyId: string): Promise<TaskOccurrenceStatus[
     updatedAt: row.updated_at,
   }));
   // LWW：本地更新的单日状态不被云端旧值覆盖
-  await lwwMerge(db.taskOccurrenceStatuses, statuses).catch(() => {});
+  await lwwMerge(db.taskOccurrenceStatuses, statuses, beingWritten).catch(() => {});
   return statuses;
 }
 
@@ -656,36 +746,17 @@ export const cloudRepository = {
     return count;
   },
 
-  async setDisplayStatus(task: TaskDisplay, status: TaskStatus, asOfDate?: string): Promise<SyncResult> {
+  /**
+   * onLocalWrite：本地写入落库后立刻调用（界面据此刷新），云端上传在这之后才开始；
+   * 返回的 Promise 仍等上传结束，synced 表示是否已确认同步到云端。
+   */
+  async setDisplayStatus(task: TaskDisplay, status: TaskStatus, asOfDate?: string, onLocalWrite?: () => void): Promise<SyncResult> {
     const { parentId } = await taskRepository.setDisplayStatus(task, status, asOfDate);
-    let synced = true;
-    if (_familyId) {
-      const updated = await db.tasks.get(task.id);
-      if (updated) {
-        await withRetry(() => upsertTask(updated, _familyId!)).catch((e) => {
-          notifySyncError("任务云端同步失败", e);
-          synced = false;
-        });
-      }
-      if (task.occurrenceDate) {
-        const id = `${task.id}:${task.occurrenceDate}`;
-        const occ = await db.taskOccurrenceStatuses.get(id);
-        if (occ) {
-          await withRetry(() => upsertOccurrence(occ, _familyId!)).catch((e) => {
-            notifySyncError("单日状态云端同步失败", e);
-            synced = false;
-          });
-        }
-      }
-      if (parentId) {
-        const parent = await db.tasks.get(parentId);
-        if (parent) {
-          await withRetry(() => upsertTask(parent, _familyId!)).catch((e) =>
-            notifySyncError("父任务云端同步失败", e)
-          );
-        }
-      }
-    }
+    onLocalWrite?.();
+    if (!_familyId) return { parentId, synced: true };
+    const familyId = _familyId;
+    const synced = await enqueueCompletionSync(task.id, completionGuardKeys(task.id, task.occurrenceDate, parentId), () =>
+      pushCompletionToCloud(familyId, task.id, task.occurrenceDate, parentId));
     return { parentId, synced };
   },
 
@@ -701,61 +772,23 @@ export const cloudRepository = {
     }
   },
 
-  async toggleChecklistItem(taskId: string, itemId: string, occurrenceDate?: string, opts?: { asOfDate?: string; done?: boolean }): Promise<SyncResult> {
+  /** onLocalWrite 含义同 setDisplayStatus */
+  async toggleChecklistItem(taskId: string, itemId: string, occurrenceDate?: string, opts?: { asOfDate?: string; done?: boolean }, onLocalWrite?: () => void): Promise<SyncResult> {
     const { parentId } = await taskRepository.toggleChecklistItem(taskId, itemId, occurrenceDate, opts);
-    let synced = true;
-    if (_familyId) {
-      const updated = await db.tasks.get(taskId);
-      if (updated) {
-        await withRetry(() => upsertTask(updated, _familyId!)).catch((e) => {
-          notifySyncError("任务云端同步失败", e);
-          synced = false;
-        });
-      }
-      if (occurrenceDate) {
-        const id = `${taskId}:${occurrenceDate}`;
-        const occ = await db.taskOccurrenceStatuses.get(id);
-        if (occ) {
-          await withRetry(() => upsertOccurrence(occ, _familyId!)).catch((e) => {
-            notifySyncError("单日状态云端同步失败", e);
-            synced = false;
-          });
-        }
-      }
-      if (parentId) {
-        const parent = await db.tasks.get(parentId);
-        if (parent) {
-          await withRetry(() => upsertTask(parent, _familyId!)).catch((e) =>
-            notifySyncError("父任务云端同步失败", e)
-          );
-        }
-      }
-    }
+    onLocalWrite?.();
+    if (!_familyId) return { parentId, synced: true };
+    const familyId = _familyId;
+    const synced = await enqueueCompletionSync(taskId, completionGuardKeys(taskId, occurrenceDate, parentId), () =>
+      pushCompletionToCloud(familyId, taskId, occurrenceDate, parentId));
     return { parentId, synced };
   },
 
   /** 手动重试：不触发本地状态变化，重新原样读取本地当前数据推一遍云端 */
   async resyncTask(taskId: string, occurrenceDate?: string): Promise<boolean> {
     if (!_familyId) return true;
-    let synced = true;
-    const task = await db.tasks.get(taskId);
-    if (task) {
-      await withRetry(() => upsertTask(task, _familyId!)).catch((e) => {
-        notifySyncError("任务云端同步失败", e);
-        synced = false;
-      });
-    }
-    if (occurrenceDate) {
-      const id = `${taskId}:${occurrenceDate}`;
-      const occ = await db.taskOccurrenceStatuses.get(id);
-      if (occ) {
-        await withRetry(() => upsertOccurrence(occ, _familyId!)).catch((e) => {
-          notifySyncError("单日状态云端同步失败", e);
-          synced = false;
-        });
-      }
-    }
-    return synced;
+    const familyId = _familyId;
+    return enqueueCompletionSync(taskId, completionGuardKeys(taskId, occurrenceDate), () =>
+      pushCompletionToCloud(familyId, taskId, occurrenceDate));
   },
 
   async setOccurrence(

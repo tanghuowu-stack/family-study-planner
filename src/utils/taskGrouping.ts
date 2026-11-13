@@ -72,3 +72,36 @@ export function groupDayTasks<T extends DayGroupable>(tasks: T[], subjectOrder: 
     .filter((group) => group.tasks.length > 0);
   return { classes, homework };
 }
+
+// ── 今日页：刚完成的任务原位停留 ─────────────────────────────────────────────
+
+/** 今日页一条任务所在的区：今日清单 / 逾期未完成 / 已完成 */
+export type DayTaskPlacement = "pending" | "overdue" | "done";
+
+/** 今日页任务行的稳定标识：同一任务在同一天只出现一次，重复类用它当天的单日日期区分 */
+export const dayTaskKey = (task: { id: string; occurrenceDate?: string; date?: string }) => `${task.id}:${task.occurrenceDate ?? task.date ?? ""}`;
+
+const isSettledStatus = (status: string) => status === "done" || status === "cancelled";
+
+/**
+ * 对比上一次和这一次读到的清单，找出"刚刚完成"的任务及其原本所在的区，供今日页让它在原位停留片刻。
+ * previous 传 null（首次加载、换了日期）时不产生停留——打开页面时已经完成的任务直接在"已完成"里。
+ * 只认 待做/逾期 → 已完成 这一个方向；取消完成、别的设备早已完成的任务都不停留。
+ */
+export function findJustCompleted<T extends { id: string; status: string; occurrenceDate?: string; date?: string }>(
+  previous: Map<string, DayTaskPlacement> | null,
+  tasks: T[],
+  overdue: T[],
+): { placement: Map<string, DayTaskPlacement>; justCompleted: Map<string, DayTaskPlacement> } {
+  const placement = new Map<string, DayTaskPlacement>();
+  for (const task of overdue) placement.set(dayTaskKey(task), "overdue");
+  for (const task of tasks) placement.set(dayTaskKey(task), isSettledStatus(task.status) ? "done" : "pending");
+  const justCompleted = new Map<string, DayTaskPlacement>();
+  if (previous) {
+    for (const [key, now] of placement) {
+      const before = previous.get(key);
+      if (now === "done" && (before === "pending" || before === "overdue")) justCompleted.set(key, before);
+    }
+  }
+  return { placement, justCompleted };
+}

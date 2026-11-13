@@ -7,7 +7,7 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "../../data/db";
 import { taskRepository } from "../../data/taskRepository";
-import { dayBucketSort, groupDayTasks, normalizeSubjectOrder, type DayGroupable } from "../taskGrouping";
+import { dayBucketSort, groupDayTasks, normalizeSubjectOrder, type DayGroupable, dayTaskKey, findJustCompleted, type DayTaskPlacement } from "../taskGrouping";
 import type { Task, TaskDraft } from "../../types/task";
 
 const DEFAULT_ORDER = ["chinese", "math", "english", "other"];
@@ -205,5 +205,42 @@ describe("拖拽排序端到端（真实 reorderTasks 写入 → getTasksForDate
     await taskRepository.reorderTasks([b.id, a.id]);
     const { homework } = groupDayTasks(await taskRepository.getTasksForDate(today), DEFAULT_ORDER);
     expect(homework.map((g) => [g.key, titles(g.tasks)])).toEqual([["chinese", ["语文C"]], ["math", ["数学B", "数学A"]]]);
+  });
+});
+
+describe("findJustCompleted（今日页：刚完成的任务原位停留）", () => {
+  const row = (id: string, status: string, extra: { occurrenceDate?: string; date?: string } = { date: "2026-11-13" }) => ({ id, status, ...extra });
+  const first = (tasks: ReturnType<typeof row>[], overdue: ReturnType<typeof row>[] = []) => findJustCompleted(null, tasks, overdue).placement;
+
+  it("首次加载（或换了日期）不产生停留：打开页面时已完成的任务直接在已完成里", () => {
+    const { placement, justCompleted } = findJustCompleted(null, [row("a", "done"), row("b", "todo")], []);
+    expect(justCompleted.size).toBe(0);
+    expect(placement.get(dayTaskKey(row("a", "done")))).toBe("done");
+    expect(placement.get(dayTaskKey(row("b", "todo")))).toBe("pending");
+  });
+
+  it("今日清单里的任务变成已完成 → 记为从 pending 停留；没变的不动", () => {
+    const before = first([row("a", "todo"), row("b", "todo")]);
+    const { justCompleted } = findJustCompleted(before, [row("a", "done"), row("b", "todo")], []);
+    expect([...justCompleted]).toEqual([[dayTaskKey(row("a", "done")), "pending" as DayTaskPlacement]]);
+  });
+
+  it("逾期区的任务补完后出现在当天已完成里 → 记为从 overdue 停留", () => {
+    const late = row("late", "overdue", { date: "2026-11-12" });
+    const before = first([row("a", "todo")], [late]);
+    const { justCompleted } = findJustCompleted(before, [row("a", "todo"), row("late", "done", { date: "2026-11-12" })], []);
+    expect([...justCompleted]).toEqual([[dayTaskKey(late), "overdue" as DayTaskPlacement]]);
+  });
+
+  it("取消完成、已取消以外的反向变化都不停留；被取消（cancelled）与完成同样算收起", () => {
+    const before = first([row("a", "done"), row("b", "todo")]);
+    const { justCompleted } = findJustCompleted(before, [row("a", "todo"), row("b", "cancelled")], []);
+    expect([...justCompleted.keys()]).toEqual([dayTaskKey(row("b", "cancelled"))]);
+  });
+
+  it("重复类任务按当天的单日日期区分：同一任务换了一天不算刚完成", () => {
+    const before = first([row("rec", "todo", { occurrenceDate: "2026-11-12" })]);
+    const { justCompleted } = findJustCompleted(before, [row("rec", "done", { occurrenceDate: "2026-11-13" })], []);
+    expect(justCompleted.size).toBe(0);
   });
 });

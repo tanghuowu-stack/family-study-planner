@@ -231,23 +231,22 @@ export default function App() {
     asOfDate && asOfDate < todayKey() && !isOccurrenceSchedule(task) ? `已记为 ${Number(asOfDate.slice(5, 7))}/${Number(asOfDate.slice(8, 10))} 完成` : null;
   const changeStatus = async (task: TaskDisplay, status: TaskStatus, asOfDate?: string) => {
     const key = taskSyncKey(task);
+    // 本地写完立刻刷新界面（进度条、还剩几项、行的位置都跟着变）；云端上传在后台继续，
+    // 它的结果只影响"未同步"标记。勾选本身的反馈交给行内动画，成功不再弹提示，只有补记到过去日才说明记到了哪天。
+    const backdated = status === "done" ? backdatedLabel(task, asOfDate) : null;
     try {
-      const result = await repo().setDisplayStatus(task, status, asOfDate);
-      refresh();
-      const backdated = status === "done" ? backdatedLabel(task, asOfDate) : null;
-      if (result.synced) { clearUnsynced(setUnsyncedTasks, key); notify(backdated ?? (status === "done" ? "已完成" : "状态已更新")); }
-      else { markUnsynced(setUnsyncedTasks, key); if (backdated) notify(backdated); notifyFailure("⚠️ 未同步到云端，点击任务旁的标记可重试"); }
+      const result = await repo().setDisplayStatus(task, status, asOfDate, () => { refresh(); if (backdated) notify(backdated); });
+      if (result.synced) clearUnsynced(setUnsyncedTasks, key);
+      else { markUnsynced(setUnsyncedTasks, key); notifyFailure("⚠️ 未同步到云端，点击任务旁的标记可重试"); }
     } catch { refresh(); markUnsynced(setUnsyncedTasks, key); notifyFailure("⚠️ 保存失败，请检查网络"); }
   };
   const toggleChecklist = async (task: TaskDisplay, itemId: string, asOfDate?: string) => {
     const key = itemSyncKey(task.id, itemId);
     // 目标状态按"界面上看到的"取反：历史日回放会把之后才勾的小项显示为未勾，点它是要补记为那天完成，不是取消
     const done = !task.checklistItems?.find((item) => item.id === itemId)?.done;
+    const backdated = done ? backdatedLabel(task, asOfDate) : null;
     try {
-      const result = await repo().toggleChecklistItem(task.id, itemId, task.occurrenceDate, { asOfDate, done });
-      refresh();
-      const backdated = done ? backdatedLabel(task, asOfDate) : null;
-      if (backdated) notify(backdated);
+      const result = await repo().toggleChecklistItem(task.id, itemId, task.occurrenceDate, { asOfDate, done }, () => { refresh(); if (backdated) notify(backdated); });
       if (result.synced) clearUnsynced(setUnsyncedItems, key);
       else { markUnsynced(setUnsyncedItems, key); notifyFailure("⚠️ 未同步到云端，点击小项旁的标记可重试"); }
     } catch { refresh(); markUnsynced(setUnsyncedItems, key); notifyFailure("⚠️ 保存失败，请检查网络"); }

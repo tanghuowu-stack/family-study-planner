@@ -9,14 +9,14 @@ interface Props {
   compact?: boolean;
   unsynced?: boolean; // 任务自身完成状态未同步到云端
   unsyncedItemIds?: Set<string>; // 哪些清单小项未同步到云端
-  onStatusChange?: (task: TaskDisplay, status: TaskStatus) => void;
+  onStatusChange?: (task: TaskDisplay, status: TaskStatus) => void | Promise<void>;
   onEdit?: (task: TaskDisplay) => void;
   onDelete?: (task: TaskDisplay) => void;
   onEnd?: (task: TaskDisplay) => void;
   onExtend?: (task: TaskDisplay) => void;
   onOccurrenceCancel?: (task: TaskDisplay) => void;
   onOccurrencePostpone?: (task: TaskDisplay) => void;
-  onChecklistToggle?: (task: TaskDisplay, itemId: string) => void;
+  onChecklistToggle?: (task: TaskDisplay, itemId: string) => void | Promise<void>;
   onRetrySync?: () => void;
   onRetryItemSync?: (itemId: string) => void;
   onCopy?: (task: TaskDisplay) => void;
@@ -37,6 +37,9 @@ function UnsyncedBadge({ onRetry }: { onRetry?: () => void }) {
 }
 
 type AnimState = "idle" | "checking" | "unchecking";
+
+/** 写入结束后，界面数据仍未跟上乐观值时，多久之后放弃乐观值、如实显示库内状态 */
+const OPTIMISTIC_FALLBACK_MS = 1500;
 
 function checkboxClass(animState: AnimState, checked: boolean, size: "md" | "sm" = "md"): string {
   const base = size === "md"
@@ -89,9 +92,25 @@ export function TaskItem({ task, compact = false, unsynced, unsyncedItemIds, onS
   const ringMode = hasChecklist && !isOccurrenceSchedule(task);
   const done = ringMode && Object.keys(optimisticItems).length > 0 ? completedItems === displayItems.length : statusDone;
 
-  // 父组件刷新后清除乐观覆盖
-  useEffect(() => { setOptimisticDone(null); }, [task.status, task.id]);
-  useEffect(() => { setOptimisticItems({}); }, [task.checklistItems]);
+  // 乐观覆盖的清除时机（2026-11）：
+  // - 数据已经跟上（刷新后的值与乐观值一致）→ 清掉对应那一项；
+  // - 还没跟上的保留：连点两个小项时，第一项写完触发的刷新不能把第二项的勾抹掉；
+  // - 这次写入整体结束（含云端上传、含失败）后再等一小会儿仍没跟上 → 兜底清掉，避免写失败后界面一直停在乐观值。
+  //   不能一结束就清：本地模式下写入结束时页面的重新读取还没回来，立刻清会闪回旧状态。
+  //   用版本号判断"结束的是不是最新一次点击"，先勾后取消时旧的那次结束不能清掉新的。
+  const statusVersion = useRef(0);
+  const itemVersions = useRef<Record<string, number>>({});
+  useEffect(() => { setOptimisticDone((current) => (current !== null && current === (effectiveStatus === "done") ? null : current)); }, [effectiveStatus]);
+  useEffect(() => { setOptimisticDone(null); }, [task.id]);
+  useEffect(() => {
+    setOptimisticItems((current) => {
+      const stillPending = Object.entries(current).filter(([id, value]) => {
+        const actual = task.checklistItems?.find((item) => item.id === id);
+        return actual !== undefined && actual.done !== value;
+      });
+      return stillPending.length === Object.keys(current).length ? current : Object.fromEntries(stillPending);
+    });
+  }, [task.checklistItems]);
 
   // 操作菜单：点菜单外或按 Esc 关闭
   useEffect(() => {
@@ -112,7 +131,10 @@ export function TaskItem({ task, compact = false, unsynced, unsyncedItemIds, onS
     setCheckState(completing ? "checking" : "unchecking");
     setTimeout(() => setCheckState("idle"), completing ? 400 : 250);
 
-    onStatusChange?.(task, newStatus);
+    const version = ++statusVersion.current;
+    void Promise.resolve(onStatusChange?.(task, newStatus)).catch(() => {}).finally(() => {
+      setTimeout(() => { if (statusVersion.current === version) setOptimisticDone(null); }, OPTIMISTIC_FALLBACK_MS);
+    });
   };
 
   const handleChecklistToggle = (itemId: string, wasDone: boolean) => {
@@ -121,7 +143,14 @@ export function TaskItem({ task, compact = false, unsynced, unsyncedItemIds, onS
     setItemAnim(prev => ({ ...prev, [itemId]: wasDone ? "unchecking" : "checking" }));
     setTimeout(() => setItemAnim(prev => { const next = { ...prev }; delete next[itemId]; return next; }), wasDone ? 250 : 400);
 
-    onChecklistToggle?.(task, itemId);
+    const version = (itemVersions.current[itemId] ?? 0) + 1;
+    itemVersions.current[itemId] = version;
+    void Promise.resolve(onChecklistToggle?.(task, itemId)).catch(() => {}).finally(() => {
+      setTimeout(() => {
+        if (itemVersions.current[itemId] !== version) return;
+        setOptimisticItems((prev) => { if (!(itemId in prev)) return prev; const next = { ...prev }; delete next[itemId]; return next; });
+      }, OPTIMISTIC_FALLBACK_MS);
+    });
   };
 
   return (

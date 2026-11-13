@@ -857,12 +857,15 @@ export const taskRepository = {
    * asOfDate：今日页当前查看的日期——整体标记完成时记为那天完成（不晚于今天）。不传则记今天。
    * 重复类任务不看 asOfDate：它的完成本来就记在被勾的那一天的 occurrence 行上。
    */
-  async setDisplayStatus(task: TaskDisplay, status: TaskStatus, asOfDate?: string): Promise<SyncResult> {
+  async setDisplayStatus(task: TaskDisplay, status: TaskStatus, asOfDate?: string, onLocalWrite?: () => void): Promise<SyncResult> {
+    // onLocalWrite：本地写入落库后调用一次，界面据此立刻刷新（云端包装层在这之后才开始上传）。
     // R1：按排期类型（而非展示字段）决定权威源——occurrence 类写单日状态表，其余写任务本体。
     // 被历史 bug 污染了 occurrenceDate 的非重复任务因此也能正确回到本体写入路径。
     if (isOccurrenceSchedule(task)) {
       if (!task.occurrenceDate) throw new Error("重复类任务缺少单日日期，无法记录完成状态");
-      return this.setOccurrence(task.id, task.occurrenceDate, status);
+      const result = await this.setOccurrence(task.id, task.occurrenceDate, status);
+      onLocalWrite?.();
+      return result;
     }
     const before = await db.tasks.get(task.id);
     const now = new Date().toISOString();
@@ -886,6 +889,7 @@ export const taskRepository = {
       await writeLog(status === "done" ? "complete" : "uncomplete", "task", { entityId: task.id, entityTitle: task.title, beforeSnapshot: before, afterSnapshot: { status } });
       parentId = await syncParentCompletion(task.id);
     });
+    onLocalWrite?.();
     return { parentId, synced: true };
   },
 
@@ -914,13 +918,16 @@ export const taskRepository = {
    * 必须以"看到的"为准：历史日回放会把之后才勾的小项显示成未勾，用户在那天页面上点它是想"补记为那天完成"，
    * 若按库内状态（已勾）翻转，反而会把它取消掉。
    */
-  async toggleChecklistItem(taskId: string, itemId: string, occurrenceDate?: string, opts?: { asOfDate?: string; done?: boolean }): Promise<SyncResult> {
-    const task = await db.tasks.get(taskId);
-    if (!task?.checklistItems) return { synced: true };
+  async toggleChecklistItem(taskId: string, itemId: string, occurrenceDate?: string, opts?: { asOfDate?: string; done?: boolean }, onLocalWrite?: () => void): Promise<SyncResult> {
+    // 这次读取只用来判断任务是否存在、走哪条分支（排期类型不会被勾选改变）。
+    // 真正要改的小项数组必须在下面的读写事务里重新读（§3.4：基准用库内最新值）：
+    // 两个小项几乎同时勾选时，若都拿事务外读到的同一份旧数组去改，后写的会把先写的那一勾覆盖掉。
+    const snapshot = await db.tasks.get(taskId);
+    if (!snapshot?.checklistItems) return { synced: true };
     const now = new Date().toISOString();
     const recordDate = recordDateFor(opts?.asOfDate);
     // completedDate 记"哪天勾的"（本地日期）：历史日展示按它过滤，取消勾选即清空
-    const items = task.checklistItems.map((item) => {
+    const applyToggle = (current: ChecklistItem[]) => current.map((item) => {
       if (item.id !== itemId) return item;
       const target = opts?.done ?? !item.done;
       if (!target) return { ...item, done: false, completedDate: undefined };
@@ -928,12 +935,15 @@ export const taskRepository = {
       if (item.done && item.completedDate && item.completedDate <= recordDate) return item;
       return { ...item, done: true, completedDate: recordDate };
     });
-    const allDone = items.every((item) => item.done);
     let parentId: string | undefined;
 
-    if (isOccurrenceSchedule(task)) {
+    if (isOccurrenceSchedule(snapshot)) {
       // R1：重复类任务本体 status/completedAt 不动，完成状态只写 occurrence 表
       await db.transaction("rw", db.tasks, db.taskOccurrenceStatuses, db.activityLogs, async () => {
+        const task = await db.tasks.get(taskId);
+        if (!task?.checklistItems) return;
+        const items = applyToggle(task.checklistItems);
+        const allDone = items.every((item) => item.done);
         await db.tasks.update(taskId, { checklistItems: items, updatedAt: now });
         if (occurrenceDate) {
           const id = `${taskId}:${occurrenceDate}`;
@@ -945,13 +955,17 @@ export const taskRepository = {
           if (status !== (existing?.status ?? "todo")) await writeLog(status === "done" ? "complete" : "uncomplete", "taskOccurrence", { entityId: id, entityTitle: task.title, beforeSnapshot: existing, afterSnapshot: { status, checklistItems: items } });
         }
       });
+      onLocalWrite?.();
       return { synced: true };
     }
 
     await db.transaction("rw", db.tasks, db.activityLogs, async () => {
-      await db.tasks.update(taskId, { checklistItems: items, updatedAt: now });
+      const task = await db.tasks.get(taskId);
+      if (!task?.checklistItems) return;
+      await db.tasks.update(taskId, { checklistItems: applyToggle(task.checklistItems), updatedAt: now });
       parentId = (await recomputeStatusFromChecklist(taskId, task)).parentId;
     });
+    onLocalWrite?.();
     return { parentId, synced: true };
   },
 

@@ -1,6 +1,6 @@
 import { addDays } from "date-fns";
 import { CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, GripVertical, Plus } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSwipe } from "../hooks/useSwipe";
 import { EmptyState } from "../components/EmptyState";
 import { TaskItem } from "../components/TaskItem";
@@ -9,10 +9,13 @@ import { getRepository } from "../data/repositoryProvider";
 import { taskRepository } from "../data/taskRepository";
 import type { PlanOverviewItem, TaskDisplay, TaskStatus } from "../types/task";
 import { formatCompactDate, formatFullDate, fromDateKey, relativeDayLabel, toDateKey, todayKey } from "../utils/date";
-import { TASK_SUBJECT_GROUPS, groupDayTasks, normalizeSubjectOrder, type TaskSubjectGroup } from "../utils/taskGrouping";
+import { TASK_SUBJECT_GROUPS, dayTaskKey, findJustCompleted, groupDayTasks, normalizeSubjectOrder, type DayTaskPlacement, type TaskSubjectGroup } from "../utils/taskGrouping";
 import { useGroupOrder } from "../hooks/useGroupOrder";
 import { itemSyncKey, taskSyncKey } from "../utils/taskMeta";
 import { SidebarMemo } from "../components/SidebarMemo";
+
+/** 刚完成的任务在原位停留多久再收进"已完成"（略长于 400ms 的勾选动画） */
+const COMPLETED_HOLD_MS = 700;
 
 function ProgressMeter({ completed, total }: { completed: number; total: number }) {
   const percentage = total === 0 ? 0 : (completed / total) * 100;
@@ -21,9 +24,9 @@ function ProgressMeter({ completed, total }: { completed: number; total: number 
 
 interface Props {
   date: string; refreshKey: number; onDateChange: (date: string) => void;
-  onStatusChange: (task: TaskDisplay, status: TaskStatus, asOfDate?: string) => void; onEdit: (task: TaskDisplay) => void;
+  onStatusChange: (task: TaskDisplay, status: TaskStatus, asOfDate?: string) => void | Promise<void>; onEdit: (task: TaskDisplay) => void;
   onDelete: (task: TaskDisplay) => void; onEnd: (task: TaskDisplay) => void; onExtend: (task: TaskDisplay) => void; onOccurrenceCancel: (task: TaskDisplay) => void;
-  onOccurrencePostpone: (task: TaskDisplay) => void; onChecklistToggle: (task: TaskDisplay, itemId: string, asOfDate?: string) => void;
+  onOccurrencePostpone: (task: TaskDisplay) => void; onChecklistToggle: (task: TaskDisplay, itemId: string, asOfDate?: string) => void | Promise<void>;
   onCopy: (task: TaskDisplay) => void; onOpenMonth: () => void;
   onAddTask: () => void;
   memo: string; onMemoFocus: () => void; onMemoChange: (value: string) => void; onMemoBlur: () => void; onMemoComplete: () => void;
@@ -38,11 +41,37 @@ export function DayPage(props: Props) {
   const [overdue, setOverdue] = useState<TaskDisplay[]>([]);
   const [showDone, setShowDone] = useState(true);
   const { order, updateOrder } = useGroupOrder();
-  const reload = () => Promise.all([taskRepository.getTasksForDate(props.date), taskRepository.getOverdueTasks(props.date)]).then(([items, late]) => { setTasks(items); setOverdue(late); });
+  // 刚完成的任务先在原位停留片刻（划线变灰、勾选动画播完），再收进"已完成"，
+  // 否则一勾上整行立刻跳走，孩子看不到反馈。held 记录每条停留中的任务原本在哪个区。
+  const [held, setHeld] = useState<Map<string, DayTaskPlacement>>(new Map());
+  const placementRef = useRef<{ date: string; placement: Map<string, DayTaskPlacement> } | null>(null);
+  const holdTimers = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const reload = () => {
+    const date = props.date;
+    return Promise.all([taskRepository.getTasksForDate(date), taskRepository.getOverdueTasks(date)]).then(([items, late]) => {
+      const { placement, justCompleted } = findJustCompleted(placementRef.current?.date === date ? placementRef.current.placement : null, items, late);
+      placementRef.current = { date, placement };
+      if (justCompleted.size > 0) {
+        setHeld((current) => new Map([...current, ...justCompleted]));
+        const timer = setTimeout(() => {
+          holdTimers.current.delete(timer);
+          setHeld((current) => { const next = new Map(current); justCompleted.forEach((_, key) => next.delete(key)); return next; });
+        }, COMPLETED_HOLD_MS);
+        holdTimers.current.add(timer);
+      }
+      setTasks(items);
+      setOverdue(late);
+    });
+  };
   useEffect(() => { reload(); }, [props.date, props.refreshKey]);
+  // 换日期时不带着上一页的停留状态
+  useEffect(() => { setHeld(new Map()); }, [props.date]);
+  useEffect(() => () => { holdTimers.current.forEach((timer) => clearTimeout(timer)); }, []);
   const reorderTasks = async (ids: string[]) => { await getRepository().reorderTasks(ids); await reload(); };
-  const pending = tasks.filter((task) => !["done", "cancelled"].includes(task.status));
-  const done = tasks.filter((task) => ["done", "cancelled"].includes(task.status));
+  const isSettled = (task: TaskDisplay) => ["done", "cancelled"].includes(task.status);
+  const pending = tasks.filter((task) => !isSettled(task) || held.get(dayTaskKey(task)) === "pending");
+  const done = tasks.filter((task) => isSettled(task) && !held.has(dayTaskKey(task)));
+  const overdueShown = [...overdue, ...tasks.filter((task) => isSettled(task) && held.get(dayTaskKey(task)) === "overdue")];
   // 有小项时只统计小项；没有小项时，大项自身计为一项。
   // 使用当前查看日的展示状态，历史日期的小项完成情况由数据层提供。
   const progress = tasks.reduce((result, task) => {
@@ -70,7 +99,7 @@ export function DayPage(props: Props) {
   const [dateLabel, weekdayLabel] = formatFullDate(props.date).split(" ");
   const navButton = "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-ink/15 bg-white text-muted shadow-sm hover:border-primary/30 hover:text-primary sm:h-10 sm:w-10";
   const renderTask = (task: TaskDisplay) => <TaskItem
-    key={`${task.id}:${task.occurrenceDate ?? task.date}`}
+    key={dayTaskKey(task)}
     task={task}
     unsynced={props.unsyncedTasks?.has(taskSyncKey(task))}
     unsyncedItemIds={props.unsyncedItems && task.checklistItems ? new Set(task.checklistItems.filter((item) => props.unsyncedItems!.has(itemSyncKey(task.id, item.id))).map((item) => item.id)) : undefined}
@@ -89,7 +118,7 @@ export function DayPage(props: Props) {
     {!isToday && <div role="status" className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-sun/60 bg-sun/20 px-3 py-2 sm:px-4"><p className="min-w-0 text-sm font-semibold text-ink">正在看 {formatCompactDate(props.date)}（{relativeDayLabel(props.date)}），不是今天</p><button onClick={() => props.onDateChange(todayKey())} className="h-9 shrink-0 rounded-lg bg-primary px-3 text-sm font-bold text-white [@media(pointer:coarse)]:h-11">回到今天</button></div>}
     <SidebarMemo value={props.memo} variant="narrow" editorOpen={props.memoEditorOpen} focusRequest={props.memoFocusRequest} busy={props.memoBusy} onFocus={props.onMemoFocus} onChange={props.onMemoChange} onBlur={props.onMemoBlur} onComplete={props.onMemoComplete} />
     <div ref={swipeRef} className="space-y-4">
-      {overdue.length > 0 && <section className="surface overflow-visible border-alert/35"><div className="flex items-center justify-between border-b border-alert/20 bg-alert/[0.06] px-3 py-2"><h2 className="text-xs font-bold text-alert">逾期未完成</h2><span className="text-xs font-bold tabular-nums text-alert">{overdue.length}</span></div>{overdue.map(renderTask)}</section>}
+      {overdueShown.length > 0 && <section className="surface overflow-visible border-alert/35"><div className="flex items-center justify-between border-b border-alert/20 bg-alert/[0.06] px-3 py-2"><h2 className="text-xs font-bold text-alert">逾期未完成</h2><span className="text-xs font-bold tabular-nums text-alert">{overdue.length}</span></div>{overdueShown.map(renderTask)}</section>}
       <section className="surface overflow-visible"><div className="flex items-center gap-2 border-b border-ink/10 px-3 py-2.5 sm:px-4"><h2 className="shrink-0 text-sm font-bold text-ink">{isToday ? "今日清单" : "当日清单"}</h2><ProgressMeter completed={progress.completed} total={progress.total} />{progress.total > 0 && <span className={`ml-auto shrink-0 text-xs font-semibold tabular-nums ${remaining === 0 ? "text-primary" : "text-ink"}`}>{remaining === 0 ? "全部完成" : `还剩 ${remaining} 项`}</span>}</div>{pending.length ? <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} onTaskReorder={reorderTasks} /> : <div className="p-3"><EmptyState compact /></div>}</section>
       {done.length > 0 && <section className="surface overflow-visible"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-3 py-2.5 text-left sm:px-4"><span className="flex items-center gap-2 text-sm font-bold text-ink"><CheckCircle2 className="h-4 w-4 text-primary" />已完成 <span className="text-[11px] font-medium text-muted">{done.length}</span></span><ChevronDown className={`h-4 w-4 text-muted transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <div className="border-t border-ink/10"><GroupedTaskGrid tasks={done} renderTask={renderTask} order={order} onReorder={updateOrder} /></div>}</section>}
     </div>

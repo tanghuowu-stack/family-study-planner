@@ -7,6 +7,7 @@ import { getCalendarAnnotation } from "../data/calendarAnnotations";
 import type { TaskDisplay } from "../types/task";
 import { fromDateKey, toDateKey, todayKey } from "../utils/date";
 import { subCategoryLabel } from "../utils/taskMeta";
+import { WeekReviewStrip } from "../components/WeekReviewStrip";
 
 export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask }: { date: string; refreshKey: number; onDateChange: (date: string) => void; onOpenDay: (date: string) => void; onAddTask: (date: string) => void }) {
   const monthDate = fromDateKey(date);
@@ -49,6 +50,8 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask
           <button onClick={() => move(1)} aria-label={`下一月：${format(addMonths(monthDate, 1), "yyyy年M月")}`} className="flex h-8 w-8 items-center justify-center rounded-md text-sm font-semibold text-muted hover:bg-stone-100 hover:text-ink sm:h-10 sm:w-auto sm:min-w-20 sm:gap-1 sm:px-3"><span className="hidden sm:inline">{format(addMonths(monthDate, 1), "M月")}</span><ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" /></button>
         </div>
       </header>
+
+      <WeekReviewStrip refreshKey={refreshKey} onOpenDay={onOpenDay} />
 
       <div ref={swipeRef} className="grid grid-cols-7 overflow-hidden rounded-lg border border-ink/15 bg-white shadow-card">
         {["一", "二", "三", "四", "五", "六", "日"].map((day) => (

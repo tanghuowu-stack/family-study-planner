@@ -50,7 +50,8 @@ statsRepository.ts      习惯打卡数据层（getHabitCandidates / setHabitEna
 repositoryProvider.ts   按登录状态选择本地 / 云端 repository
 cloudAuth.ts            邮箱密码登录、family/profile 初始化
 cloudUpload/Read/Download.ts  维护工具：上传/预览/下载
-CloudLoginPanel.tsx     打印备份页里的云同步状态与维护面板
+CloudLoginPanel.tsx     设置页里的云同步状态与维护面板
+weekReview.ts           月视图“本周”条的只读汇总（每件事只算一次，完成看现在的状态）
 App.tsx                 正式任务动作汇聚点（增删改查、勾选、小项、单次状态）
 ```
 

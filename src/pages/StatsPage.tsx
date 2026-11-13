@@ -1,87 +1,31 @@
-import { ChevronDown, Download, Upload } from "lucide-react";
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { CloudLoginPanel } from "../components/CloudLoginPanel";
-import { getCalendarDisplaySettings, saveCalendarDisplaySettings, type CalendarDisplaySettings } from "../data/calendarAnnotations";
+import { useState } from "react";
 import { HabitSection } from "../components/HabitSection";
-import { MemoHistorySection } from "../components/MemoHistorySection";
-import type { MemoHistoryEntry } from "../data/appSettingsRepository";
 import { taskRepository } from "../data/taskRepository";
-import { getRepository } from "../data/repositoryProvider";
-import { canUndoActivityLog, undoActivityLog } from "../data/activityUndo";
-import type { ActivityLog } from "../types/task";
-import { todayKey, toLocalDateKey } from "../utils/date";
+import { todayKey } from "../utils/date";
 
 type CourseStats = Awaited<ReturnType<typeof taskRepository.getCourseStatistics>>;
 
-interface Props {
-  onImported: () => void;
-  cloudMode?: boolean;
-  onAuthChange?: () => void | Promise<void>;
-  memoHistory: MemoHistoryEntry[];
-  memoBusy: boolean;
-  onRestoreMemo: (id: string) => Promise<void>;
-  onDeleteMemo: (id: string) => Promise<void>;
-}
-
-export function StatsPage({ onImported, cloudMode, onAuthChange, memoHistory, memoBusy, onRestoreMemo, onDeleteMemo }: Props) {
-  const fileRef = useRef<HTMLInputElement>(null);
+/**
+ * 打卡页（原"统计与设置"，2026-11 第 6 批拆分）：只留打卡月历和课程节数统计；
+ * 云同步、备份、课程、假期、历史备忘、操作记录都移到"设置"页。
+ */
+export function StatsPage() {
   const [message, setMessage] = useState("");
-  const [deviceLabel, setDeviceLabel] = useState(() => localStorage.getItem("familyPlanner.deviceLabel") ?? "");
-  const [calendarSettings, setCalendarSettings] = useState(getCalendarDisplaySettings);
-  const [logs, setLogs] = useState<ActivityLog[]>([]);
-  const [logsOpen, setLogsOpen] = useState(false);
-  const [undoingId, setUndoingId] = useState<string | null>(null);
   const [courseStart, setCourseStart] = useState(() => `${todayKey().slice(0, 7)}-01`);
   const [courseEnd, setCourseEnd] = useState(todayKey);
   const [courseStats, setCourseStats] = useState<CourseStats>();
-  const [backupOpen, setBackupOpen] = useState(false);
-  const [cloudSyncOpen, setCloudSyncOpen] = useState(false);
-  const [moreSettingsOpen, setMoreSettingsOpen] = useState(false);
-  const loadLogs = () => getRepository().listActivityLogs(50).then(setLogs);
-  useEffect(() => { void loadLogs(); }, []);
-  const handleUndo = async (log: ActivityLog) => {
-    if (!confirm(`撤回"${actionLabel(log.actionType)}${log.entityTitle ? "：" + log.entityTitle : ""}"这条操作吗？`)) return;
-    setUndoingId(log.id);
-    try {
-      await undoActivityLog(log);
-      setMessage("已撤回");
-      onImported();
-      void loadLogs();
-    } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : "撤回失败");
-    } finally {
-      setUndoingId(null);
-    }
-  };
-  const updateCalendarSetting = (key: keyof CalendarDisplaySettings, value: boolean) => { const next = { ...calendarSettings, [key]: value }; setCalendarSettings(next); saveCalendarDisplaySettings(next); setMessage("日历显示设置已保存"); };
-  const exportData = async () => { const backup = await taskRepository.exportBackup(); const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `小步计划备份-${toLocalDateKey(backup.exportedAt)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 500); setMessage("备份已导出"); void loadLogs(); };
-  const importData = async (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; event.target.value = ""; if (!file || !confirm("导入将覆盖当前数据，确定继续吗？")) return; try { await taskRepository.importBackup(JSON.parse(await file.text())); setMessage("导入成功"); onImported(); void loadLogs(); } catch (reason) { setMessage(reason instanceof Error ? reason.message : "导入失败"); } };
   const countCourses = async () => {
     if (!courseStart || !courseEnd || courseStart > courseEnd) return setMessage("课程统计日期范围不正确");
     setCourseStats(await taskRepository.getCourseStatistics(courseStart, courseEnd));
     setMessage("");
   };
-  return <main className="mx-auto w-full max-w-5xl px-4 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10"><header className="page-header"><h1 className="page-title">统计与设置</h1></header>
+  return <main className="mx-auto w-full max-w-5xl px-4 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10"><header className="page-header"><h1 className="page-title">打卡</h1></header>
     <HabitSection />
-    <section className="surface mt-6 p-4 sm:p-5"><p className="section-heading">Course review</p><h3 className="mt-1 text-base font-bold">课程节数统计</h3><div className="mt-3 flex flex-wrap items-end gap-2"><label className="text-xs text-stone-500">开始日期<input type="date" value={courseStart} onChange={(event) => setCourseStart(event.target.value)} className="mt-1 block rounded-lg border px-2.5 py-1.5 text-sm text-stone-700" /></label><label className="text-xs text-stone-500">结束日期<input type="date" value={courseEnd} onChange={(event) => setCourseEnd(event.target.value)} className="mt-1 block rounded-lg border px-2.5 py-1.5 text-sm text-stone-700" /></label><button onClick={countCourses} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white">统计</button></div>{courseStats && <CourseStatistics data={courseStats} />}</section>
-    {message && <p className="mt-4 rounded-xl bg-sage-50 px-4 py-3 text-sm text-sage-700">{message}</p>}
-    <section className="surface mt-6 p-4 sm:p-5"><button onClick={() => setMoreSettingsOpen(!moreSettingsOpen)} className="flex w-full items-center justify-between text-left"><span><span className="section-heading block">System</span><span className="mt-1 block font-bold">更多设置</span></span><span className="inline-flex items-center gap-1 text-xs text-stone-500">{moreSettingsOpen ? "收起" : "展开"}<ChevronDown className={`h-4 w-4 transition ${moreSettingsOpen ? "rotate-180" : ""}`} /></span></button>
-      {moreSettingsOpen && <div className="mt-4 space-y-4">
-        <MemoHistorySection entries={memoHistory} busy={memoBusy} onRestore={onRestoreMemo} onDelete={onDeleteMemo} />
-        <div><button onClick={() => setCloudSyncOpen(!cloudSyncOpen)} className="flex w-full items-center justify-between text-left"><span className="text-sm font-semibold">云同步</span><span className="inline-flex items-center gap-1 text-xs text-stone-500">{cloudSyncOpen ? "收起" : "展开"}<ChevronDown className={`h-4 w-4 transition ${cloudSyncOpen ? "rotate-180" : ""}`} /></span></button>{cloudSyncOpen && <div className="mt-3"><CloudLoginPanel cloudMode={cloudMode} onAuthChange={onAuthChange} /></div>}</div>
-        <div className="border-t pt-4"><h3 className="text-sm font-semibold">本机名称</h3><div className="mt-2 inline-flex items-center gap-2"><span className="text-xs text-stone-500">名称</span><input value={deviceLabel} onChange={(event) => setDeviceLabel(event.target.value)} placeholder="例如：书房 MacBook" className="w-36 rounded-lg border px-2.5 py-1.5 text-sm" /><button onClick={() => { localStorage.setItem("familyPlanner.deviceLabel", deviceLabel.trim() || "本地设备"); setMessage("本机名称已保存"); }} className="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-white">保存</button></div></div>
-        <div className="border-t pt-4"><h3 className="text-sm font-semibold">数据备份</h3><button onClick={() => setBackupOpen(!backupOpen)} className="mt-2 flex w-full items-center justify-between text-left"><span className="text-xs text-stone-500">导入 / 导出</span><span className="inline-flex items-center gap-1 text-xs text-stone-500">{backupOpen ? "收起" : "展开"}<ChevronDown className={`h-4 w-4 transition ${backupOpen ? "rotate-180" : ""}`} /></span></button>{backupOpen && <div className="mt-3 grid gap-4 sm:grid-cols-2"><ActionCard icon={<Download />} title="导出备份" text="保存全部任务、软删除记录和操作日志。" button="导出备份" onClick={exportData} /><div className="rounded-2xl border border-stone-100 bg-white p-5 shadow-card"><span className="inline-flex rounded-xl bg-amber-50 p-2 text-amber-700"><Upload className="h-5 w-5" /></span><h2 className="mt-3 font-semibold">导入备份</h2><p className="mt-1 text-sm text-stone-500">从 JSON 文件恢复任务。</p><input ref={fileRef} type="file" accept=".json,application/json" onChange={importData} className="hidden" /><button onClick={() => fileRef.current?.click()} className="mt-4 w-full rounded-xl border px-4 py-2.5 text-sm font-semibold">选择备份文件</button></div></div>}</div>
-        <div className="border-t pt-4"><h3 className="text-sm font-semibold">日历提示</h3><div className="mt-2 flex flex-wrap items-center gap-2"><SettingCheck label="显示节气" checked={calendarSettings.showSolarTerms} onChange={(value) => updateCalendarSetting("showSolarTerms", value)} /><SettingCheck label="显示节日" checked={calendarSettings.showFestivals} onChange={(value) => updateCalendarSetting("showFestivals", value)} /><SettingCheck label="显示休/班标记" checked={calendarSettings.showHolidayStatus} onChange={(value) => updateCalendarSetting("showHolidayStatus", value)} /></div></div>
-        <div className="border-t pt-4"><button onClick={() => setLogsOpen(!logsOpen)} className="flex w-full items-center justify-between text-left"><span className="text-sm font-semibold">最近操作记录 · {logs.length}</span><span className="inline-flex items-center gap-1 text-xs text-stone-500">{logsOpen ? "收起" : "展开"}<ChevronDown className={`h-4 w-4 transition ${logsOpen ? "rotate-180" : ""}`} /></span></button>{logsOpen && <><div className="mt-2 flex justify-end"><button onClick={() => void loadLogs()} className="text-xs text-sage-700">刷新</button></div><div className="mt-1 divide-y">{logs.length ? logs.map((log) => <details key={log.id} className="py-2 text-sm"><summary className="flex cursor-pointer list-none items-center gap-2"><span className="min-w-0 flex-1"><span className="font-medium">{actionLabel(log.actionType)}</span><span className="ml-2 text-stone-500">{log.entityTitle ?? log.entityId ?? "系统数据"}</span><span className="ml-2 text-xs text-stone-400">{new Date(log.createdAt).toLocaleString("zh-CN")} · {log.deviceLabel} · {log.browser}</span></span>{canUndoActivityLog(log) && <button onClick={(event) => { event.preventDefault(); event.stopPropagation(); void handleUndo(log); }} disabled={undoingId === log.id} className="shrink-0 rounded-lg border border-stone-200 px-2 py-1 text-xs font-medium text-stone-600 hover:bg-mint/40 disabled:opacity-50">{undoingId === log.id ? "撤回中…" : "撤回"}</button>}</summary><pre className="mt-2 max-h-56 overflow-auto rounded-lg bg-stone-50 p-3 text-[11px] text-stone-500">{JSON.stringify({ before: log.beforeSnapshot, after: log.afterSnapshot }, null, 2)}</pre></details>) : <p className="py-5 text-sm text-stone-400">暂无操作记录</p>}</div></>}</div>
-      </div>}
-    </section>
+    <section className="surface mt-6 p-4 sm:p-5"><h2 className="text-base font-bold text-ink">课程节数统计</h2><div className="mt-3 flex flex-wrap items-end gap-2"><label className="text-[13px] text-muted">开始日期<input type="date" value={courseStart} onChange={(event) => setCourseStart(event.target.value)} className="mt-1 block min-h-11 rounded-lg border px-2.5 text-sm text-stone-700" /></label><label className="text-[13px] text-muted">结束日期<input type="date" value={courseEnd} onChange={(event) => setCourseEnd(event.target.value)} className="mt-1 block min-h-11 rounded-lg border px-2.5 text-sm text-stone-700" /></label><button onClick={countCourses} className="min-h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-white">统计</button></div>{message && <p role="alert" className="mt-3 text-sm text-rose-700">{message}</p>}{courseStats && <CourseStatistics data={courseStats} />}</section>
   </main>;
 }
 
-function SettingCheck({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) { return <label className="flex items-center gap-1.5 rounded-lg bg-stone-50 px-2.5 py-1.5 text-xs text-stone-600"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="h-3.5 w-3.5 rounded" />{label}</label>; }
 function CourseStatistics({ data }: { data: CourseStats }) {
   const groups = ["语文", "数学", "英语", "兴趣班", "其他"].map((group) => ({ group, items: data.items.filter((item) => item.group === group) })).filter((group) => group.items.length);
-  return <div className="mt-3 rounded-xl bg-stone-50 p-3 text-sm"><p className="text-xs text-stone-400">{data.startDate} 至 {data.endDate}</p>{groups.length ? <div className="mt-2 grid gap-3 sm:grid-cols-2">{groups.map(({ group, items }) => <div key={group}><h4 className="text-xs font-semibold text-stone-600">{group}</h4>{items.map((item) => <div key={`${group}:${item.label}`} className="mt-1 flex justify-between gap-3 text-xs text-stone-600"><span className="truncate">{item.label}</span><span className="shrink-0 font-medium">{item.count} 节</span></div>)}</div>)}</div> : <p className="mt-2 text-xs text-stone-400">该日期范围内暂无课程</p>}<p className="mt-3 border-t pt-2 text-right font-semibold">合计：{data.total} 节</p></div>;
+  return <div className="mt-3 rounded-lg bg-stone-50 p-3 text-sm"><p className="text-[13px] text-stone-400">{data.startDate} 至 {data.endDate}</p>{groups.length ? <div className="mt-2 grid gap-3 sm:grid-cols-2">{groups.map(({ group, items }) => <div key={group}><h4 className="text-[13px] font-semibold text-stone-600">{group}</h4>{items.map((item) => <div key={`${group}:${item.label}`} className="mt-1 flex justify-between gap-3 text-[13px] text-stone-600"><span className="truncate">{item.label}</span><span className="shrink-0 font-medium">{item.count} 节</span></div>)}</div>)}</div> : <p className="mt-2 text-[13px] text-stone-400">该日期范围内暂无课程</p>}<p className="mt-3 border-t pt-2 text-right font-semibold">合计：{data.total} 节</p></div>;
 }
-const actionLabel = (action: ActivityLog["actionType"]) => ({ create: "新建任务", edit: "编辑任务", complete: "完成任务", uncomplete: "取消完成", delete: "删除任务", batchDelete: "批量删除", restore: "恢复任务", cancelOccurrence: "取消单次安排", postponeOccurrence: "延期单次安排", createHoliday: "新增假期", editHoliday: "修改假期", deleteHoliday: "删除假期", createCourse: "新增课程", editCourse: "修改课程", deleteCourse: "删除课程", recordReading: "旧版记录", undoReading: "撤销旧版记录", import: "导入备份", export: "导出备份" }[action]);
-function ActionCard({ icon, title, text, button, onClick }: { icon: React.ReactNode; title: string; text: string; button: string; onClick: () => void }) { return <div className="rounded-2xl border border-stone-100 bg-white p-5 shadow-card"><span className="inline-flex rounded-xl bg-sage-50 p-2 text-sage-700">{icon}</span><h2 className="mt-3 font-semibold">{title}</h2><p className="mt-1 text-sm text-stone-500">{text}</p><button onClick={onClick} className="mt-4 w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white">{button}</button></div>; }

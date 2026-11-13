@@ -1,4 +1,4 @@
-import { BarChart3, CalendarDays, Cloud, ClipboardList, Home, Plus, Table2 } from "lucide-react";
+import { BarChart3, CalendarDays, Cloud, ClipboardList, Home, Plus, Settings, Table2 } from "lucide-react";
 import { addDays } from "date-fns";
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { TaskForm } from "./components/TaskForm";
@@ -9,6 +9,7 @@ import { cloudRepository, setCloudSyncErrorHandler } from "./data/cloudRepositor
 import { loadAuthState } from "./lib/cloudAuth";
 import { startRealtimeSync, stopRealtimeSync } from "./lib/realtimeSync";
 import { StatsPage } from "./pages/StatsPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import { DayPage } from "./pages/DayPage";
 import { MonthPage } from "./pages/MonthPage";
 import { TaskManagementPage } from "./pages/TaskManagementPage";
@@ -18,11 +19,11 @@ import { fromDateKey, shouldReturnToToday, todayKey, toDateKey } from "./utils/d
 import { isOccurrenceSchedule, itemSyncKey, taskSyncKey } from "./utils/taskMeta";
 import { archiveSidebarMemo, deleteSidebarMemoHistory, loadSidebarMemoState, restoreSidebarMemo, saveSidebarMemo, type MemoHistoryEntry, type SidebarMemoSetting } from "./data/appSettingsRepository";
 
-type Page = "today" | "month" | "tasks" | "stats" | "timetable";
+type Page = "today" | "month" | "tasks" | "stats" | "timetable" | "settings";
 const navItems = [
   { page: "today" as const, label: "今日", icon: Home },
   { page: "month" as const, label: "月视图", icon: CalendarDays }, { page: "tasks" as const, label: "任务管理", icon: ClipboardList },
-  { page: "stats" as const, label: "统计", icon: BarChart3 },
+  { page: "stats" as const, label: "打卡", icon: BarChart3 },
   { page: "timetable" as const, label: "课表", icon: Table2 },
 ];
 
@@ -291,15 +292,17 @@ export default function App() {
       <nav className="mt-6 space-y-1">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium ${page === value ? "bg-white text-ink" : "text-white/65 hover:bg-white/10 hover:text-white"}`}><Icon className="h-4 w-4" />{label}{page === value && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-alert" />}</button>)}</nav>
       <SidebarMemo value={memo} variant="sidebar" busy={memoBusy} onFocus={beginMemoEdit} onChange={changeMemo} onBlur={() => void finishMemoEdit()} onComplete={() => void completeMemo()} />
       <div className="mt-auto shrink-0 border-t border-white/10 pt-4">
-        {!cloudInitializing && <div className="flex items-center gap-2 px-2 text-xs text-white/55"><span className={`h-2 w-2 rounded-full ${cloudMode ? "bg-emerald-400" : "bg-white/30"}`} /><Cloud className="h-3.5 w-3.5" />{cloudMode ? "云端已连接" : "本地模式"}</div>}
+        {/* 设置入口与云同步状态合在一起：低频维护项（云同步、课程、假期、备份…）都在设置页 */}
+        <button onClick={() => setPage("settings")} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium ${page === "settings" ? "bg-white text-ink" : "text-white/65 hover:bg-white/10 hover:text-white"}`}><Settings className="h-4 w-4" />设置{!cloudInitializing && <span title={cloudMode ? "云端已连接" : "本地模式"} className={`ml-auto inline-flex items-center gap-1.5 text-xs ${page === "settings" ? "text-muted" : "text-white/55"}`}><span className={`h-2 w-2 rounded-full ${cloudMode ? "bg-emerald-400" : "bg-white/30"}`} /><Cloud className="h-3.5 w-3.5" /><span className="sr-only">{cloudMode ? "云端已连接" : "本地模式"}</span></span>}</button>
       </div>
     </aside>
-    <header className="pt-safe sticky top-0 z-40 border-b border-ink/10 bg-paper/95 backdrop-blur-xl lg:hidden"><div className="flex h-14 items-center justify-between px-4"><button onClick={() => setPage("today")} className="flex items-center gap-2.5"><img src="/favicon.svg" alt="" className="h-8 w-8 rounded-lg" /><span className="text-left text-base font-bold">小步计划</span></button><div className="flex items-center gap-2">{!cloudInitializing && <span title={cloudMode ? "云端已连接" : "本地模式"} className={`h-2 w-2 rounded-full ${cloudMode ? "bg-emerald-500" : "bg-stone-300"}`} />}{page === "today" && <button type="button" onClick={openMemoEditor} aria-controls="today-memo" aria-expanded={memoEditorOpen} className="h-11 shrink-0 rounded-lg border border-ink/10 bg-white px-3 text-sm font-medium text-muted hover:text-primary">备忘</button>}<button aria-label="添加任务" onClick={() => setForm({ open: true })} className="flex h-11 w-11 items-center justify-center rounded-lg bg-alert text-white"><Plus className="h-4 w-4" /></button></div></div></header>
+    <header className="pt-safe sticky top-0 z-40 border-b border-ink/10 bg-paper/95 backdrop-blur-xl lg:hidden"><div className="flex h-14 items-center justify-between px-4"><button onClick={() => setPage("today")} className="flex items-center gap-2.5"><img src="/favicon.svg" alt="" className="h-8 w-8 rounded-lg" /><span className="text-left text-base font-bold">小步计划</span></button><div className="flex items-center gap-2">{!cloudInitializing && <span title={cloudMode ? "云端已连接" : "本地模式"} className={`h-2 w-2 rounded-full ${cloudMode ? "bg-emerald-500" : "bg-stone-300"}`} />}<button type="button" aria-label="设置" title="设置" onClick={() => setPage("settings")} className={`flex h-11 w-11 items-center justify-center rounded-lg border ${page === "settings" ? "border-primary/30 bg-primary/10 text-primary" : "border-ink/10 bg-white text-muted hover:text-primary"}`}><Settings className="h-5 w-5" /></button>{page === "today" && <button type="button" onClick={openMemoEditor} aria-controls="today-memo" aria-expanded={memoEditorOpen} className="h-11 shrink-0 rounded-lg border border-ink/10 bg-white px-3 text-sm font-medium text-muted hover:text-primary">备忘</button>}<button aria-label="添加任务" onClick={() => setForm({ open: true })} className="flex h-11 w-11 items-center justify-center rounded-lg bg-alert text-white"><Plus className="h-4 w-4" /></button></div></div></header>
     <div className="app-content">
       {page === "today" && <DayPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenMonth={() => setPage("month")} onAddTask={() => setForm({ open: true })} memo={memo} memoEditorOpen={memoEditorOpen} memoFocusRequest={memoFocusRequest} memoBusy={memoBusy} onMemoFocus={beginMemoEdit} onMemoChange={changeMemo} onMemoBlur={finishNarrowMemoEdit} onMemoComplete={() => void completeMemo()} {...actions} />}
       {page === "month" && <MonthPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenDay={openDay} onAddTask={(date) => { setSelectedDate(date); setForm({ open: true }); }} />}
       {page === "tasks" && <TaskManagementPage refreshKey={refreshKey} onRefresh={refresh} notify={notify} onEdit={(task) => setForm({ open: true, task })} onDelete={deleteTask} onEnd={endTask} onExtend={extendTask} onCopy={copyTask} />}
-      {page === "stats" && <StatsPage onImported={refresh} cloudMode={cloudMode} onAuthChange={syncCloudSession} memoHistory={memoHistory} memoBusy={memoBusy} onRestoreMemo={(id) => updateMemoHistory(() => restoreSidebarMemo(id), "已恢复到当前备忘，有原内容时会追加")} onDeleteMemo={(id) => updateMemoHistory(() => deleteSidebarMemoHistory(id), "历史备忘已永久删除")} />}
+      {page === "stats" && <StatsPage />}
+      {page === "settings" && <SettingsPage refreshKey={refreshKey} onImported={refresh} notify={notify} cloudMode={cloudMode} onAuthChange={syncCloudSession} memoHistory={memoHistory} memoBusy={memoBusy} onRestoreMemo={(id) => updateMemoHistory(() => restoreSidebarMemo(id), "已恢复到当前备忘，有原内容时会追加")} onDeleteMemo={(id) => updateMemoHistory(() => deleteSidebarMemoHistory(id), "历史备忘已永久删除")} />}
       {page === "timetable" && <TimetablePage />}
     </div>
     <nav className="bottom-nav-safe fixed inset-x-0 bottom-0 z-40 border-t border-ink/10 bg-white/95 backdrop-blur lg:hidden"><div className="grid grid-cols-5 px-2 pt-1">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`relative flex min-w-0 flex-col items-center gap-0.5 px-1 py-1.5 text-[10px] ${page === value ? "text-primary" : "text-muted"}`}>{page === value && <span className="absolute -top-1 h-0.5 w-8 bg-alert" />}<Icon className="h-5 w-5" /><span className="truncate">{label}</span></button>)}</div></nav>

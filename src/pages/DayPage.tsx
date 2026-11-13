@@ -13,6 +13,7 @@ import { TASK_SUBJECT_GROUPS, dayTaskKey, findJustCompleted, groupDayTasks, norm
 import { useGroupOrder } from "../hooks/useGroupOrder";
 import { itemSyncKey, taskSyncKey } from "../utils/taskMeta";
 import { SidebarMemo } from "../components/SidebarMemo";
+import { AllDoneCelebration } from "../components/AllDoneCelebration";
 import { GroupHeading, NEUTRAL_DOT, SUBJECT_DOT } from "../components/GroupHeading";
 
 /** 刚完成的任务在原位停留多久再收进"已完成"（略长于 400ms 的勾选动画） */
@@ -49,7 +50,8 @@ export function DayPage(props: Props) {
   const holdTimers = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const reload = () => {
     const date = props.date;
-    return Promise.all([taskRepository.getTasksForDate(date), taskRepository.getOverdueTasks(date)]).then(([items, late]) => {
+    // 未来的日子不显示逾期区：今天还没做完的事挂在明天页面上叫"逾期"，排明天作业时容易误会
+    return Promise.all([taskRepository.getTasksForDate(date), date > todayKey() ? Promise.resolve([] as TaskDisplay[]) : taskRepository.getOverdueTasks(date)]).then(([items, late]) => {
       const { placement, justCompleted } = findJustCompleted(placementRef.current?.date === date ? placementRef.current.placement : null, items, late);
       placementRef.current = { date, placement };
       if (justCompleted.size > 0) {
@@ -120,7 +122,7 @@ export function DayPage(props: Props) {
     <SidebarMemo value={props.memo} variant="narrow" editorOpen={props.memoEditorOpen} focusRequest={props.memoFocusRequest} busy={props.memoBusy} onFocus={props.onMemoFocus} onChange={props.onMemoChange} onBlur={props.onMemoBlur} onComplete={props.onMemoComplete} />
     <div ref={swipeRef} className="space-y-4">
       {overdueShown.length > 0 && <section className="surface overflow-visible border-alert/35"><div className="flex items-center justify-between border-b border-alert/20 bg-alert/[0.06] px-3 py-2.5 sm:px-4"><h2 className="text-base font-bold text-alert">逾期未完成</h2><span className="text-[13px] font-semibold tabular-nums text-alert">{overdue.length}</span></div>{overdueShown.map(renderTask)}</section>}
-      <section className="surface overflow-visible"><div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">{isToday ? "今日清单" : "当日清单"}</h2><ProgressMeter completed={progress.completed} total={progress.total} />{progress.total > 0 && <span className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${remaining === 0 ? "text-primary" : "text-ink"}`}>{remaining === 0 ? "全部完成" : `还剩 ${remaining} 项`}</span>}</div>{pending.length ? <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} onTaskReorder={reorderTasks} /> : <div className="p-3"><EmptyState compact /></div>}</section>
+      <section className="surface overflow-visible"><div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">{isToday ? "今日清单" : "当日清单"}</h2><ProgressMeter completed={progress.completed} total={progress.total} />{progress.total > 0 && <span className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${remaining === 0 ? "text-primary" : "text-ink"}`}>{remaining === 0 ? "全部完成" : `还剩 ${remaining} 项`}</span>}</div>{pending.length ? <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} onTaskReorder={reorderTasks} /> : isToday && done.length > 0 && overdueShown.length === 0 ? <AllDoneCelebration count={done.length} /> : done.length > 0 ? <p className="px-4 py-4 text-[15px] font-semibold text-primary">这一天的事都做完了</p> : <div className="p-3"><EmptyState compact /></div>}</section>
       {done.length > 0 && <section className="surface overflow-visible"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-3 py-2.5 text-left sm:px-4"><span className="flex items-center gap-2 text-base font-bold text-ink"><CheckCircle2 className="h-4 w-4 text-primary" />已完成 <span className="text-[13px] font-medium text-muted">{done.length}</span></span><ChevronDown className={`h-4 w-4 text-muted transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <div className="border-t border-ink/10">{done.map(renderTask)}</div>}</section>}
     </div>
   </main>;

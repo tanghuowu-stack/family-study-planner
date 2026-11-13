@@ -97,6 +97,13 @@ body::before {
   .app-content { min-height: 100vh; padding-left: 14rem; }
 }
 
+/* 今天全部完成时对勾轻轻放大一次（AllDoneCelebration） */
+@keyframes celebrate {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
 }

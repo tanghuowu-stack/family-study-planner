@@ -93,17 +93,13 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask
                 <div className="mt-0.5 hidden truncate text-[10px] font-medium text-amber-700 sm:block">{annotations.join("·")}</div>
               )}
 
-              {/* Mobile: mini text chips (max 2) + overflow count */}
-              <div className="mt-0.5 flex flex-col gap-0.5 sm:hidden">
-                {labels.slice(0, 2).map((label) => (
-                  <div key={`${label.type}:${label.text}`} className={`rounded px-1 py-0.5 text-[9px] font-medium leading-tight ${compactLabelClass(label.type)}`}>
-                    {shortLabel(label.text)}
-                  </div>
-                ))}
-                {labels.length > 2 && (
-                  <div className="px-0.5 text-[8px] text-stone-400">+{labels.length - 2}</div>
-                )}
-              </div>
+              {/* 手机：格子太窄放不下文字（原先截成"整理明/天"这类半句），改为色点 + 件数，点开在下方看详情 */}
+              {labels.length > 0 && (
+                <div className="mt-1 flex flex-wrap items-center gap-0.5 sm:hidden" aria-label={`${labels.length} 项安排`}>
+                  {labels.slice(0, 4).map((label) => <span key={`${label.type}:${label.text}`} className={`h-1.5 w-1.5 rounded-full ${dotBg(label.type)} ${label.text.endsWith(" ✓") ? "opacity-40" : ""}`} />)}
+                  <span className="ml-0.5 text-[13px] font-semibold leading-none tabular-nums text-muted">{labels.length}</span>
+                </div>
+              )}
 
               {/* Desktop: text label pills */}
               <div className="mt-1 hidden space-y-1 sm:block">
@@ -229,11 +225,6 @@ function labelClass(type: string) {
   return styles[type] ?? "border-stone-200 bg-stone-50 text-stone-600";
 }
 
-/** First ≤4 chars of the label, strip trailing " ✓" first */
-function shortLabel(text: string): string {
-  return text.replace(/ ✓$/, "").slice(0, 4);
-}
-
 /** Small dot color for the DayPanel task rows */
 function dotBg(type: string) {
   const dots: Record<string, string> = {
@@ -244,24 +235,4 @@ function dotBg(type: string) {
     examCompetition: "bg-red-400",
   };
   return dots[type] ?? "bg-stone-400";
-}
-
-/** Compact chip style for mobile cells — no border, softer bg */
-function compactLabelClass(type: string) {
-  const styles: Record<string, string> = {
-    school: "bg-blue-100 text-blue-700",
-    extra: "bg-orange-100 text-orange-700",
-    reading: "bg-emerald-100 text-emerald-700",
-    aoshu: "bg-violet-100 text-violet-700",
-    dazeng: "bg-amber-100 text-amber-800",
-    cambridge: "bg-cyan-100 text-cyan-700",
-    piano: "bg-fuchsia-100 text-fuchsia-700",
-    pianoPractice: "bg-fuchsia-100 text-fuchsia-700",
-    swimming: "bg-teal-100 text-teal-700",
-    rollerSkating: "bg-indigo-100 text-indigo-700",
-    travel: "bg-rose-100 text-rose-700",
-    leisure: "bg-sage-100 text-sage-700",
-    examCompetition: "bg-red-100 text-red-700",
-  };
-  return styles[type] ?? "bg-stone-100 text-stone-600";
 }

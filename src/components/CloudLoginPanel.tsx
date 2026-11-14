@@ -187,9 +187,9 @@ export function CloudLoginPanel({ cloudMode, onAuthChange }: { cloudMode?: boole
         </div>
         <p className="mt-2 text-sm text-stone-400">
           未配置 Supabase，当前使用本地模式。如需云同步，请在
-          <code className="mx-1 rounded bg-stone-100 px-1 text-xs">.env.local</code>
-          中配置 <code className="rounded bg-stone-100 px-1 text-xs">VITE_SUPABASE_URL</code> 和{" "}
-          <code className="rounded bg-stone-100 px-1 text-xs">VITE_SUPABASE_ANON_KEY</code>。
+          <code className="mx-1 rounded bg-stone-100 px-1 text-[13px]">.env.local</code>
+          中配置 <code className="rounded bg-stone-100 px-1 text-[13px]">VITE_SUPABASE_URL</code> 和{" "}
+          <code className="rounded bg-stone-100 px-1 text-[13px]">VITE_SUPABASE_ANON_KEY</code>。
         </p>
       </section>
     );
@@ -205,12 +205,12 @@ export function CloudLoginPanel({ cloudMode, onAuthChange }: { cloudMode?: boole
           <Cloud className={`h-4 w-4 ${isLoggedIn ? "text-sage-600" : "text-stone-400"}`} />
           <h2 className="font-semibold">云同步</h2>
           {isLoggedIn && (
-            <span className="rounded-full bg-sage-50 px-2 py-0.5 text-xs font-medium text-sage-700">
+            <span className="rounded-full bg-sage-50 px-2 py-0.5 text-[13px] font-medium text-sage-700">
               已连接
             </span>
           )}
           {isLoggedIn && (
-            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${cloudMode ? "bg-blue-50 text-blue-700" : "bg-stone-100 text-stone-500"}`}>
+            <span className={`rounded-full px-2 py-0.5 text-[13px] font-medium ${cloudMode ? "bg-blue-50 text-blue-700" : "bg-stone-100 text-stone-500"}`}>
               {cloudMode ? "云端同步模式" : "本地模式"}
             </span>
           )}
@@ -218,7 +218,7 @@ export function CloudLoginPanel({ cloudMode, onAuthChange }: { cloudMode?: boole
         <button
           onClick={refresh}
           disabled={loading}
-          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-stone-500 hover:bg-stone-50 disabled:opacity-40"
+          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[13px] text-stone-500 hover:bg-stone-50 disabled:opacity-40"
           title="刷新云端状态"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
@@ -230,7 +230,7 @@ export function CloudLoginPanel({ cloudMode, onAuthChange }: { cloudMode?: boole
       <dl className="mt-3 space-y-1.5 text-sm">
         <Row label="状态" value={isLoggedIn ? "已登录" : "未登录"} />
         {error && !showForm && (
-          <div className="mt-2 rounded-lg bg-red-50 p-2 text-xs text-red-600">
+          <div className="mt-2 rounded-lg bg-red-50 p-2 text-[13px] text-red-600">
             {error}
           </div>
         )}
@@ -291,7 +291,7 @@ export function CloudLoginPanel({ cloudMode, onAuthChange }: { cloudMode?: boole
             className="w-full rounded-lg border px-3 py-2 text-sm"
             autoComplete="current-password"
           />
-          {error && <p className="text-xs text-red-500">{error}</p>}
+          {error && <p className="text-[13px] text-red-500">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
@@ -317,7 +317,7 @@ export function CloudLoginPanel({ cloudMode, onAuthChange }: { cloudMode?: boole
         <div className="mt-4 border-t border-stone-100 pt-3">
           <button
             onClick={() => setDebugOpen(!debugOpen)}
-            className="flex w-full items-center justify-between rounded-lg px-1 py-1.5 text-xs font-medium text-stone-400 hover:text-stone-600"
+            className="flex w-full items-center justify-between rounded-lg px-1 py-1.5 text-[13px] font-medium text-stone-400 hover:text-stone-600"
           >
             高级操作 / 调试
             <ChevronDown className={`h-3.5 w-3.5 transition-transform ${debugOpen ? "rotate-180" : ""}`} />
@@ -330,7 +330,7 @@ export function CloudLoginPanel({ cloudMode, onAuthChange }: { cloudMode?: boole
                 <Row
                   label="Family ID"
                   value={
-                    <code className="rounded bg-stone-100 px-1 text-[11px] break-all text-stone-500">{auth!.familyId}</code>
+                    <code className="rounded bg-stone-100 px-1 text-[13px] break-all text-stone-500">{auth!.familyId}</code>
                   }
                 />
               </div>
@@ -346,7 +346,7 @@ export function CloudLoginPanel({ cloudMode, onAuthChange }: { cloudMode?: boole
                   {uploading ? "上传中…" : "上传本地数据到云端"}
                 </button>
                 {uploadResult && (
-                  <div className="rounded-lg bg-green-50 p-3 text-xs text-green-800 space-y-1">
+                  <div className="rounded-lg bg-green-50 p-3 text-[13px] text-green-800 space-y-1">
                     <p className="font-semibold text-sm mb-1 flex items-center gap-1">
                       <span className="text-green-600">✓</span> 上传完成
                     </p>
@@ -389,7 +389,7 @@ export function CloudLoginPanel({ cloudMode, onAuthChange }: { cloudMode?: boole
                   </button>
                 </div>
                 {downloadResult && (
-                  <div className="rounded-lg bg-green-50 p-3 text-xs text-green-800 space-y-1">
+                  <div className="rounded-lg bg-green-50 p-3 text-[13px] text-green-800 space-y-1">
                     <p className="font-semibold text-sm mb-1 flex items-center gap-1">
                       <span className="text-green-600">✓</span> 下载完成
                     </p>
@@ -425,7 +425,7 @@ export function CloudLoginPanel({ cloudMode, onAuthChange }: { cloudMode?: boole
                     {previewResult.recentTasks.length > 0 && (
                       <div>
                         <p className="font-semibold mb-2">最近 {previewResult.recentTasks.length} 条云端任务</p>
-                        <ol className="space-y-1.5 list-decimal list-inside text-xs text-stone-600">
+                        <ol className="space-y-1.5 list-decimal list-inside text-[13px] text-stone-600">
                           {previewResult.recentTasks.map(t => (
                             <li key={t.id} className="truncate">
                               {t.title || "无标题"} / {t.mainCategory} / {t.date || t.startDate || t.timeType}
@@ -454,7 +454,7 @@ export function CloudLoginPanel({ cloudMode, onAuthChange }: { cloudMode?: boole
                     <div>
                       <p className="font-medium mb-1">本地多出的任务：{diffResult.localOnlyTasks.length} 条</p>
                       {diffResult.localOnlyTasks.length > 0 && (
-                        <ul className="space-y-1 text-xs list-disc list-inside bg-white/50 p-2 rounded max-h-40 overflow-y-auto">
+                        <ul className="space-y-1 text-[13px] list-disc list-inside bg-white/50 p-2 rounded max-h-40 overflow-y-auto">
                           {diffResult.localOnlyTasks.slice(0, 10).map(t => (
                             <li key={t.id} className="truncate">
                               {t.title || "无标题"} ({t.mainCategory}) [{t.date || t.startDate || t.timeType}]
@@ -471,7 +471,7 @@ export function CloudLoginPanel({ cloudMode, onAuthChange }: { cloudMode?: boole
                     <div>
                       <p className="font-medium mb-1">云端多出的任务：{diffResult.cloudOnlyTasks.length} 条</p>
                       {diffResult.cloudOnlyTasks.length > 0 && (
-                        <ul className="space-y-1 text-xs list-disc list-inside bg-white/50 p-2 rounded max-h-40 overflow-y-auto">
+                        <ul className="space-y-1 text-[13px] list-disc list-inside bg-white/50 p-2 rounded max-h-40 overflow-y-auto">
                           {diffResult.cloudOnlyTasks.slice(0, 10).map(t => (
                             <li key={t.id} className="truncate">
                               {t.title || "无标题"} ({t.mainCategory}) [{t.date || t.startDate || t.timeType}]
@@ -500,11 +500,11 @@ export function CloudLoginPanel({ cloudMode, onAuthChange }: { cloudMode?: boole
                   <RefreshCw className={`h-4 w-4 ${reconciling ? "animate-spin" : ""}`} />
                   {reconciling ? "对账中…" : "对账清理本地缓存"}
                 </button>
-                <p className="text-xs text-stone-400">
+                <p className="text-[13px] text-stone-400">
                   按云端单次状态对账，删除本地多出的残留行（只动本地，不改云端；最近 10 分钟内更新的行自动跳过防误删）。
                 </p>
                 {reconcileResult && (
-                  <div className="rounded-lg bg-green-50 p-3 text-xs text-green-800">{reconcileResult}</div>
+                  <div className="rounded-lg bg-green-50 p-3 text-[13px] text-green-800">{reconcileResult}</div>
                 )}
                 {reconcileError && <ErrorBox message={reconcileError} />}
               </div>
@@ -513,7 +513,7 @@ export function CloudLoginPanel({ cloudMode, onAuthChange }: { cloudMode?: boole
         </div>
       )}
 
-      <p className="mt-4 text-xs text-stone-400">
+      <p className="mt-4 text-[13px] text-stone-400">
         {cloudMode
           ? "云端同步模式：新增、编辑、删除、完成状态会自动写入 Supabase。另一台设备刷新后可看到最新数据。"
           : "未登录时使用本地模式，任务数据保存在本地 IndexedDB，不影响正常使用。登录后将启用云端同步。"}

@@ -7,6 +7,8 @@ import { getCalendarAnnotation } from "../data/calendarAnnotations";
 import type { TaskDisplay } from "../types/task";
 import { fromDateKey, toDateKey, todayKey } from "../utils/date";
 import { subCategoryLabel } from "../utils/taskMeta";
+import { taskSubjectGroup } from "../utils/taskGrouping";
+import { NEUTRAL_DOT, SUBJECT_DOT } from "../components/GroupHeading";
 import { WeekReviewStrip } from "../components/WeekReviewStrip";
 
 export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask }: { date: string; refreshKey: number; onDateChange: (date: string) => void; onOpenDay: (date: string) => void; onAddTask: (date: string) => void }) {
@@ -55,7 +57,7 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask
 
       <div ref={swipeRef} className="grid grid-cols-7 overflow-hidden rounded-lg border border-ink/15 bg-white shadow-card">
         {["一", "二", "三", "四", "五", "六", "日"].map((day) => (
-          <div key={day} className="border-b border-ink/10 bg-ink px-2 py-2.5 text-center text-[10px] font-semibold uppercase tracking-wider text-white/65"><span className="hidden sm:inline">周</span>{day}</div>
+          <div key={day} className="border-b border-ink/10 bg-ink px-2 py-2.5 text-center text-[13px] font-semibold text-white/70"><span className="hidden sm:inline">周</span>{day}</div>
         ))}
         {gridDates.map((key) => {
           const tasks = items[key] ?? [];
@@ -78,11 +80,11 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask
             >
               {/* Date number row */}
               <div className="flex min-w-0 items-center gap-0.5 sm:gap-1">
-                <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-semibold ${key === todayKey() ? "bg-alert text-white" : ""}`}>
+                <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[13px] font-semibold ${key === todayKey() ? "bg-alert text-white" : ""}`}>
                   {fromDateKey(key).getDate()}
                 </span>
                 {annotation.holidayStatus && (
-                  <span className={`hidden rounded px-1 py-0.5 text-[9px] font-bold sm:inline ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>
+                  <span className={`hidden rounded px-1 text-[13px] font-bold leading-5 sm:inline ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>
                     {annotation.holidayStatus}
                   </span>
                 )}
@@ -90,13 +92,13 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask
 
               {/* Solar term / festival — desktop only */}
               {annotations.length > 0 && (
-                <div className="mt-0.5 hidden truncate text-[10px] font-medium text-amber-700 sm:block">{annotations.join("·")}</div>
+                <div className="mt-0.5 hidden truncate text-[13px] font-medium text-amber-700 sm:block">{annotations.join("·")}</div>
               )}
 
               {/* 手机：格子太窄放不下文字（原先截成"整理明/天"这类半句），改为色点 + 件数，点开在下方看详情 */}
               {labels.length > 0 && (
                 <div className="mt-1 flex flex-wrap items-center gap-0.5 sm:hidden" aria-label={`${labels.length} 项安排`}>
-                  {labels.slice(0, 4).map((label) => <span key={`${label.type}:${label.text}`} className={`h-1.5 w-1.5 rounded-full ${dotBg(label.type)} ${label.text.endsWith(" ✓") ? "opacity-40" : ""}`} />)}
+                  {labels.slice(0, 4).map((label) => <span key={`${label.type}:${label.text}`} className={`h-1.5 w-1.5 rounded-full ${label.done ? "opacity-40" : ""}`} style={{ backgroundColor: label.dot }} />)}
                   <span className="ml-0.5 text-[13px] font-semibold leading-none tabular-nums text-muted">{labels.length}</span>
                 </div>
               )}
@@ -104,11 +106,12 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask
               {/* Desktop: text label pills */}
               <div className="mt-1 hidden space-y-1 sm:block">
                 {labels.slice(0, 5).map((label) => (
-                  <div key={`${label.type}:${label.text}`} className={`truncate rounded border px-1.5 py-0.5 text-xs ${labelClass(label.type)}`}>
-                    {label.text}
+                  <div key={`${label.type}:${label.text}`} className={`flex min-w-0 items-center gap-1.5 rounded border border-ink/10 bg-white px-1.5 py-0.5 text-[13px] ${label.done ? "text-muted line-through" : "text-ink"}`}>
+                    <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: label.dot }} />
+                    <span className="truncate">{label.name}</span>
                   </div>
                 ))}
-                {labels.length > 5 && <div className="px-1 text-xs text-stone-400">+{labels.length - 5}</div>}
+                {labels.length > 5 && <div className="px-1 text-[13px] text-muted">+{labels.length - 5}</div>}
               </div>
             </button>
           );
@@ -143,10 +146,10 @@ function DayPanel({ day, tasks, onOpenDay, onAddTask, onClose }: { day: string; 
             {d.getMonth() + 1}月{d.getDate()}日
           </span>
           {annotations.length > 0 && (
-            <span className="ml-2 text-xs text-amber-700">{annotations.join("·")}</span>
+            <span className="ml-2 text-[13px] text-amber-700">{annotations.join("·")}</span>
           )}
           {annotation.holidayStatus && (
-            <span className={`ml-2 rounded px-1.5 py-0.5 text-xs font-bold ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>
+            <span className={`ml-2 rounded px-1.5 py-0.5 text-[13px] font-bold ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>
               {annotation.holidayStatus}
             </span>
           )}
@@ -161,9 +164,9 @@ function DayPanel({ day, tasks, onOpenDay, onAddTask, onClose }: { day: string; 
       ) : (
         <div className="mt-3 space-y-2">
           {labels.map((label) => (
-            <div key={`${label.type}:${label.text}`} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${labelClass(label.type)}`}>
-              <span className={`h-2 w-2 shrink-0 rounded-full ${dotBg(label.type)}`} />
-              <span className="flex-1">{label.text}</span>
+            <div key={`${label.type}:${label.text}`} className={`flex min-h-11 items-center gap-2 rounded-lg border border-ink/10 bg-white px-3 text-[15px] ${label.done ? "text-muted line-through" : "text-ink"}`}>
+              <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: label.dot }} />
+              <span className="flex-1">{label.name}</span>
             </div>
           ))}
         </div>
@@ -187,52 +190,21 @@ function DayPanel({ day, tasks, onOpenDay, onAddTask, onClose }: { day: string; 
   );
 }
 
+/**
+ * 月历格子里的标签（2026-11-14 统一视觉）：白底 + 学科色点，与今日页、任务管理页同一套 SUBJECT_DOT；
+ * 兴趣班、其他安排用中性灰点。原先按"奥数/大增/剑桥/钢琴/游泳…"各给一种底色，一屏十来种颜色。
+ */
 function calendarLabels(tasks: TaskDisplay[]) {
-  const labels: { text: string; type: string }[] = [];
+  const labels: { text: string; name: string; type: string; dot: string; done: boolean }[] = [];
   const seen = new Set<string>();
   tasks.forEach((task) => {
     const name = task.title.trim() || subCategoryLabel(task.mainCategory, task.subCategory);
     if (seen.has(name)) return;
     seen.add(name);
-    const type =
-      task.mainCategory === "extraHomework"
-        ? /奥数/.test(task.title) ? "aoshu"
-          : /语文|大增/.test(task.title) ? "dazeng"
-          : /FCE|英语|剑桥/.test(task.title) ? "cambridge"
-          : "extra"
-        : task.subCategory;
-    labels.push({ text: `${name}${task.status === "done" ? " ✓" : ""}`, type });
+    const subject = taskSubjectGroup(task);
+    const dot = task.mainCategory === "interestClass" || task.mainCategory === "temporary" || subject === "other" ? NEUTRAL_DOT : SUBJECT_DOT[subject];
+    const done = task.status === "done";
+    labels.push({ text: `${name}${done ? " ✓" : ""}`, name, type: task.subCategory, dot, done });
   });
   return labels;
-}
-
-function labelClass(type: string) {
-  const styles: Record<string, string> = {
-    school: "border-blue-100 bg-blue-50 text-blue-700",
-    extra: "border-orange-100 bg-orange-50 text-orange-700",
-    reading: "border-emerald-100 bg-emerald-50 text-emerald-700",
-    aoshu: "border-violet-100 bg-violet-50 text-violet-700",
-    dazeng: "border-amber-100 bg-amber-50 text-amber-800",
-    cambridge: "border-cyan-100 bg-cyan-50 text-cyan-700",
-    piano: "border-fuchsia-100 bg-fuchsia-50 text-fuchsia-700",
-    pianoPractice: "border-fuchsia-100 bg-fuchsia-50 text-fuchsia-700",
-    swimming: "border-teal-100 bg-teal-50 text-teal-700",
-    rollerSkating: "border-indigo-100 bg-indigo-50 text-indigo-700",
-    travel: "border-rose-100 bg-rose-50 text-rose-700",
-    leisure: "border-sage-100 bg-sage-50 text-sage-700",
-    examCompetition: "border-red-100 bg-red-50 text-red-700",
-  };
-  return styles[type] ?? "border-stone-200 bg-stone-50 text-stone-600";
-}
-
-/** Small dot color for the DayPanel task rows */
-function dotBg(type: string) {
-  const dots: Record<string, string> = {
-    school: "bg-blue-400", extra: "bg-orange-400", reading: "bg-emerald-400",
-    aoshu: "bg-violet-400", dazeng: "bg-amber-500", cambridge: "bg-cyan-400",
-    piano: "bg-fuchsia-400", pianoPractice: "bg-fuchsia-400", swimming: "bg-teal-400",
-    rollerSkating: "bg-indigo-400", travel: "bg-rose-400", leisure: "bg-sage-500",
-    examCompetition: "bg-red-400",
-  };
-  return dots[type] ?? "bg-stone-400";
 }

@@ -54,7 +54,7 @@ export function SidebarMemo({ value, variant, editorOpen = false, focusRequest =
   return (
     <section id={sidebar ? "sidebar-memo" : "today-memo"} className={sidebar ? "mt-4 shrink-0 border-t border-white/10 pt-4" : "surface mb-4 p-3 lg:hidden"} aria-label="备忘录">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h2 className={`text-xs font-semibold ${sidebar ? "text-white/70" : "text-ink"}`}>备忘录:</h2>
+        <h2 className={`text-[13px] font-semibold ${sidebar ? "text-white/70" : "text-ink"}`}>备忘录:</h2>
         {hasContent && (
           <button
             type="button"
@@ -78,7 +78,7 @@ export function SidebarMemo({ value, variant, editorOpen = false, focusRequest =
         onFocus={() => { setFocused(true); onFocus(); }}
         onChange={(event) => onChange(event.target.value)}
         onBlur={() => { setFocused(false); onBlur(); }}
-        className={`block w-full resize-none overflow-hidden rounded-lg border px-2.5 py-2 leading-5 ${sidebar ? "border-white/15 bg-white/10 text-xs text-white focus:border-white/35 focus:ring-0" : "border-ink/10 bg-white text-sm text-ink"}`}
+        className={`block w-full resize-none overflow-hidden rounded-lg border px-2.5 py-2 leading-5 ${sidebar ? "border-white/15 bg-white/10 text-[13px] text-white focus:border-white/35 focus:ring-0" : "border-ink/10 bg-white text-sm text-ink"}`}
       />
     </section>
   );

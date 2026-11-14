@@ -18,7 +18,7 @@ const memStore = new Map<string, string>();
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "../db";
 import { taskRepository } from "../taskRepository";
-import { getHabitCandidates, setHabitEnabled, setHabitStartDate, getHabitCalendars, toggleRestDay, hideHabitCandidate, unhideHabitCandidate, getHiddenHabitCandidates } from "../statsRepository";
+import { getHabitCandidates, setHabitEnabled, setHabitStartDate, getHabitCalendars, toggleRestDay, hideHabitCandidate, unhideHabitCandidate, getHiddenHabitCandidates, getHabitProjects, suggestHabitLinks, linkHabit, unlinkHabit, disableHabitProject, setHabitProjectStartDate, habitLinkScore, STREAK_BREAK_GAP_DAYS } from "../statsRepository";
 import { saveRestDays } from "../appSettingsRepository";
 import type { Task, TaskOccurrenceStatus } from "../../types/task";
 
@@ -506,3 +506,104 @@ function toLocalDateKeyForTest(iso: string) {
   const d = new Date(iso);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+
+
+describe("间断的打卡：新任务接上以前的项目（2026-11-14）", () => {
+  // 以前的"英语听写"：7/1–7/20 每天，打了卡；停了一阵，8/1 起新建"单词听写"
+  const oldTask = () => dailyHabit("old", "2026-07-01", { title: "英语听写", mainCategory: "extraHomework", subCategory: "english", recurrence: { frequency: "daily", startDate: "2026-07-01", endDate: "2026-07-20" }, startDate: "2026-07-01", endDate: "2026-07-20" });
+  const newTask = (overrides: Partial<Task> = {}) => makeTask("new", { title: "单词听写 Unit 5", mainCategory: "extraHomework", subCategory: "english", timeType: "recurring", schedulePattern: "dailyRecurring", date: undefined, startDate: "2026-08-01", recurrence: { frequency: "daily", startDate: "2026-08-01" }, ...overrides });
+
+  it("L1. 推荐接上：同分类同学科、名字有相同的字的排在最前；没打过卡的任务不算项目", async () => {
+    await db.tasks.bulkAdd([
+      oldTask(),
+      dailyHabit("piano", "2026-07-01", { title: "钢琴练习", mainCategory: "interestClass", subCategory: "pianoPractice" }),
+      makeTask("never", { title: "听写本", mainCategory: "extraHomework", subCategory: "english", timeType: "recurring", schedulePattern: "dailyRecurring", date: undefined, recurrence: { frequency: "daily", startDate: "2026-07-01" } }),
+      newTask(),
+    ]);
+    const suggestions = await suggestHabitLinks("new");
+    expect(suggestions[0].project.key).toBe("old");
+    expect(suggestions[0].project.title).toBe("英语听写");
+    expect(suggestions[0].score).toBeGreaterThanOrEqual(5);
+    expect(suggestions.map((item) => item.project.key)).not.toContain("never");
+    expect(suggestions.map((item) => item.project.key)).not.toContain("new");
+  });
+
+  it("L2. 接上后打卡矩阵里合成一行、名字用最近那个任务的；历史连在一起；停掉的那段显示灰色不算漏卡", async () => {
+    await db.tasks.bulkAdd([oldTask(), newTask()]);
+    await db.taskOccurrenceStatuses.bulkAdd([occRow("old", "2026-07-19", "done", noonOf("2026-07-19")), occRow("old", "2026-07-20", "done", noonOf("2026-07-20"))]);
+    await linkHabit("new", "old");
+    const july = await getHabitCalendars("2026-07", "2026-08-03");
+    expect(july).toHaveLength(1);
+    expect(july[0].title).toBe("单词听写 Unit 5");
+    expect(statusMap(july[0])["2026-07-20"]).toBe("done");
+    expect(statusMap(july[0])["2026-07-25"]).toBe("off");
+    const projects = await getHabitProjects();
+    expect(projects).toHaveLength(1);
+    expect(projects[0].members.map((m) => m.taskId).sort()).toEqual(["new", "old"]);
+    expect(projects[0].startDate).toBe("2026-07-01");
+  });
+
+  it("L3. 停超过 14 天再开始，连续天数从头算；停得短（不超过 14 天）接着算；每周一次的项目不受影响", async () => {
+    // 7/20 停，8/10 重新开始：中间 20 天没有安排 → 从头算
+    await db.tasks.bulkAdd([oldTask(), newTask({ startDate: "2026-08-10", recurrence: { frequency: "daily", startDate: "2026-08-10" } })]);
+    await linkHabit("new", "old");
+    await db.taskOccurrenceStatuses.bulkAdd([
+      ...["2026-07-18", "2026-07-19", "2026-07-20"].map((d) => occRow("old", d, "done", noonOf(d))),
+      ...["2026-08-10", "2026-08-11"].map((d) => occRow("new", d, "done", noonOf(d))),
+    ]);
+    const [cal] = await getHabitCalendars("2026-08", "2026-08-11");
+    expect(STREAK_BREAK_GAP_DAYS).toBe(14);
+    expect(cal.currentStreak).toBe(2); // 7 月那 3 天不接着算
+    // 对照：8/1 就重新开始（中间只停 11 天）→ 接着算
+    await db.tasks.put({ ...(await db.tasks.get("new"))!, startDate: "2026-08-01", recurrence: { frequency: "daily", startDate: "2026-08-01" } });
+    await db.taskOccurrenceStatuses.clear();
+    await db.taskOccurrenceStatuses.bulkAdd([
+      ...["2026-07-18", "2026-07-19", "2026-07-20"].map((d) => occRow("old", d, "done", noonOf(d))),
+      ...["2026-08-01", "2026-08-02"].map((d) => occRow("new", d, "done", noonOf(d))),
+    ]);
+    const [shortBreak] = await getHabitCalendars("2026-08", "2026-08-02");
+    expect(shortBreak.currentStreak).toBe(5);
+    // 对照：每周六一次的游泳，连续 3 周都去了，中间各隔 6 天
+    await db.tasks.clear(); await db.taskOccurrenceStatuses.clear();
+    await db.tasks.add(makeTask("swim", { title: "游泳课", mainCategory: "interestClass", subCategory: "swimming", enableStreak: true, streakStartDate: "2026-07-01", timeType: "recurring", schedulePattern: "weeklyRecurring", date: undefined, recurrence: { frequency: "weekly", weekdays: [6], startDate: "2026-07-01" } }));
+    await db.taskOccurrenceStatuses.bulkAdd(["2026-07-18", "2026-07-25", "2026-08-01"].map((d) => occRow("swim", d, "done", noonOf(d))));
+    const [swim] = await getHabitCalendars("2026-08", "2026-08-02");
+    expect(swim.currentStreak).toBe(3);
+  });
+
+  it("L4. 停掉的月份这一行不显示（hasScheduleInMonth=false）", async () => {
+    await db.tasks.add(oldTask());
+    const [sept] = await getHabitCalendars("2026-09", "2026-09-10");
+    expect(sept.hasScheduleInMonth).toBe(false);
+    const [july] = await getHabitCalendars("2026-07", "2026-09-10");
+    expect(july.hasScheduleInMonth).toBe(true);
+  });
+
+  it("L5. 接错了可以移出，变回它自己一个项目；整个项目取消打卡；改项目起点", async () => {
+    await db.tasks.bulkAdd([oldTask(), newTask()]);
+    await linkHabit("new", "old");
+    await unlinkHabit("new");
+    expect((await getHabitProjects()).map((p) => p.key).sort()).toEqual(["new", "old"]);
+    await linkHabit("new", "old");
+    await setHabitProjectStartDate("old", "2026-07-05", "2026-08-03");
+    expect((await db.tasks.get("old"))!.streakStartDate).toBe("2026-07-05");
+    expect((await db.tasks.get("new"))!.streakStartDate).toBe("2026-07-05");
+    await expect(setHabitProjectStartDate("old", "2099-01-01", "2026-08-03")).rejects.toThrow("不能晚于今天");
+    await disableHabitProject("old");
+    expect(await getHabitProjects()).toEqual([]);
+    expect((await db.tasks.get("new"))!.streakStartDate).toBe("2026-07-05"); // 起点保留，历史可回看
+  });
+
+  it("L6. 候选列表带分类、安排、起止和是否已结束，用来认出以前的任务", async () => {
+    await db.tasks.bulkAdd([oldTask(), newTask()]);
+    const list = await getHabitCandidates();
+    const old = list.find((c) => c.taskId === "old")!;
+    expect(old).toMatchObject({ categoryText: "课外班·英语", scheduleText: "每天", rangeText: "7/1–7/20", ended: true, projectKey: "old" });
+    expect(list.find((c) => c.taskId === "new")).toMatchObject({ rangeText: "8/1 起", ended: false });
+  });
+
+  it("L7. 相似度：同分类同学科 +3，名字相同的两字词各 +2；完全不相干为 0", () => {
+    expect(habitLinkScore({ title: "英语听写", mainCategory: "extraHomework", subCategory: "english" }, { title: "单词听写", mainCategory: "extraHomework", subCategory: "english" })).toBe(5);
+    expect(habitLinkScore({ title: "钢琴练习", mainCategory: "interestClass", subCategory: "pianoPractice" }, { title: "口算", mainCategory: "school", subCategory: "math" })).toBe(0);
+  });
+});

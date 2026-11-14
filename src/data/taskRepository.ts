@@ -764,7 +764,7 @@ export const taskRepository = {
       completedAt: undefined, actualMinutes: undefined,
       // 复制出的任务不继承打卡身份：源任务若是打卡项目，副本被强制成 singleDate 后
       // 不再是 recurring，enableStreak 残留会变成"月历有卡但管理弹窗看不到"的孤儿
-      enableStreak: undefined, streakStartDate: undefined,
+      enableStreak: undefined, streakStartDate: undefined, habitKey: undefined,
       checklistItems: source.checklistItems?.map((item, index) => ({ ...item, id: makeId(), done: false, completedDate: undefined, sortOrder: index, actualMinutes: undefined })),
       createdAt: now, updatedAt: now,
     });

@@ -87,7 +87,7 @@
 **具体要求**：
 1. **`Task` 任何新增/改名字段，4 个映射面必须同步更新。** 顺序建议：先改 `types/task.ts`，再全局 `grep` 字段名确认 4 处都覆盖。
 2. **新增字段后必须在 `cloudFieldParity.test.ts` 的 `FIELD_PAIRS` 里加一行。** 这个测试对 `taskToRow` ↔ `rowToTask`（正常读写路径这一对）做"上传→云端行→下载"往返断言，漏映射会立即断言失败。`taskToRow` 已 `export` 供测试引用。维护方式：往 `fullTask()` 里补该字段的非空样例值，往 `FIELD_PAIRS` 数组加 `["字段名", t.字段名]`。
-3. **走 metadata jsonb 的低频字段**（`totalAmount` / `amountUnit` / `splitCount` / `amountPerSession` / `readingTargetCount` / `readingTargetUnit` / `allowedWeekdays` / `allowWeekend` / `enableTimer`）由 `buildMetadata` 整包透传、`...row.metadata` 整包展开，结构上不会出现单向漏映射，不必逐字段列进 parity 测试；但新增这类字段仍要确认 `buildMetadata` 里加了对应行。
+3. **走 metadata jsonb 的低频字段**（`totalAmount` / `amountUnit` / `splitCount` / `amountPerSession` / `readingTargetCount` / `readingTargetUnit` / `allowedWeekdays` / `allowWeekend` / `enableTimer` / `pauseDuringTravel` / `habitKey`）由 `buildMetadata` 整包透传、`...row.metadata` 整包展开，结构上不会出现单向漏映射，不必逐字段列进 parity 测试；但新增这类字段仍要确认 `buildMetadata` 里加了对应行。
 4. **已知缺口**：`cloudFieldParity.test.ts` 只覆盖 `taskToRow`/`rowToTask` 这一对（日常读写路径，最高频最危险）。维护面板的 `cloudUpload.ts` / `cloudDownload.ts` 两个映射面**未纳入**该测试——改这两个文件时需手动逐字段核对。
 
 ### 3.2 冗余 / 派生字段规范

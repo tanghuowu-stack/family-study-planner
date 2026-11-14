@@ -14,7 +14,7 @@ import { addDays, endOfMonth, parseISO, startOfMonth } from "date-fns";
 import { db } from "./db";
 import { scheduleOccursOn } from "./taskRepository";
 import { getRepository } from "./repositoryProvider";
-import { isCourseTask, isOccurrenceSchedule, taskShortName } from "../utils/taskMeta";
+import { isCourseTask, isEndedRecurring, isOccurrenceSchedule, subCategoryLabel, taskShortName, MAIN_CATEGORY_META, WEEKDAY_LABELS } from "../utils/taskMeta";
 import { todayKey, toDateKey, toLocalDateKey } from "../utils/date";
 import { createTravelPauseCheck } from "../utils/travelPause";
 import { loadRestDays, saveRestDays, loadHiddenHabitCandidates, saveHiddenHabitCandidates } from "./appSettingsRepository";
@@ -77,22 +77,30 @@ function itemFloor(task: Task, today: string, startOverride?: string): string {
  * 应做日完成 +1（休息日完成同样计入）、应做日未完成断——但休息日"免罚"穿过；
  * 非应做日穿过；今天应做但未完成不算断（当天未结束）。分组时"应做/完成"取组内任一任务满足。
  */
-function computeGroupStreak(tasks: Task[], today: string, occByKey: OccMap, rests: Set<string>, start?: string, paused?: TravelPauseCheck): number {
+export function computeGroupStreak(tasks: Task[], today: string, occByKey: OccMap, rests: Set<string>, start?: string, paused?: TravelPauseCheck): number {
   if (tasks.length === 0) return 0;
   const floor = tasks.map((t) => itemFloor(t, today, start)).reduce((a, b) => (a < b ? a : b));
   const applicable = (d: string) => groupApplicable(tasks, d, occByKey, start, paused);
   const ok = (d: string) => groupSatisfied(tasks, d, occByKey, start, paused);
   let streak = 0;
   let cursor = today;
+  let gap = 0; // 连着多少天没有安排
   if (applicable(cursor) && !ok(cursor)) cursor = prevDayKey(cursor); // 今天未完成不算断
   while (cursor >= floor) {
-    if (!applicable(cursor)) { cursor = prevDayKey(cursor); continue; }
+    if (!applicable(cursor)) { gap++; cursor = prevDayKey(cursor); continue; }
+    // 停了很久（间断的任务、旅游暂停等）再开始，连续天数从头算（2026-11-14 用户定）；
+    // 每周一次的项目两次之间只隔 6 天，不受影响
+    if (gap > STREAK_BREAK_GAP_DAYS) break;
+    gap = 0;
     if (ok(cursor)) { streak++; cursor = prevDayKey(cursor); continue; }
     if (rests.has(cursor)) { cursor = prevDayKey(cursor); continue; } // 休息日未完成：免罚穿过
     break;
   }
   return streak;
 }
+
+/** 中间连续超过这么多天没有安排，连续天数从头算 */
+export const STREAK_BREAK_GAP_DAYS = 14;
 
 const sortTasks = (a: Task, b: Task) =>
   (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || a.createdAt.localeCompare(b.createdAt);
@@ -111,7 +119,17 @@ const HABIT_GROUPS: Record<string, { groupKey: string; label: string }> = {
   pianoPractice: { groupKey: "piano", label: "钢琴" },
 };
 
-const habitGroupKey = (task: Task): string => HABIT_GROUPS[task.subCategory]?.groupKey ?? task.id;
+/**
+ * 打卡项目归属：固定分组（钢琴）> 手动接上的项目（habitKey）> 任务自身 id。
+ * 同一个 key 的任务在打卡矩阵里合成一行。
+ */
+export const habitProjectKey = (task: Pick<Task, "id" | "subCategory" | "habitKey">): string =>
+  HABIT_GROUPS[task.subCategory]?.groupKey ?? task.habitKey ?? task.id;
+/** 能计入某个打卡项目的任务：固定分组不限排期类型（每次单独建的钢琴课），其余只认重复类 */
+const isHabitMember = (task: Task) => !!HABIT_GROUPS[task.subCategory] || isOccurrenceSchedule(task);
+/** 项目显示名：固定分组用分组名，其余用最近那个任务的名字 */
+const latestFirst = (a: Task, b: Task) => (b.recurrence?.startDate ?? b.startDate ?? b.createdAt).localeCompare(a.recurrence?.startDate ?? a.startDate ?? a.createdAt);
+const projectTitle = (members: Task[]) => HABIT_GROUPS[members[0].subCategory]?.label ?? taskShortName([...members].sort(latestFirst)[0]);
 
 /** 分组版应做判定：组内任一任务当天应做 */
 const groupApplicable = (tasks: Task[], date: string, occByKey: OccMap, start?: string, paused?: TravelPauseCheck) =>
@@ -133,7 +151,33 @@ export interface HabitCandidate {
   isCourse: boolean;
   /** 命中 HABIT_GROUPS 分组时，它计入的那张月历卡的名字（如"钢琴"）；未分组为 undefined */
   calendarTitle?: string;
+  /** 所属打卡项目 key（见 habitProjectKey） */
+  projectKey: string;
+  /** 排期已经结束（"今天起不再安排"过或到了结束日期） */
+  ended: boolean;
+  /** 分类，如"课外班·英语" */
+  categoryText: string;
+  /** 安排，如"每天""每周一三五" */
+  scheduleText: string;
+  /** 起止，如"9/1–9/28""11/3 起" */
+  rangeText: string;
 }
+
+const shortDate = (date?: string) => (date ? `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}` : "");
+const categoryTextOf = (t: Task) => `${MAIN_CATEGORY_META[t.mainCategory]?.label ?? ""}·${subCategoryLabel(t.mainCategory, t.subCategory)}`;
+const scheduleTextOf = (t: Task) => {
+  if (t.schedulePattern === "dailyRecurring" || t.schedulePattern === "dateRangeDaily") return "每天";
+  const days = t.schedulePattern === "dateRangeWeekdays" ? t.rangeWeekdays : t.recurrence?.weekdays;
+  if (days?.length) return `每周${[1, 2, 3, 4, 5, 6, 0].filter((d) => days.includes(d)).map((d) => WEEKDAY_LABELS[d].replace("周", "")).join("")}`;
+  if (t.schedulePattern === "specificDates") return "指定日期";
+  return "重复";
+};
+const rangeOf = (t: Task): [string | undefined, string | undefined] => {
+  if (t.schedulePattern === "specificDates") { const sorted = [...(t.specificDates ?? [])].sort(); return [sorted[0], sorted.at(-1)]; }
+  if (t.schedulePattern === "dateRangeDaily" || t.schedulePattern === "dateRangeWeekdays") return [t.startDate, t.endDate];
+  return [t.recurrence?.startDate ?? t.startDate, t.recurrence?.endDate];
+};
+const rangeTextOf = (t: Task) => { const [from, to] = rangeOf(t); return to ? `${shortDate(from)}–${shortDate(to)}` : `${shortDate(from)} 起`; };
 
 /** 可成为打卡项目的活跃重复类任务（供「管理打卡项目」选择器）。已隐藏且未勾选的任务不出现 */
 export async function getHabitCandidates(): Promise<HabitCandidate[]> {
@@ -150,7 +194,140 @@ export async function getHabitCandidates(): Promise<HabitCandidate[]> {
       streakStartDate: t.enableStreak === true ? t.streakStartDate : undefined,
       isCourse: isCourseTask(t),
       calendarTitle: HABIT_GROUPS[t.subCategory]?.label,
+      projectKey: habitProjectKey(t),
+      ended: isEndedRecurring(t),
+      categoryText: categoryTextOf(t),
+      scheduleText: scheduleTextOf(t),
+      rangeText: rangeTextOf(t),
     }));
+}
+
+// ── 打卡项目（2026-11-14：间断后新建的任务可以接上以前的项目）──────────────────
+
+export interface HabitProjectMember {
+  taskId: string;
+  title: string;
+  rangeText: string;
+  ended: boolean;
+  enabled: boolean;
+  /** 是靠"接上"进来的（habitKey），可以移出 */
+  linked: boolean;
+}
+
+export interface HabitProject {
+  key: string;
+  title: string;
+  categoryText: string;
+  scheduleText: string;
+  /** 项目打卡起点：成员里最早的起点 */
+  startDate?: string;
+  /** 所有成员都已停（没有今天及以后的安排） */
+  paused: boolean;
+  /** 最后一次有安排的日期（停掉的项目才有意义），用于显示"上次：9/28" */
+  lastDate?: string;
+  /** 历史上一共打卡完成了几天 */
+  doneDays: number;
+  enabled: boolean;
+  members: HabitProjectMember[];
+}
+
+/** 收集所有打卡项目：已勾选的，以及以前打过卡（有起点记录）的。fixed 分组（钢琴）只列已勾选的成员 */
+async function collectProjects(): Promise<HabitProject[]> {
+  const [tasks, occurrences] = await Promise.all([db.tasks.toArray(), db.taskOccurrenceStatuses.toArray()]);
+  const doneByTask = new Map<string, Set<string>>();
+  for (const o of occurrences) if (o.status === "done") { const set = doneByTask.get(o.taskId) ?? new Set<string>(); set.add(o.occurrenceDate); doneByTask.set(o.taskId, set); }
+  const members = tasks.filter((t) => statsEligible(t) && t.status !== "cancelled" && isHabitMember(t));
+  const byKey = new Map<string, Task[]>();
+  for (const t of [...members].sort(sortTasks)) { const key = habitProjectKey(t); byKey.set(key, [...(byKey.get(key) ?? []), t]); }
+  const projects: HabitProject[] = [];
+  for (const [key, list] of byKey) {
+    const fixed = !!HABIT_GROUPS[list[0].subCategory];
+    const enabled = list.some((t) => t.enableStreak === true);
+    const tracked = list.filter((t) => t.enableStreak === true || !!t.streakStartDate);
+    if (!tracked.length) continue; // 从没打过卡的任务不算项目，只是候选
+    const shown = fixed ? list.filter((t) => t.enableStreak === true) : list;
+    const days = new Set<string>();
+    for (const t of list) doneByTask.get(t.id)?.forEach((d) => days.add(d));
+    const lastDate = list.map((t) => rangeOf(t)[1]).every(Boolean) ? list.map((t) => rangeOf(t)[1]!).sort().at(-1) : undefined;
+    const latest = [...list].sort(latestFirst)[0];
+    projects.push({
+      key, title: projectTitle(list), categoryText: categoryTextOf(latest), scheduleText: scheduleTextOf(latest),
+      startDate: tracked.map((t) => t.streakStartDate).filter((d): d is string => !!d).sort()[0],
+      paused: list.every((t) => isEndedRecurring(t)), lastDate, doneDays: days.size, enabled,
+      members: shown.map((t) => ({ taskId: t.id, title: taskShortName(t), rangeText: rangeTextOf(t), ended: isEndedRecurring(t), enabled: t.enableStreak === true, linked: !!t.habitKey && t.habitKey !== t.id })),
+    });
+  }
+  return projects;
+}
+
+/** 已勾选的打卡项目（管理弹窗"正在打卡"一栏），按排序 */
+export async function getHabitProjects(): Promise<HabitProject[]> {
+  return (await collectProjects()).filter((p) => p.enabled);
+}
+
+const nameGrams = (text: string) => {
+  const chars = [...text.replace(/[\s·:：,，、()（）【】\[\]0-9a-zA-Z]+/g, "")];
+  const grams = new Set<string>();
+  for (let i = 0; i < chars.length - 1; i++) grams.add(chars[i] + chars[i + 1]);
+  return grams;
+};
+
+/**
+ * 两个任务像不像同一件事：同分类同学科 +3（同学科不同分类 +1），名字里相同的两字词每个 +2（最多算 3 个）。
+ * 只用来排序和预选，最后由家长确认——名字常常不一样，不做自动合并。
+ */
+export function habitLinkScore(a: Pick<Task, "title" | "mainCategory" | "subCategory">, b: Pick<Task, "title" | "mainCategory" | "subCategory">): number {
+  let score = a.mainCategory === b.mainCategory && a.subCategory === b.subCategory ? 3 : a.subCategory === b.subCategory ? 1 : 0;
+  const ga = nameGrams(a.title), gb = nameGrams(b.title);
+  let shared = 0;
+  ga.forEach((g) => { if (gb.has(g)) shared++; });
+  return score + Math.min(shared, 3) * 2;
+}
+
+export interface HabitLinkSuggestion {
+  project: HabitProject;
+  score: number;
+}
+
+/**
+ * 某个任务勾成打卡项目时，可以"接上"的以前的项目，按像不像排序（同分数时最近停的在前）。
+ * 包括正在打卡的和以前打过卡、已经停掉的；不含它自己所在的项目。
+ */
+export async function suggestHabitLinks(taskId: string): Promise<HabitLinkSuggestion[]> {
+  const [task, projects, tasks] = await Promise.all([db.tasks.get(taskId), collectProjects(), db.tasks.toArray()]);
+  if (!task) return [];
+  const own = habitProjectKey(task);
+  const byKey = new Map<string, Task[]>();
+  for (const t of tasks) { const key = habitProjectKey(t); byKey.set(key, [...(byKey.get(key) ?? []), t]); }
+  return projects
+    .filter((p) => p.key !== own)
+    .map((project) => ({ project, score: Math.max(0, ...(byKey.get(project.key) ?? []).map((m) => habitLinkScore(task, m))) }))
+    .sort((a, b) => b.score - a.score || (b.project.lastDate ?? "9999").localeCompare(a.project.lastDate ?? "9999"));
+}
+
+/** 勾成打卡项目并接上以前的项目：成员合成一行，历史连在一起 */
+export async function linkHabit(taskId: string, projectKey: string): Promise<void> {
+  if (taskId === projectKey) return setHabitEnabled(taskId, true);
+  await getRepository().update(taskId, { habitKey: projectKey, enableStreak: true });
+}
+
+/** 从项目里移出（接错了时用）：变回它自己一个项目，勾选状态不变 */
+export async function unlinkHabit(taskId: string): Promise<void> {
+  await getRepository().update(taskId, { habitKey: undefined });
+}
+
+/** 整个项目取消打卡：项目里所有已勾选的任务取消勾选（起点保留，历史可回看） */
+export async function disableHabitProject(projectKey: string): Promise<void> {
+  const tasks = (await db.tasks.toArray()).filter((t) => statsEligible(t) && isHabitMember(t) && habitProjectKey(t) === projectKey && t.enableStreak === true);
+  for (const t of tasks) await getRepository().update(t.id, { enableStreak: false });
+}
+
+/** 修改整个项目的打卡起点：项目里打过卡的任务一起改，不允许晚于今天 */
+export async function setHabitProjectStartDate(projectKey: string, date: string, today: string = todayKey()): Promise<void> {
+  if (date > today) throw new Error("打卡起点不能晚于今天");
+  const tasks = (await db.tasks.toArray()).filter((t) => statsEligible(t) && isHabitMember(t) && habitProjectKey(t) === projectKey && (t.enableStreak === true || !!t.streakStartDate));
+  if (!tasks.length) throw new Error("没有找到这个打卡项目");
+  for (const t of tasks) await getRepository().update(t.id, { streakStartDate: date });
 }
 
 /**
@@ -211,6 +388,8 @@ export interface HabitCalendar {
   currentStreak: number;
   /** Completion days in the displayed month, counted once per calendar day. */
   monthCompletedDays: number;
+  /** 这个月有没有任何一天排了它（停掉的月份为 false，打卡矩阵不显示这一行） */
+  hasScheduleInMonth: boolean;
   /**
    * 该月逐日状态：done 完成（休息日完成同样算 done）/ missed 应做未完成 /
    * off 非应做日（起点前、未排期、未来）或"休息日且未完成"（免罚不算漏卡）
@@ -232,39 +411,40 @@ export async function getHabitCalendars(month: string, today: string = todayKey(
   // （管理弹窗只认重复类任务，若这里不同步限制，会出现"月历有卡但管理不了"的孤儿卡）
   const eligible = tasks.filter((t) => statsEligible(t) && t.status !== "cancelled");
 
-  // 已启用的分组：组内任一任务被勾选，整个分组即启用。
-  // 分组的成员随后按 subCategory 自动收集，因此"钢琴课"这种每次上课单独建的
-  // singleDate 任务无需（也无法）逐条勾选，新建的同类任务自动纳入。
-  // 组级打卡起点取组内已勾选任务的最早起点，统一用于组内所有成员。
-  const groupStarts = new Map<string, string | undefined>();
-  for (const t of eligible) {
-    const group = HABIT_GROUPS[t.subCategory];
-    if (!group || t.enableStreak !== true) continue;
-    const prev = groupStarts.get(group.groupKey);
-    groupStarts.set(group.groupKey, !groupStarts.has(group.groupKey) || (prev && t.streakStartDate && t.streakStartDate < prev) ? t.streakStartDate : prev);
-  }
-
-  // 卡片成员：命中已启用分组的按 subCategory 全量纳入（不限排期类型）；
-  // 未命中分组的仍要求自身是 recurring 且已勾选（与 getHabitCandidates 口径一致，避免孤儿卡）。
+  // 已启用的项目：项目里任一任务被勾选，整个项目即启用；成员按归属 key 收集——
+  // 固定分组（钢琴）按 subCategory 自动纳入（每次上课单独建的单日任务无需逐条勾选），
+  // 接上的项目（habitKey）把间断后新建的任务和以前的任务合成一行（2026-11-14）。
+  const enabledKeys = new Set(eligible.filter((t) => t.enableStreak === true && isHabitMember(t)).map(habitProjectKey));
   const groups = new Map<string, Task[]>();
   for (const task of [...eligible].sort(sortTasks)) {
-    const group = HABIT_GROUPS[task.subCategory];
-    const key = group?.groupKey;
-    if (key && groupStarts.has(key)) {
-      const list = groups.get(key);
-      if (list) list.push(task); else groups.set(key, [task]);
-      continue;
-    }
-    if (!group && isOccurrenceSchedule(task) && task.enableStreak === true) groups.set(task.id, [task]);
+    const key = habitProjectKey(task);
+    if (!enabledKeys.has(key) || !isHabitMember(task)) continue;
+    const list = groups.get(key);
+    if (list) list.push(task); else groups.set(key, [task]);
   }
+  // 项目起点：固定分组沿用"已勾选任务里最早的起点"；其余取成员里最早的起点
+  // （接上的旧任务即使已取消勾选，起点也保留着，历史月历照常显示）
+  const projectStart = (members: Task[]): string | undefined => {
+    if (HABIT_GROUPS[members[0].subCategory]) {
+      // 固定分组：与 2026-08-12 起的口径完全一致（按排序依次取已勾选任务的起点，取更早的）
+      let start: string | undefined;
+      let seen = false;
+      for (const t of members) {
+        if (t.enableStreak !== true) continue;
+        start = !seen || (start && t.streakStartDate && t.streakStartDate < start) ? t.streakStartDate : start;
+        seen = true;
+      }
+      return start;
+    }
+    return members.map((t) => t.streakStartDate).filter((d): d is string => !!d).sort()[0];
+  };
 
   const monthStart = toDateKey(startOfMonth(parseISO(`${month}-01`)));
   const monthEnd = toDateKey(endOfMonth(parseISO(`${month}-01`)));
   const monthDays = listDays(monthStart, monthEnd);
 
   return [...groups.entries()].map(([key, groupTasks]) => {
-    const groupLabel = HABIT_GROUPS[groupTasks[0].subCategory]?.label;
-    const start = groupStarts.get(key);
+    const start = projectStart(groupTasks);
     const days = monthDays.map((date) => {
       let status: HabitDayStatus;
       if (date > today) status = "off";                                                 // 未来日
@@ -276,9 +456,10 @@ export async function getHabitCalendars(month: string, today: string = todayKey(
     });
     return {
       taskId: key,
-      title: groupLabel ?? taskShortName(groupTasks[0]),
+      title: projectTitle(groupTasks),
       currentStreak: computeGroupStreak(groupTasks, today, occByKey, rests, start, paused),
       monthCompletedDays: days.filter((day) => day.status === "done").length,
+      hasScheduleInMonth: monthDays.some((date) => groupTasks.some((t) => scheduleOccursOn(t, date))),
       days,
     };
   });

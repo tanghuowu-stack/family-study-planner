@@ -9,17 +9,25 @@ import { ChevronDown, ChevronLeft, ChevronRight, ListChecks, CalendarOff } from 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { addDays, addMonths, endOfMonth, getDay, parseISO, startOfMonth } from "date-fns";
 import {
+  disableHabitProject,
   getHabitCalendars,
   getHabitCandidates,
+  getHabitProjects,
+  linkHabit,
+  setHabitProjectStartDate,
+  suggestHabitLinks,
+  unlinkHabit,
   getHiddenHabitCandidates,
   getRestDays,
   hideHabitCandidate,
   setHabitEnabled,
-  setHabitStartDate,
+
   toggleRestDay,
   unhideHabitCandidate,
   type HabitCalendar,
   type HabitCandidate,
+  type HabitLinkSuggestion,
+  type HabitProject,
   type HabitDayStatus,
 } from "../data/statsRepository";
 import { todayKey, toDateKey } from "../utils/date";
@@ -72,7 +80,15 @@ export function HabitSection() {
           <button onClick={() => setManageOpen(true)} className="mt-3 min-h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-white">管理打卡项目</button>
         </div>
       ) : (
-        <HabitMatrix calendars={calendars} restDays={restDays} />
+        <>
+          {/* 停掉的项目（这个月一天都没排）不占一行；管理弹窗里照样能看到 */}
+          {calendars.some((cal) => cal.hasScheduleInMonth)
+            ? <HabitMatrix calendars={calendars.filter((cal) => cal.hasScheduleInMonth)} restDays={restDays} />
+            : <div className="surface mt-3 p-5 text-center text-sm text-muted">这个月没有安排打卡项目</div>}
+          {calendars.some((cal) => !cal.hasScheduleInMonth) && (
+            <p className="mt-2 px-1 text-[13px] text-muted">这个月停着的项目不显示：{calendars.filter((cal) => !cal.hasScheduleInMonth).map((cal) => cal.title).join("、")}</p>
+          )}
+        </>
       )}
 
       {manageOpen && <ManageDialog onClose={() => setManageOpen(false)} onChanged={reload} />}
@@ -154,22 +170,29 @@ function HabitMatrix({ calendars, restDays }: { calendars: HabitCalendar[]; rest
   );
 }
 
-/** 管理打卡项目：勾选/取消即时调 setHabitEnabled；打卡起点改完点「确定」才保存 */
+/**
+ * 管理打卡项目（2026-11-14 重排）：
+ * - 正在打卡：一个项目一行（接上的几段任务合在一起），可改起点、取消、把接错的任务移出；
+ * - 可以加入打卡：勾选时先问"要接上以前的打卡吗？"，按像不像列出以前的项目，预选最像的；
+ * - 已结束的任务、上课类、已隐藏的折叠起来，列表不再被一堆同名旧任务挤满。
+ */
 function ManageDialog({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
+  const [projects, setProjects] = useState<HabitProject[] | null>(null);
   const [candidates, setCandidates] = useState<HabitCandidate[] | null>(null);
   const [hidden, setHidden] = useState<{ taskId: string; title: string }[]>([]);
-  const [hiddenOpen, setHiddenOpen] = useState(false);
-  const [coursesOpen, setCoursesOpen] = useState(false);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [linking, setLinking] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const load = useCallback(() => {
+    getHabitProjects().then(setProjects).catch(() => setProjects([]));
     getHabitCandidates().then(setCandidates).catch(() => setCandidates([]));
     getHiddenHabitCandidates().then(setHidden).catch(() => setHidden([]));
   }, []);
   useEffect(load, [load]);
 
-  const run = async (taskId: string, action: () => Promise<void>, refreshCalendars = true) => {
-    setBusy(taskId);
+  const run = async (key: string, action: () => Promise<void>, refreshCalendars = true) => {
+    setBusy(key);
     setError("");
     try {
       await action();
@@ -181,65 +204,91 @@ function ManageDialog({ onClose, onChanged }: { onClose: () => void; onChanged: 
       setBusy(null);
     }
   };
+  const toggleOpen = (key: string) => setOpen((current) => ({ ...current, [key]: !current[key] }));
 
-  // 已勾选的始终留在主列表（否则找不到地方取消）；没勾选的上课类一般不用来打卡，折叠起来减少干扰
-  const mainList = candidates?.filter((c) => c.enabled || !c.isCourse) ?? [];
-  const courseList = candidates?.filter((c) => !c.enabled && c.isCourse) ?? [];
+  const enabledKeys = new Set(projects?.map((p) => p.key) ?? []);
+  const free = candidates?.filter((c) => !c.enabled && !enabledKeys.has(c.projectKey)) ?? [];
+  const available = free.filter((c) => !c.ended && !c.isCourse);
+  const courses = free.filter((c) => !c.ended && c.isCourse);
+  const ended = free.filter((c) => c.ended);
 
   const renderCandidate = (c: HabitCandidate) => (
     <div key={c.taskId} className="border-b border-ink/[0.07] py-1 last:border-0">
       <div className="flex items-center gap-2">
-        <label className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-sm">
-          <input type="checkbox" checked={c.enabled} disabled={busy === c.taskId} onChange={() => void run(c.taskId, () => setHabitEnabled(c.taskId, !c.enabled))} className="h-5 w-5 shrink-0 rounded accent-primary" />
+        <label className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-2.5">
+          <input type="checkbox" checked={linking === c.taskId} disabled={busy === c.taskId} onChange={() => setLinking(linking === c.taskId ? null : c.taskId)} className="h-5 w-5 shrink-0 rounded accent-primary" />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-ink">{c.title}</span>
-            {c.calendarTitle && c.calendarTitle !== c.title && <span className="block text-xs text-muted">计入「{c.calendarTitle}」月历</span>}
+            <span className="block truncate text-[15px] text-ink">{c.title}</span>
+            <span className="block truncate text-[13px] text-muted">{c.categoryText} · {c.scheduleText} · {c.rangeText}</span>
           </span>
         </label>
-        {!c.enabled && (
-          <button onClick={() => void run(c.taskId, () => hideHabitCandidate(c.taskId), false)} disabled={busy === c.taskId} title="从这个列表里隐藏，任务本身不受影响" className="min-h-11 shrink-0 rounded-lg px-2 text-xs text-muted hover:text-ink disabled:opacity-50">
-            不再提示
-          </button>
+        {linking !== c.taskId && (
+          <button onClick={() => void run(c.taskId, () => hideHabitCandidate(c.taskId), false)} disabled={busy === c.taskId} title="从这个列表里隐藏，任务本身不受影响" className="min-h-11 shrink-0 rounded-lg px-2 text-[13px] text-muted hover:text-ink disabled:opacity-50">不再提示</button>
         )}
       </div>
-      {c.enabled && c.streakStartDate && (
-        <StartDateEditor key={c.streakStartDate} title={c.title} saved={c.streakStartDate} disabled={busy === c.taskId} onSave={(date) => run(c.taskId, () => setHabitStartDate(c.taskId, date))} />
+      {linking === c.taskId && (
+        <LinkChooser taskId={c.taskId} busy={busy === c.taskId} onCancel={() => setLinking(null)}
+          onConfirm={(projectKey) => run(c.taskId, async () => { await (projectKey ? linkHabit(c.taskId, projectKey) : setHabitEnabled(c.taskId, true)); setLinking(null); })} />
       )}
+    </div>
+  );
+
+  const folded = (key: string, label: string, list: HabitCandidate[]) => list.length > 0 && (
+    <div className="border-t border-ink/10">
+      <button onClick={() => toggleOpen(key)} aria-expanded={!!open[key]} className="flex min-h-11 w-full items-center justify-between text-left text-[13px] text-muted">
+        <span>{label} {list.length} 项</span>
+        <ChevronDown className={`h-3.5 w-3.5 transition ${open[key] ? "rotate-180" : ""}`} />
+      </button>
+      {open[key] && <div>{list.map(renderCandidate)}</div>}
     </div>
   );
 
   return (
     <Dialog onClose={onClose} title="管理打卡项目">
-      <p className="mt-1 text-xs text-muted">勾选后立刻生效，每个项目各有一张月历。</p>
-      {candidates === null ? (
+      {projects === null || candidates === null ? (
         <p className="mt-3 text-sm text-muted">加载中…</p>
-      ) : candidates.length === 0 ? (
-        <p className="mt-3 text-sm text-muted">还没有可作为打卡的重复任务，先在任务里创建每天/每周重复的任务吧。</p>
       ) : (
-        <div className="mt-2 max-h-[60vh] overflow-y-auto">
-          {mainList.map(renderCandidate)}
-          {courseList.length > 0 && (
-            <div className="border-t border-ink/10">
-              <button onClick={() => setCoursesOpen(!coursesOpen)} aria-expanded={coursesOpen} className="flex min-h-11 w-full items-center justify-between text-left text-xs text-muted">
-                <span>上课类 {courseList.length} 项（一般不用打卡）</span>
-                <ChevronDown className={`h-3.5 w-3.5 transition ${coursesOpen ? "rotate-180" : ""}`} />
-              </button>
-              {coursesOpen && <div>{courseList.map(renderCandidate)}</div>}
+        <div className="mt-2 max-h-[65vh] overflow-y-auto pr-1">
+          <h4 className="text-[13px] font-semibold text-ink">正在打卡 <span className="font-medium text-muted">{projects.length}</span></h4>
+          {projects.length === 0 && <p className="py-2 text-[13px] text-muted">还没有打卡项目，从下面选几个每天坚持的事。</p>}
+          {projects.map((project) => (
+            <div key={project.key} className="border-b border-ink/[0.07] py-1 last:border-0">
+              <label className="flex min-h-11 cursor-pointer items-center gap-2.5">
+                <input type="checkbox" checked disabled={busy === project.key} onChange={() => void run(project.key, () => disableHabitProject(project.key))} className="h-5 w-5 shrink-0 rounded accent-primary" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[15px] font-semibold text-ink">{project.title}</span>
+                  <span className="block truncate text-[13px] text-muted">{project.categoryText} · {project.scheduleText}{project.paused ? ` · 已停${project.lastDate ? `（最后 ${Number(project.lastDate.slice(5, 7))}/${Number(project.lastDate.slice(8))}）` : ""}` : ""} · 累计 {project.doneDays} 天</span>
+                </span>
+              </label>
+              {project.members.length > 1 && (
+                <div className="mb-1 ml-[1.875rem] space-y-0.5">
+                  {project.members.map((member) => (
+                    <div key={member.taskId} className="flex min-h-9 items-center gap-2 text-[13px] text-muted">
+                      <span className="min-w-0 flex-1 truncate">{member.title} · {member.rangeText}</span>
+                      {member.linked && <button onClick={() => void run(member.taskId, () => unlinkHabit(member.taskId))} disabled={busy === member.taskId} className="min-h-9 shrink-0 rounded-lg px-2 text-primary hover:bg-primary/10 disabled:opacity-50">移出</button>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {project.startDate && (
+                <StartDateEditor key={project.startDate} title={project.title} saved={project.startDate} disabled={busy === project.key} onSave={(date) => run(project.key, () => setHabitProjectStartDate(project.key, date))} />
+              )}
             </div>
-          )}
-        </div>
-      )}
-      {error && <p role="alert" className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</p>}
-      {hidden.length > 0 && (
-        <div className="mt-2 border-t border-ink/10">
-          <button onClick={() => setHiddenOpen(!hiddenOpen)} aria-expanded={hiddenOpen} className="flex min-h-11 w-full items-center justify-between text-xs text-muted">
-            已隐藏 {hidden.length} 项
-            <ChevronDown className={`h-3.5 w-3.5 transition ${hiddenOpen ? "rotate-180" : ""}`} />
-          </button>
-          {hiddenOpen && (
-            <div className="space-y-0.5">
-              {hidden.map((h) => (
-                <div key={h.taskId} className="flex items-center gap-2 text-xs text-muted">
+          ))}
+
+          <h4 className="mt-4 text-[13px] font-semibold text-ink">可以加入打卡 <span className="font-medium text-muted">{available.length}</span></h4>
+          <p className="text-[13px] text-muted">勾选时可以接上以前停掉的打卡，合成一行、历史连在一起。</p>
+          {available.map(renderCandidate)}
+          {folded("course", "上课类（一般不用打卡）", courses)}
+          {folded("ended", "已结束的任务", ended)}
+          {hidden.length > 0 && (
+            <div className="border-t border-ink/10">
+              <button onClick={() => toggleOpen("hidden")} aria-expanded={!!open.hidden} className="flex min-h-11 w-full items-center justify-between text-[13px] text-muted">
+                已隐藏 {hidden.length} 项
+                <ChevronDown className={`h-3.5 w-3.5 transition ${open.hidden ? "rotate-180" : ""}`} />
+              </button>
+              {open.hidden && hidden.map((h) => (
+                <div key={h.taskId} className="flex items-center gap-2 text-[13px] text-muted">
                   <span className="min-w-0 flex-1 truncate">{h.title}</span>
                   <button onClick={() => void run(h.taskId, () => unhideHabitCandidate(h.taskId), false)} disabled={busy === h.taskId} className="min-h-11 shrink-0 px-2 text-primary hover:underline disabled:opacity-50">恢复显示</button>
                 </div>
@@ -248,8 +297,46 @@ function ManageDialog({ onClose, onChanged }: { onClose: () => void; onChanged: 
           )}
         </div>
       )}
-      <button onClick={onClose} className="mt-4 w-full rounded-xl border bg-white px-4 py-2 text-sm text-stone-500">完成</button>
+      {error && <p role="alert" className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-[13px] text-rose-700">{error}</p>}
+      <button onClick={onClose} className="mt-4 min-h-11 w-full rounded-lg border bg-white px-4 text-sm text-stone-500">完成</button>
     </Dialog>
+  );
+}
+
+/**
+ * 勾选一个任务加入打卡时："要接上以前的打卡吗？"
+ * 以前打过卡的项目按像不像排在前面（同分类同学科、名字有相同的字），最像的预先选好；
+ * 都不是就选"作为新项目"。名字常常不一样，所以不自动合并，由家长确认。
+ */
+function LinkChooser({ taskId, busy, onConfirm, onCancel }: { taskId: string; busy: boolean; onConfirm: (projectKey: string | null) => Promise<void>; onCancel: () => void }) {
+  const [suggestions, setSuggestions] = useState<HabitLinkSuggestion[] | null>(null);
+  const [choice, setChoice] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  useEffect(() => {
+    suggestHabitLinks(taskId).then((list) => {
+      setSuggestions(list);
+      setChoice(list[0] && list[0].score >= 3 ? list[0].project.key : null);
+    }).catch(() => setSuggestions([]));
+  }, [taskId]);
+  if (suggestions === null) return <p className="ml-[1.875rem] py-2 text-[13px] text-muted">查找以前的打卡…</p>;
+  const visible = showAll ? suggestions : suggestions.filter((item, index) => item.score > 0 && index < 3);
+  const option = (key: string | null, title: string, detail?: string) => (
+    <label key={key ?? "new"} className={`flex min-h-11 cursor-pointer items-start gap-2.5 rounded-lg px-2 py-2 ${choice === key ? "bg-mint/60" : "hover:bg-stone-50"}`}>
+      <input type="radio" name={`link-${taskId}`} checked={choice === key} onChange={() => setChoice(key)} className="mt-0.5 h-4 w-4 shrink-0 accent-primary" />
+      <span className="min-w-0 flex-1"><span className="block text-[15px] text-ink">{title}</span>{detail && <span className="block text-[13px] text-muted">{detail}</span>}</span>
+    </label>
+  );
+  return (
+    <div className="mb-2 ml-[1.875rem] rounded-lg border border-ink/10 bg-white p-2">
+      <p className="px-2 pb-1 text-[13px] font-semibold text-ink">{suggestions.length ? "要接上以前的打卡吗？" : "加入打卡"}</p>
+      {visible.map(({ project }) => option(project.key, `接上「${project.title}」`, `${project.categoryText} · ${project.scheduleText} · ${project.paused ? `上次到 ${project.lastDate ? `${Number(project.lastDate.slice(5, 7))}/${Number(project.lastDate.slice(8))}` : "—"}` : "正在打卡"} · 累计 ${project.doneDays} 天`))}
+      {!showAll && suggestions.length > visible.length && <button type="button" onClick={() => setShowAll(true)} className="min-h-9 px-2 text-[13px] font-semibold text-primary">看全部 {suggestions.length} 个以前的项目</button>}
+      {option(null, "作为新项目", "以前没打过这件事的卡")}
+      <div className="mt-1 flex gap-2 px-2 pb-1">
+        <button type="button" onClick={() => void onConfirm(choice)} disabled={busy} className="min-h-10 flex-1 rounded-lg bg-primary text-sm font-semibold text-white disabled:opacity-50">{choice ? "接上并加入打卡" : "加入打卡"}</button>
+        <button type="button" onClick={onCancel} className="min-h-10 rounded-lg px-3 text-sm text-muted">取消</button>
+      </div>
+    </div>
   );
 }
 

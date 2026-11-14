@@ -146,6 +146,11 @@ export interface Task {
   pauseDuringTravel?: boolean;
   /** 打卡生效起点（本地日 YYYY-MM-DD）：勾选"计入打卡"时自动写入，取消时清除；早于此日的排期日不算应做（历史欠账保护）。表单不暴露 */
   streakStartDate?: string;
+  /**
+   * 接上的打卡项目（2026-11-14）：值是那个项目的 key（项目里最早那个任务的 id）。
+   * 间断后重新建的任务接上以前的项目，打卡矩阵里合成一行、历史连在一起。存 metadata jsonb，不加列
+   */
+  habitKey?: string;
   checklistItems?: ChecklistItem[];
   completedAt?: string;
   deletedAt?: string;

@@ -1,5 +1,5 @@
 import { GripVertical } from "lucide-react";
-import type { ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 import type { TaskSubjectGroup } from "../utils/taskGrouping";
 
 /**
@@ -22,8 +22,8 @@ interface Props {
   suffix?: string;
   count?: number;
   dot?: string;
-  /** 显示拖拽手柄（拖拽行为由外层 section 负责） */
-  grip?: boolean;
+  /** 拖拽手柄的事件与样式（来自 useSortableList.handleProps）；传了就在最右侧显示可拖的手柄 */
+  handle?: HTMLAttributes<HTMLElement> & { "data-no-swipe"?: true };
   /** 拖拽经过时高亮 */
   highlight?: boolean;
   /** 右侧额外操作（如任务管理页的"选择本组"） */
@@ -31,16 +31,16 @@ interface Props {
 }
 
 /** 分组小标题：13px 半粗、无底色，靠色点与留白分区 */
-export function GroupHeading({ label, suffix, count, dot, grip, highlight, action }: Props) {
+export function GroupHeading({ label, suffix, count, dot, handle, highlight, action }: Props) {
   return (
-    <h3 className={`flex items-center gap-2 px-3 pb-1 pt-3 text-[13px] font-semibold transition-colors sm:px-4 ${grip ? "cursor-grab active:cursor-grabbing" : ""} ${highlight ? "bg-mint/60" : ""}`}>
+    <h3 className={`flex items-center gap-2 px-3 pb-1 pt-3 text-[13px] font-semibold transition-colors sm:px-4 ${highlight ? "bg-mint/60" : ""}`}>
       {dot && <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: dot }} />}
       <span className="text-ink">{label}</span>
       {suffix && <span className="font-medium text-muted">{suffix}</span>}
       {count !== undefined && <span className="ml-auto font-medium tabular-nums text-muted">{count}</span>}
       {action && <span className={count === undefined ? "ml-auto" : ""}>{action}</span>}
       {/* 手柄放最右侧：放左侧会让有手柄和没手柄的分组色点对不齐 */}
-      {grip && <GripVertical aria-hidden className={`h-3.5 w-3.5 shrink-0 text-stone-300 ${count === undefined && !action ? "ml-auto" : ""}`} />}
+      {handle && <button type="button" aria-label={`拖动调整“${label}”的位置`} title="按住拖动调整顺序" {...handle} className={`-my-2 -mr-2 flex h-9 w-8 shrink-0 items-center justify-center rounded-md text-stone-300 hover:bg-stone-100 hover:text-muted [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-10 ${count === undefined && !action ? "ml-auto" : ""}`}><GripVertical aria-hidden className="h-4 w-4" /></button>}
     </h3>
   );
 }

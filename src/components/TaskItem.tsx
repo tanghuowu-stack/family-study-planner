@@ -1,5 +1,5 @@
 import { CalendarPlus, CalendarX, Check, ChevronDown, Copy, MoreHorizontal, Pencil, Trash2, TriangleAlert } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ChecklistItem, TaskDisplay, TaskStatus } from "../types/task";
 import { STATUS_META, canEndRecurring, canExtendRecurring, isOccurrenceSchedule, taskShortName } from "../utils/taskMeta";
 import { formatCompactDate } from "../utils/date";
@@ -9,6 +9,8 @@ interface Props {
   compact?: boolean;
   /** 今日页正在看的日期：在这一天之前就做完的小项收成一行"已完成 N 项" */
   viewDate?: string;
+  /** 拖拽手柄（今日页可排序的任务才有），放在"…"左边，不挤占勾选框的位置 */
+  dragHandle?: ReactNode;
   unsynced?: boolean; // 任务自身完成状态未同步到云端
   unsyncedItemIds?: Set<string>; // 哪些清单小项未同步到云端
   onStatusChange?: (task: TaskDisplay, status: TaskStatus) => void | Promise<void>;
@@ -75,7 +77,7 @@ function ChecklistRing({ completed, total, done }: { completed: number; total: n
   );
 }
 
-export function TaskItem({ task, compact = false, viewDate, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onExtend, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onRetrySync, onRetryItemSync, onCopy }: Props) {
+export function TaskItem({ task, compact = false, viewDate, dragHandle, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onExtend, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onRetrySync, onRetryItemSync, onCopy }: Props) {
   const [menu, setMenu] = useState(false);
   const [showEarlier, setShowEarlier] = useState(false);
   // 菜单离屏幕底部（含底部导航栏）太近时向上展开，避免被遮住
@@ -237,6 +239,7 @@ export function TaskItem({ task, compact = false, viewDate, unsynced, unsyncedIt
         <span className={`mt-0.5 hidden shrink-0 rounded-full px-2 py-0.5 text-[13px] leading-5 sm:block ${STATUS_META[effectiveStatus].className}`}>{STATUS_META[effectiveStatus].label}</span>
       )}
 
+      {dragHandle}
       <div ref={menuRef} className="relative">
         <button aria-label="任务操作" aria-expanded={menu} onClick={(event) => toggleMenu(event.currentTarget)} className="rounded-lg p-1.5 text-stone-400 opacity-70 hover:bg-stone-100 hover:text-ink group-hover:opacity-100 [@media(pointer:coarse)]:-m-2 [@media(pointer:coarse)]:p-3.5">
           <MoreHorizontal className="h-4 w-4" />

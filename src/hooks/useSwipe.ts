@@ -31,7 +31,11 @@ export function useSwipe<T extends HTMLElement>(
     // null = undecided, 'h' = horizontal locked, 'v' = vertical locked
     let direction: "h" | "v" | null = null;
 
+    let ignore = false;
     const onTouchStart = (e: TouchEvent) => {
+      // 从拖拽排序手柄开始的触摸交给拖拽，不当作左右滑动换天
+      ignore = !!(e.target as Element | null)?.closest?.("[data-no-swipe]");
+      if (ignore) return;
       startX = e.touches[0].clientX;
       startY = e.touches[0].clientY;
       startTime = Date.now();
@@ -41,6 +45,7 @@ export function useSwipe<T extends HTMLElement>(
     };
 
     const onTouchMove = (e: TouchEvent) => {
+      if (ignore) return;
       const dx = e.touches[0].clientX - startX;
       const dy = e.touches[0].clientY - startY;
 
@@ -62,6 +67,7 @@ export function useSwipe<T extends HTMLElement>(
     };
 
     const onTouchEnd = (e: TouchEvent) => {
+      if (ignore) { ignore = false; return; }
       if (direction !== "h") {
         direction = null;
         return;

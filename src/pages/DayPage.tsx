@@ -11,6 +11,7 @@ import type { PlanOverviewItem, TaskDisplay, TaskStatus } from "../types/task";
 import { formatCompactDate, formatFullDate, fromDateKey, relativeDayLabel, toDateKey, todayKey } from "../utils/date";
 import { TASK_SUBJECT_GROUPS, dayTaskKey, findJustCompleted, groupDayTasks, normalizeSubjectOrder, type DayTaskPlacement, type TaskSubjectGroup } from "../utils/taskGrouping";
 import { useGroupOrder } from "../hooks/useGroupOrder";
+import { useSortableList } from "../hooks/useSortableList";
 import { itemSyncKey, taskSyncKey } from "../utils/taskMeta";
 import { SidebarMemo } from "../components/SidebarMemo";
 import { AllDoneCelebration } from "../components/AllDoneCelebration";
@@ -101,8 +102,9 @@ export function DayPage(props: Props) {
   const isToday = props.date === todayKey();
   const [dateLabel, weekdayLabel] = formatFullDate(props.date).split(" ");
   const navButton = "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-ink/15 bg-white text-muted shadow-sm hover:border-primary/30 hover:text-primary sm:h-10 sm:w-10";
-  const renderTask = (task: TaskDisplay) => <TaskItem
+  const renderTask = (task: TaskDisplay, dragHandle?: ReactNode) => <TaskItem
     key={dayTaskKey(task)}
+    dragHandle={dragHandle}
     task={task}
     unsynced={props.unsyncedTasks?.has(taskSyncKey(task))}
     unsyncedItemIds={props.unsyncedItems && task.checklistItems ? new Set(task.checklistItems.filter((item) => props.unsyncedItems!.has(itemSyncKey(task.id, item.id))).map((item) => item.id)) : undefined}
@@ -121,9 +123,9 @@ export function DayPage(props: Props) {
     {!isToday && <div role="status" className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-sun/60 bg-sun/20 px-3 py-2 sm:px-4"><p className="min-w-0 text-sm font-semibold text-ink">正在看 {formatCompactDate(props.date)}（{relativeDayLabel(props.date)}），不是今天</p><button onClick={() => props.onDateChange(todayKey())} className="h-9 shrink-0 rounded-lg bg-primary px-3 text-sm font-bold text-white [@media(pointer:coarse)]:h-11">回到今天</button></div>}
     <SidebarMemo value={props.memo} variant="narrow" editorOpen={props.memoEditorOpen} focusRequest={props.memoFocusRequest} busy={props.memoBusy} onFocus={props.onMemoFocus} onChange={props.onMemoChange} onBlur={props.onMemoBlur} onComplete={props.onMemoComplete} />
     <div ref={swipeRef} className="space-y-4">
-      {overdueShown.length > 0 && <section className="surface overflow-visible border-alert/35"><div className="flex items-center justify-between border-b border-alert/20 bg-alert/[0.06] px-3 py-2.5 sm:px-4"><h2 className="text-base font-bold text-alert">逾期未完成</h2><span className="text-[13px] font-semibold tabular-nums text-alert">{overdue.length}</span></div>{overdueShown.map(renderTask)}</section>}
+      {overdueShown.length > 0 && <section className="surface overflow-visible border-alert/35"><div className="flex items-center justify-between border-b border-alert/20 bg-alert/[0.06] px-3 py-2.5 sm:px-4"><h2 className="text-base font-bold text-alert">逾期未完成</h2><span className="text-[13px] font-semibold tabular-nums text-alert">{overdue.length}</span></div>{overdueShown.map((task) => renderTask(task))}</section>}
       <section className="surface overflow-visible"><div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">{isToday ? "今日清单" : "当日清单"}</h2><ProgressMeter completed={progress.completed} total={progress.total} />{progress.total > 0 && <span className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${remaining === 0 ? "text-primary" : "text-ink"}`}>{remaining === 0 ? "全部完成" : `还剩 ${remaining} 项`}</span>}</div>{pending.length ? <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} onTaskReorder={reorderTasks} /> : isToday && done.length > 0 && overdueShown.length === 0 ? <AllDoneCelebration count={done.length} /> : done.length > 0 ? <p className="px-4 py-4 text-[15px] font-semibold text-primary">这一天的事都做完了</p> : <div className="p-3"><EmptyState compact /></div>}</section>
-      {done.length > 0 && <section className="surface overflow-visible"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-3 py-2.5 text-left sm:px-4"><span className="flex items-center gap-2 text-base font-bold text-ink"><CheckCircle2 className="h-4 w-4 text-primary" />已完成 <span className="text-[13px] font-medium text-muted">{done.length}</span></span><ChevronDown className={`h-4 w-4 text-muted transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <div className="border-t border-ink/10">{done.map(renderTask)}</div>}</section>}
+      {done.length > 0 && <section className="surface overflow-visible"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-3 py-2.5 text-left sm:px-4"><span className="flex items-center gap-2 text-base font-bold text-ink"><CheckCircle2 className="h-4 w-4 text-primary" />已完成 <span className="text-[13px] font-medium text-muted">{done.length}</span></span><ChevronDown className={`h-4 w-4 text-muted transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <div className="border-t border-ink/10">{done.map((task) => renderTask(task))}</div>}</section>}
     </div>
   </main>;
 }
@@ -136,109 +138,84 @@ function GroupedTaskGrid({
   onTaskReorder,
 }: {
   tasks: TaskDisplay[];
-  renderTask: (task: TaskDisplay) => ReactNode;
+  renderTask: (task: TaskDisplay, dragHandle?: ReactNode) => ReactNode;
   order: TaskSubjectGroup[];
   onReorder: (newOrder: TaskSubjectGroup[]) => void;
   onTaskReorder?: (ids: string[]) => Promise<void>;
 }) {
-  const [dragKey, setDragKey] = useState<TaskSubjectGroup | null>(null);
-  const [dragOverKey, setDragOverKey] = useState<TaskSubjectGroup | null>(null);
-
-  // 上课 / 作业两组（规则见 utils/taskGrouping.ts groupDayTasks）；作业组内的学科分组仍可整组拖拽排序
+  // 上课 / 作业两组（规则见 utils/taskGrouping.ts groupDayTasks）；作业组内的学科分组可整组拖拽排序
   const { classes, homework } = groupDayTasks(tasks, order);
-
-  function handleDrop(targetKey: TaskSubjectGroup) {
-    if (!dragKey || dragKey === targetKey) return;
-    // 在规整后的完整学科序上挪动：存储值若缺某个学科，indexOf 得 -1，splice(-1) 会误删最后一科
-    const next = normalizeSubjectOrder(order);
-    const fromIdx = next.indexOf(dragKey);
-    const toIdx = next.indexOf(targetKey);
-    next.splice(fromIdx, 1);
-    next.splice(toIdx, 0, dragKey);
+  // 整组拖拽只在看得见的学科里挪，再按位置写回完整的学科顺序（看不见的学科保持原位）
+  const groups = useSortableList(homework.map((group) => group.key), (visible) => {
+    const full = normalizeSubjectOrder(order);
+    const slots = full.map((key, index) => (visible.includes(key) ? index : -1)).filter((index) => index >= 0);
+    const next = [...full];
+    slots.forEach((slot, i) => { next[slot] = visible[i]; });
     onReorder(next);
-  }
+  });
+  const byKey = new Map(homework.map((group) => [group.key, group]));
 
   return (
     <div className="divide-y divide-ink/[0.07]">
       {classes.length > 0 && (
         <section className="w-full overflow-visible">
           <GroupHeading label="上课" dot={NEUTRAL_DOT} count={classes.length} />
-          <div>
-            <SortableTaskList tasks={classes} renderTask={renderTask} onReorder={onTaskReorder} />
-          </div>
+          <SortableTaskList tasks={classes} renderTask={renderTask} onReorder={onTaskReorder} />
         </section>
       )}
       {homework.length > 0 && (
         <div className="divide-y divide-ink/[0.07]">
-            {homework.map((group) => {
-              const isDragging = dragKey === group.key;
-              const isOver = dragOverKey === group.key && dragKey !== group.key;
-              return (
-                <section
-                  key={group.key}
-                  draggable
-                  onDragStart={() => setDragKey(group.key)}
-                  onDragEnd={() => { setDragKey(null); setDragOverKey(null); }}
-                  onDragOver={(e) => { e.preventDefault(); setDragOverKey(group.key); }}
-                  onDrop={(e) => { e.preventDefault(); handleDrop(group.key); setDragKey(null); setDragOverKey(null); }}
-                  className={`w-full overflow-visible transition-opacity ${isDragging ? "opacity-40" : ""}`}
-                >
-                  <GroupHeading label={group.label} suffix="作业" dot={SUBJECT_DOT[group.key]} count={group.tasks.length} grip highlight={isOver} />
-                  <SortableTaskList tasks={group.tasks} renderTask={renderTask} onReorder={onTaskReorder} />
-                </section>
-              );
-            })}
+          {groups.order.map((key) => {
+            const group = byKey.get(key);
+            if (!group) return null;
+            const item = groups.itemProps(key);
+            return (
+              <section key={key} ref={item.ref} style={item.style} className="w-full overflow-visible bg-white">
+                <GroupHeading label={group.label} suffix="作业" dot={SUBJECT_DOT[group.key]} count={group.tasks.length} handle={homework.length > 1 ? groups.handleProps(key) : undefined} />
+                <SortableTaskList tasks={group.tasks} renderTask={renderTask} onReorder={onTaskReorder} />
+              </section>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-// 学科分组内逐条任务拖拽（与任务管理页共用 reorderTasks/sortOrder）：只对无具体时间的任务开放，
-// 带时间的任务始终按时间置顶（taskSort 规则），拖拽对它们不产生视觉效果，不提供手柄避免误导
+// 组内逐条任务拖拽（与任务管理页共用 reorderTasks/sortOrder）：只对无具体时间的任务开放，
+// 带时间的任务始终按时间置顶（taskSort 规则），不提供手柄避免误导。
+// 2026-11-14 起用 useSortableList（指针拖拽、实时让位、松手立刻生效），手柄在每行右侧"…"旁边。
 function SortableTaskList({
   tasks,
   renderTask,
   onReorder,
 }: {
   tasks: TaskDisplay[];
-  renderTask: (task: TaskDisplay) => ReactNode;
+  renderTask: (task: TaskDisplay, dragHandle?: ReactNode) => ReactNode;
   onReorder?: (ids: string[]) => Promise<void>;
 }) {
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
   const timed = tasks.filter((task) => task.startTime ?? task.time);
   const untimed = tasks.filter((task) => !(task.startTime ?? task.time));
   const sortable = !!onReorder && untimed.length > 1;
-
-  const drop = async (targetId: string) => {
-    if (!sortable || !dragId || dragId === targetId) return;
-    const ids = untimed.map((task) => task.id);
-    const fromIdx = ids.indexOf(dragId);
-    const toIdx = ids.indexOf(targetId);
-    if (fromIdx < 0 || toIdx < 0) return;
-    ids.splice(fromIdx, 1);
-    ids.splice(toIdx, 0, dragId);
-    await onReorder!(ids);
-  };
+  const list = useSortableList(untimed.map((task) => task.id), (ids) => onReorder?.(ids), sortable);
+  const byId = new Map(untimed.map((task) => [task.id, task]));
 
   return (
     <>
-      {timed.map(renderTask)}
-      {untimed.map((task) => sortable ? (
-        <div
-          key={task.id}
-          draggable
-          onDragStart={() => setDragId(task.id)}
-          onDragEnd={() => { setDragId(null); setOverId(null); }}
-          onDragOver={(e) => { e.preventDefault(); setOverId(task.id); }}
-          onDrop={(e) => { e.preventDefault(); void drop(task.id); setDragId(null); setOverId(null); }}
-          className={`flex items-start gap-1 transition-all ${dragId === task.id ? "opacity-40" : ""} ${overId === task.id && dragId !== task.id ? "border-t-2 border-primary" : ""}`}
-        >
-          <GripVertical className="mt-4 h-3.5 w-3.5 shrink-0 cursor-grab text-stone-300 active:cursor-grabbing" />
-          <div className="min-w-0 flex-1">{renderTask(task)}</div>
-        </div>
-      ) : <div key={task.id}>{renderTask(task)}</div>)}
+      {timed.map((task) => renderTask(task))}
+      {list.order.map((id) => {
+        const task = byId.get(id);
+        if (!task) return null;
+        if (!sortable) return <div key={id}>{renderTask(task)}</div>;
+        const item = list.itemProps(id);
+        const handle = (
+          <button type="button" aria-label={`拖动调整“${task.title || "这项任务"}”的顺序`} title="按住拖动调整顺序" {...list.handleProps(id)}
+            className="-my-1 flex h-8 w-7 shrink-0 items-center justify-center rounded-md text-stone-300 hover:bg-stone-100 hover:text-muted [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-9">
+            <GripVertical aria-hidden className="h-4 w-4" />
+          </button>
+        );
+        return <div key={id} ref={item.ref} style={item.style}>{renderTask(task, handle)}</div>;
+      })}
     </>
   );
 }

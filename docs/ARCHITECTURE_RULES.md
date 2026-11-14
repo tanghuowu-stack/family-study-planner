@@ -156,7 +156,7 @@
 **当前写入口分类（供参考）**：
 - 走 `sanitizeTaskWrite` 全对象落库（R1/R3/§3.2 镜像全生效）：`create`、`update`、`copyToDate`。
 - 部分字段 `db.tasks.update({...})`（不触发 sanitize，但只改指定键、不会重引入展示字段）：`setDisplayStatus`、`saveActualMinutes`、`toggleChecklistItem`、`reorderTasks`、软删/恢复、父子联动。这些**不经过 §3.2 镜像**，因此约定它们不去碰 recurrence/endDate/status 之外的联动字段——要碰就得走 create/update。
-- 裸 `bulkPut`（绕过所有防线，已知技术债）：`importBackup`（见 §4）。
+- `importBackup`（2026-11-14 起）：任务逐条过 `sanitizeTaskWrite`、只保留重复类任务的单日记录、updatedAt 记为现在；云端模式下随后整体上传（`uploadLocalDataToCloud`）。
 
 ### 3.5 Schema 变更必须归档进受控脚本（强制流程）
 
@@ -210,11 +210,11 @@
 
 ### 2026-07-17 代码审查遗留（P1/P2，文件位置为审查时行号，可能已漂移）
 
-- **P1** `removePlanPeriod`/`removeCourse` 的任务解绑（`taskRepository.ts` 的 `.modify`）不刷新 updatedAt，且 `cloudRepository.ts` 不把被解绑任务 upsert 上云 → 下次 pull 被 LWW（相等即覆盖）回滚，任务重新指向已删除的假期/课程。修法：modify 时带 updatedAt=now，云端包装层补 upsert 受影响任务。
-- **P1** `importBackup`（`taskRepository.ts`）无 R1 清洗：任务 status/completedAt 原样 `bulkPut`、occurrence 行原样导入，旧备份会把脏数据灌回本地。修法：导入时按 isOccurrenceSchedule 清洗本体状态、过滤违规 occurrence 行。
-- **P1** 云端模式下 `importBackup`（`cloudRepository.ts`）只写本地不上传，导入结果会被下次 pull 按 LWW 覆盖回云端状态。修法：导入完成后强制一次全量上传。
-- **P1** 手动「从云端下载」（`cloudDownload.ts`）是无条件 `bulkPut` 强覆盖，但代码注释自称"安全合并"，且按钮无警示 → 本地未同步修改会被静默回滚。修法：改注释、按钮加确认框说明会覆盖本地。
-- **P2** `exportBackup`（`taskRepository.ts`）不含 courses 表，恢复备份后任务 courseId 悬空。
+- ~~**P1** `removePlanPeriod`/`removeCourse` 的任务解绑（`taskRepository.ts` 的 `.modify`）不刷新 updatedAt，且 `cloudRepository.ts` 不把被解绑任务 upsert 上云 → 下次 pull 被 LWW（相等即覆盖）回滚，任务重新指向已删除的假期/课程。修法：modify 时带 updatedAt=now，云端包装层补 upsert 受影响任务。~~（2026-11-14 已修，`dataSafety.test.ts`）
+- ~~**P1** `importBackup`（`taskRepository.ts`）无 R1 清洗：任务 status/completedAt 原样 `bulkPut`、occurrence 行原样导入，旧备份会把脏数据灌回本地。修法：导入时按 isOccurrenceSchedule 清洗本体状态、过滤违规 occurrence 行。~~（2026-11-14 已修）
+- ~~**P1** 云端模式下 `importBackup`（`cloudRepository.ts`）只写本地不上传，导入结果会被下次 pull 按 LWW 覆盖回云端状态。修法：导入完成后强制一次全量上传。~~（2026-11-14 已修）
+- ~~**P1** 手动「从云端下载」（`cloudDownload.ts`）是无条件 `bulkPut` 强覆盖，但代码注释自称"安全合并"，且按钮无警示 → 本地未同步修改会被静默回滚。修法：改注释、按钮加确认框说明会覆盖本地。~~（2026-11-14 已修）
+- ~~**P2** `exportBackup`（`taskRepository.ts`）不含 courses 表，恢复备份后任务 courseId 悬空。~~（2026-11-14 已修）
 - **P2** `remove` 级联软删子任务但 `restore` 只恢复本体不级联恢复子任务，行为不对称。
 
 ### Schema 文档漂移

@@ -59,8 +59,20 @@ export function SettingsPage({ refreshKey, onImported, notify, cloudMode, onAuth
     }
   };
   const updateCalendarSetting = (key: keyof CalendarDisplaySettings, value: boolean) => { const next = { ...calendarSettings, [key]: value }; setCalendarSettings(next); saveCalendarDisplaySettings(next); setMessage("日历显示设置已保存"); };
-  const exportData = async () => { const backup = await taskRepository.exportBackup(); const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `小步计划备份-${toLocalDateKey(backup.exportedAt)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 500); setMessage("备份已导出"); void loadLogs(); };
-  const importData = async (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; event.target.value = ""; if (!file || !confirm("导入将覆盖当前数据，确定继续吗？")) return; try { await taskRepository.importBackup(JSON.parse(await file.text())); setMessage("导入成功"); onImported(); void loadLogs(); } catch (reason) { setMessage(reason instanceof Error ? reason.message : "导入失败"); } };
+  const exportData = async () => { const backup = await getRepository().exportBackup(); const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `小步计划备份-${toLocalDateKey(backup.exportedAt)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 500); setMessage("备份已导出"); void loadLogs(); };
+  // 导入走当前数据源（getRepository）：云端模式下导入后会整体上传，否则下次同步就被云端覆盖回去
+  const importData = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]; event.target.value = "";
+    const warning = cloudMode
+      ? "导入会用备份里的任务替换本机数据，并上传到云端（Mac 和 iPad 都会变）。云端有、备份里没有的任务会保留。确定继续吗？"
+      : "导入会用备份里的数据替换本机当前数据，确定继续吗？";
+    if (!file || !confirm(warning)) return;
+    try {
+      const result = await getRepository().importBackup(JSON.parse(await file.text()));
+      setMessage(`导入成功：${result.tasks} 个任务${result.droppedOccurrences ? `（丢弃了 ${result.droppedOccurrences} 条不符合规则的单日记录）` : ""}${cloudMode ? "，已上传云端" : ""}`);
+      onImported(); void loadLogs(); void loadSetup();
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "导入失败"); onImported(); }
+  };
 
   return <main className="mx-auto w-full max-w-3xl px-4 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
     <header className="page-header"><h1 className="page-title">设置</h1></header>
@@ -81,7 +93,7 @@ export function SettingsPage({ refreshKey, onImported, notify, cloudMode, onAuth
       </SettingRow>
       <SettingRow title="数据备份" summary="导出或导入全部任务">
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-lg border border-ink/10 bg-white p-4"><Download className="h-5 w-5 text-primary" /><h3 className="mt-2 text-base font-semibold">导出备份</h3><p className="mt-1 text-sm text-muted">保存全部任务、软删除记录和操作日志。</p><button onClick={exportData} className="mt-3 min-h-11 w-full rounded-lg bg-primary px-4 text-sm font-semibold text-white">导出备份</button></div>
+          <div className="rounded-lg border border-ink/10 bg-white p-4"><Download className="h-5 w-5 text-primary" /><h3 className="mt-2 text-base font-semibold">导出备份</h3><p className="mt-1 text-sm text-muted">保存全部任务、假期、课程、软删除记录和操作日志。</p><button onClick={exportData} className="mt-3 min-h-11 w-full rounded-lg bg-primary px-4 text-sm font-semibold text-white">导出备份</button></div>
           <div className="rounded-lg border border-ink/10 bg-white p-4"><Upload className="h-5 w-5 text-amber-700" /><h3 className="mt-2 text-base font-semibold">导入备份</h3><p className="mt-1 text-sm text-muted">从 JSON 文件恢复任务，会覆盖当前数据。</p><input ref={fileRef} type="file" accept=".json,application/json" onChange={importData} className="hidden" /><button onClick={() => fileRef.current?.click()} className="mt-3 min-h-11 w-full rounded-lg border border-ink/15 px-4 text-sm font-semibold">选择备份文件</button></div>
         </div>
       </SettingRow>

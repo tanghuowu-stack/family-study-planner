@@ -119,6 +119,8 @@ export function CloudLoginPanel({ cloudMode, onAuthChange }: { cloudMode?: boole
 
   const handleDownload = async () => {
     if (!auth?.familyId) return;
+    // 这是强制覆盖：云端有的记录一律以云端为准，本机还没同步上去的修改会丢
+    if (!window.confirm("从云端下载会用云端的数据覆盖本机：本机还没同步上去的修改（比如刚才断网时勾的、改的）会被云端旧数据替换掉。平时不需要点它，数据会自动同步。确定继续？")) return;
     setDownloading(true);
     setDownloadResult(null);
     setDownloadError("");

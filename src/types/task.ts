@@ -244,11 +244,13 @@ export interface ActivityLog {
 }
 
 export interface BackupData {
-  version: 7;
+  /** 8：2026-11 起备份包含课程库（courses） */
+  version: 8;
   exportedAt: string;
   tasks: Task[];
   taskOccurrenceStatuses: TaskOccurrenceStatus[];
   planPeriods: PlanPeriod[];
+  courses: Course[];
   activityLogs: ActivityLog[];
   readingLogs: ReadingLog[];
 }

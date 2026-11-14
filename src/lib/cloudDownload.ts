@@ -75,7 +75,9 @@ export async function downloadCloudDataToLocal(familyId: string): Promise<Downlo
     updatedAt: row.updated_at,
   }));
 
-  // 5. 使用安全合并模式写入 IndexedDB
+  // 5. 强制覆盖写入 IndexedDB：云端有的记录一律以云端为准（不比较 updatedAt），
+  //    本机还没同步上去的修改会被云端旧值覆盖——界面上点按钮前必须先确认（CloudLoginPanel.handleDownload）。
+  //    日常同步走 cloudRepository.refreshFromCloud（按 LWW 合并），不走这里。
   await db.transaction("rw", db.tasks, db.taskOccurrenceStatuses, db.planPeriods, async () => {
     if (tasks.length > 0) {
       await db.tasks.bulkPut(tasks);

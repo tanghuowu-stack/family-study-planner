@@ -797,13 +797,21 @@ export const taskRepository = {
     });
   },
 
-  async removePlanPeriod(id: string) {
+  /**
+   * 删除假期：绑定它的任务改为"全部阶段"。返回被解绑的任务 id——云端包装层要把它们上传，
+   * 且解绑必须刷新 updatedAt（R5 推论），否则下次拉取会被云端旧值（仍指向已删假期）覆盖回去。
+   */
+  async removePlanPeriod(id: string): Promise<string[]> {
     const before = await db.planPeriods.get(id);
+    const now = new Date().toISOString();
+    let affected: string[] = [];
     await db.transaction("rw", db.planPeriods, db.tasks, db.activityLogs, async () => {
       await db.planPeriods.delete(id);
-      await db.tasks.where("planPeriodId").equals(id).modify({ planPeriodId: undefined, applicablePeriodType: "all" });
+      affected = (await db.tasks.where("planPeriodId").equals(id).primaryKeys()) as string[];
+      await db.tasks.where("planPeriodId").equals(id).modify({ planPeriodId: undefined, applicablePeriodType: "all", updatedAt: now });
       await writeLog("deleteHoliday", "planPeriod", { entityId: id, entityTitle: before?.name, beforeSnapshot: before });
     });
+    return affected;
   },
 
   // ── 课程库（TASK_02）。仿假期阶段，本地 CRUD + 操作日志。 ────────────────────
@@ -829,14 +837,18 @@ export const taskRepository = {
     });
   },
 
-  async removeCourse(id: string) {
+  /** 删除课程：只清掉任务上的 courseId 绑定，保留任务本身。返回被解绑的任务 id（理由同 removePlanPeriod） */
+  async removeCourse(id: string): Promise<string[]> {
     const before = await db.courses.get(id);
-    // 课程删除不影响历史任务：只清掉任务上的 courseId 绑定，保留任务本身。
+    const now = new Date().toISOString();
+    let affected: string[] = [];
     await db.transaction("rw", db.courses, db.tasks, db.activityLogs, async () => {
       await db.courses.delete(id);
-      await db.tasks.where("courseId").equals(id).modify({ courseId: undefined });
+      affected = (await db.tasks.where("courseId").equals(id).primaryKeys()) as string[];
+      await db.tasks.where("courseId").equals(id).modify({ courseId: undefined, updatedAt: now });
       await writeLog("deleteCourse", "course", { entityId: id, entityTitle: before?.name, beforeSnapshot: before });
     });
+    return affected;
   },
 
   async remove(id: string) {
@@ -1073,28 +1085,47 @@ export const taskRepository = {
   },
 
   async exportBackup(): Promise<BackupData> {
-    const backup: BackupData = { version: 7, exportedAt: new Date().toISOString(), tasks: await db.tasks.toArray(), taskOccurrenceStatuses: await db.taskOccurrenceStatuses.toArray(), planPeriods: await db.planPeriods.toArray(), activityLogs: await db.activityLogs.toArray(), readingLogs: await db.readingLogs.toArray() };
+    const backup: BackupData = { version: 8, exportedAt: new Date().toISOString(), tasks: await db.tasks.toArray(), taskOccurrenceStatuses: await db.taskOccurrenceStatuses.toArray(), planPeriods: await db.planPeriods.toArray(), courses: await db.courses.toArray(), activityLogs: await db.activityLogs.toArray(), readingLogs: await db.readingLogs.toArray() };
     await writeLog("export", "backup", { entityTitle: "JSON 备份", afterSnapshot: { exportedAt: backup.exportedAt, taskCount: backup.tasks.length } });
     return backup;
   },
 
-  async importBackup(input: unknown) {
+  /**
+   * 导入备份（2026-11 补防线）：
+   * - 任务逐条过 sanitizeTaskWrite：重复类本体 status 只留 todo/cancelled、completedAt 清空（R1），
+   *   展示字段不落库（R3），endDate 镜像（§3.2）——旧备份里的脏数据不再原样灌回；
+   * - 单日状态只保留属于重复类任务的（R1：非重复任务不得有单日状态）；
+   * - 导入的任务、单日状态、假期一律把 updatedAt 记为现在：导入是一次写入，云端模式下随后整体上传，
+   *   上传完成前若有一次拉取，LWW 也不会用云端旧值把刚导入的覆盖回去（R5）；
+   * - 备份里有课程（version 8 起）就一并恢复；旧备份没有课程时保留现有课程。
+   * 返回导入了多少任务。
+   */
+  async importBackup(input: unknown): Promise<{ tasks: number; droppedOccurrences: number }> {
     if (!input || typeof input !== "object") throw new Error("这不是有效的备份文件");
-    const data = input as { version?: number; tasks?: unknown[]; taskOccurrenceStatuses?: unknown[]; planPeriods?: unknown[]; activityLogs?: ActivityLog[]; readingLogs?: ReadingLog[] };
-    if (![1, 2, 3, 4, 5, 6, 7].includes(data.version ?? 0) || !Array.isArray(data.tasks) || !Array.isArray(data.taskOccurrenceStatuses)) throw new Error("备份格式不正确或版本不受支持");
+    const data = input as { version?: number; tasks?: unknown[]; taskOccurrenceStatuses?: unknown[]; planPeriods?: unknown[]; courses?: Course[]; activityLogs?: ActivityLog[]; readingLogs?: ReadingLog[] };
+    if (![1, 2, 3, 4, 5, 6, 7, 8].includes(data.version ?? 0) || !Array.isArray(data.tasks) || !Array.isArray(data.taskOccurrenceStatuses)) throw new Error("备份格式不正确或版本不受支持");
     if (data.tasks.some((task) => !task || typeof task !== "object" || typeof (task as Record<string, unknown>).id !== "string" || typeof (task as Record<string, unknown>).title !== "string")) throw new Error("备份中的任务数据不完整");
     const tasks = data.tasks.map((task) => normalizeImported(task as Record<string, unknown>));
     const importedPeriods = Array.isArray(data.planPeriods) ? data.planPeriods as PlanPeriod[] : [];
     const regularIds = new Set(importedPeriods.filter((period) => period.type === "regular").map((period) => period.id));
     tasks.forEach((task) => { if (task.planPeriodId && regularIds.has(task.planPeriodId)) { task.applicablePeriodType = "regular"; task.planPeriodId = undefined; } else task.applicablePeriodType ??= task.planPeriodId ? "holiday" : "all"; });
-    await db.transaction("rw", db.tasks, db.taskOccurrenceStatuses, db.planPeriods, db.activityLogs, db.readingLogs, async () => {
+    const now = new Date().toISOString();
+    const cleanTasks = tasks.map((task) => sanitizeTaskWrite({ ...task, updatedAt: now }));
+    const occurrenceTaskIds = new Set(cleanTasks.filter((task) => isOccurrenceSchedule(task)).map((task) => task.id));
+    const rawOccurrences = data.taskOccurrenceStatuses as TaskOccurrenceStatus[];
+    const occurrences = rawOccurrences.filter((row) => occurrenceTaskIds.has(row.taskId)).map((row) => ({ ...row, updatedAt: now }));
+    const periods = importedPeriods.map((period) => ({ ...period, updatedAt: now }));
+    const courses = Array.isArray(data.courses) ? data.courses : null;
+    await db.transaction("rw", [db.tasks, db.taskOccurrenceStatuses, db.planPeriods, db.courses, db.activityLogs, db.readingLogs], async () => {
       await db.tasks.clear(); await db.taskOccurrenceStatuses.clear(); await db.planPeriods.clear(); await db.activityLogs.clear(); await db.readingLogs.clear();
-      await db.tasks.bulkPut(tasks); await db.taskOccurrenceStatuses.bulkPut(data.taskOccurrenceStatuses as TaskOccurrenceStatus[]);
-      if (importedPeriods.length) await db.planPeriods.bulkPut(importedPeriods);
+      await db.tasks.bulkPut(cleanTasks); await db.taskOccurrenceStatuses.bulkPut(occurrences);
+      if (periods.length) await db.planPeriods.bulkPut(periods);
+      if (courses) { await db.courses.clear(); if (courses.length) await db.courses.bulkPut(courses); }
       if (Array.isArray(data.activityLogs)) await db.activityLogs.bulkPut(data.activityLogs);
       if (Array.isArray(data.readingLogs)) await db.readingLogs.bulkPut(data.readingLogs);
-      await writeLog("import", "backup", { entityTitle: "JSON 备份", afterSnapshot: { version: data.version, taskCount: tasks.length } });
+      await writeLog("import", "backup", { entityTitle: "JSON 备份", afterSnapshot: { version: data.version, taskCount: cleanTasks.length, droppedOccurrences: rawOccurrences.length - occurrences.length } });
     });
+    return { tasks: cleanTasks.length, droppedOccurrences: rawOccurrences.length - occurrences.length };
   },
 
   async listActivityLogs(limit = 100) { return (await db.activityLogs.orderBy("createdAt").reverse().toArray()).filter((log) => { const before = log.beforeSnapshot as { mainCategory?: string } | undefined; const after = log.afterSnapshot as { mainCategory?: string } | undefined; return log.entityType !== "readingLog" && !["recordReading", "undoReading"].includes(log.actionType) && before?.mainCategory !== "readingPlan" && after?.mainCategory !== "readingPlan"; }).slice(0, limit); },

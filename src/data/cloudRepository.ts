@@ -8,6 +8,7 @@
 import { supabase } from "../lib/supabase";
 import { db } from "./db";
 import { rowToChecklistItem, rowToTask } from "../lib/cloudRead";
+import { uploadLocalDataToCloud } from "../lib/cloudUpload";
 import type {
   Task,
   TaskDraft,
@@ -136,6 +137,15 @@ async function pushCompletionToCloud(familyId: string, taskId: string, occurrenc
 
 const completionGuardKeys = (taskId: string, occurrenceDate?: string, parentId?: string) =>
   [taskId, ...(occurrenceDate ? [`${taskId}:${occurrenceDate}`] : []), ...(parentId ? [parentId] : [])];
+
+/** 按 id 把本地任务逐条上传（含小项）；失败提示，不静默 */
+async function uploadTasksById(ids: string[], familyId: string): Promise<void> {
+  for (const id of ids) {
+    const task = await db.tasks.get(id);
+    if (!task) continue;
+    await withRetry(() => upsertTask(task, familyId)).catch((e) => notifySyncError("任务云端同步失败", e));
+  }
+}
 
 // ─── helpers (reuse from cloudUpload logic) ─────────────────────────────────
 
@@ -867,12 +877,15 @@ export const cloudRepository = {
   },
 
   async removePlanPeriod(id: string) {
-    await taskRepository.removePlanPeriod(id);
+    const affected = await taskRepository.removePlanPeriod(id);
     if (_familyId && supabase) {
       await supabase.from("plan_periods").delete().eq("id", id).then(({ error }) => {
         if (error) notifySyncError("假期设置云端同步失败", error);
       });
+      // 被解绑的任务也要上传，否则下次拉取会把它们改回指向已删除的假期
+      await uploadTasksById(affected, _familyId);
     }
+    return affected;
   },
 
   // ── 课程库（TASK_02） ───────────────────────────────────────────────────────
@@ -904,12 +917,14 @@ export const cloudRepository = {
   },
 
   async removeCourse(id: string) {
-    await taskRepository.removeCourse(id);
+    const affected = await taskRepository.removeCourse(id);
     if (_familyId && supabase) {
       await supabase.from("courses").delete().eq("id", id).then(({ error }) => {
         if (error) notifySyncError("课程云端同步失败", error);
       });
+      await uploadTasksById(affected, _familyId);
     }
+    return affected;
   },
 
   // ── Reading logs (delegate to local only for now) ─────────────────────────
@@ -932,8 +947,22 @@ export const cloudRepository = {
     return taskRepository.exportBackup();
   },
 
+  /**
+   * 云端模式导入备份：先写本地（已清洗、updatedAt 记为现在），再把本地整体上传云端。
+   * 以前只写本地，下次拉取就被云端旧数据按 LWW 覆盖回去，等于没导入。
+   * 不删除云端已有、备份里没有的记录（它们下次拉取会回到本地）——导入只覆盖备份里有的。
+   */
   async importBackup(input: unknown) {
-    return taskRepository.importBackup(input);
+    const result = await taskRepository.importBackup(input);
+    if (_familyId) {
+      try {
+        await uploadLocalDataToCloud(_familyId);
+      } catch (e) {
+        notifySyncError("备份已导入本地，上传云端失败", e);
+        throw new Error("备份已导入本机，但上传云端失败。请检查网络后在“云同步与账号”里点“上传本地数据到云端”，否则其他设备看不到，下次同步也可能被云端覆盖。");
+      }
+    }
+    return result;
   },
 
   async findTimeConflicts(draft: TaskDraft, excludeId?: string) {

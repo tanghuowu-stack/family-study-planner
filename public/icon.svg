@@ -2,8 +2,8 @@
   <circle cx="256" cy="136" r="48" fill="#DCEAE3"/>
   <circle cx="376" cy="136" r="48" fill="#E36B4E"/>
   <circle cx="136" cy="256" r="48" fill="#DCEAE3"/>
-  <circle cx="256" cy="256" r="48" fill="#245747"/>
-  <circle cx="376" cy="256" r="48" fill="#245747"/>
-  <circle cx="136" cy="376" r="48" fill="#245747"/>
-  <circle cx="256" cy="376" r="48" fill="#245747"/>
-  <circle cx="376" cy="376" r="48" fill="#245747"/></svg>
+  <circle cx="256" cy="256" r="48" fill="#2B7656"/>
+  <circle cx="376" cy="256" r="48" fill="#2B7656"/>
+  <circle cx="136" cy="376" r="48" fill="#2B7656"/>
+  <circle cx="256" cy="376" r="48" fill="#2B7656"/>
+  <circle cx="376" cy="376" r="48" fill="#2B7656"/></svg>

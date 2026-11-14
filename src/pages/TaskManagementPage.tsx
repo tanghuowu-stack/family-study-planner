@@ -8,6 +8,7 @@ import { fmtDate, formatSpecificDates, getWeekEndKey, todayKey } from "../utils/
 import { COURSE_MAIN_OPTIONS, COURSE_STATUS_META, MAIN_CATEGORY_META, SUB_CATEGORY_OPTIONS, WEEKDAY_LABELS, canEndRecurring, canExtendRecurring, interestContentType, isCourseTask, isEndedRecurring, isValidSubCategory, subCategoryLabel, taskShortName, checklistOnDay, isOccurrenceSchedule } from "../utils/taskMeta";
 import { taskSubjectGroup } from "../utils/taskGrouping";
 import { GroupHeading, SUBJECT_DOT } from "../components/GroupHeading";
+import { useSortableList } from "../hooks/useSortableList";
 
 interface Props { refreshKey: number; onRefresh: () => void; notify: (text: string) => void; onEdit: (task: Task) => void; onDelete: (task: Task) => void; onEnd: (task: Task) => void; onExtend: (task: Task) => void; onCopy: (task: Task) => void; }
 const order: MainCategory[] = ["school", "extraHomework", "interestClass", "temporary"];
@@ -94,35 +95,31 @@ function TaskGroup({ category, tasks, selected, selecting, onToggle, onSelectGro
       ];
     }),
   ].filter((group) => group.tasks.length);
-  return <section className="surface overflow-visible"><header className="flex items-center gap-2 rounded-t-lg border-b border-ink/10 bg-white px-4 py-3"><h2 className="text-base font-bold text-ink">{MAIN_CATEGORY_META[category].label}</h2><span className="text-[13px] text-muted">{tasks.length}</span>{selecting && <button onClick={() => onSelectGroup(tasks.map((task) => task.id))} className="ml-auto min-h-9 text-[13px] font-semibold text-primary">{tasks.every((task) => selected.has(task.id)) ? "取消本组" : "全选本组"}</button>}</header><div className="divide-y divide-ink/[0.07]">{groups.map((subgroup) => <SortableSubgroup key={subgroup.value} label={subgroup.label} tasks={subgroup.tasks} sortable={sortable} onReorder={onReorder} renderRow={(task) => <TaskRow key={task.id} task={task} selected={selected.has(task.id)} selecting={selecting} onToggle={() => onToggle(task.id)} sortable={!selecting && sortable && subgroup.tasks.length > 1} {...props} />} />)}</div></section>;
+  return <section className="surface overflow-visible"><header className="flex items-center gap-2 rounded-t-lg border-b border-ink/10 bg-white px-4 py-3"><h2 className="text-base font-bold text-ink">{MAIN_CATEGORY_META[category].label}</h2><span className="text-[13px] text-muted">{tasks.length}</span>{selecting && <button onClick={() => onSelectGroup(tasks.map((task) => task.id))} className="ml-auto min-h-9 text-[13px] font-semibold text-primary">{tasks.every((task) => selected.has(task.id)) ? "取消本组" : "全选本组"}</button>}</header><div className="divide-y divide-ink/[0.07]">{groups.map((subgroup) => <SortableSubgroup key={subgroup.value} label={subgroup.label} tasks={subgroup.tasks} sortable={sortable && !selecting} onReorder={onReorder} renderRow={(task, dragHandle) => <TaskRow key={task.id} task={task} selected={selected.has(task.id)} selecting={selecting} onToggle={() => onToggle(task.id)} dragHandle={dragHandle} {...props} />} />)}</div></section>;
 }
 
-function SortableSubgroup({ label, tasks, sortable, onReorder, renderRow }: { label: string; tasks: Task[]; sortable?: boolean; onReorder?: (ids: string[]) => Promise<void>; renderRow: (task: Task) => ReactNode }) {
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
+// 组内拖拽排序（2026-11-14 起与今日页同一套 useSortableList：只从手柄拖、其他行实时让位、松手立即生效）
+function SortableSubgroup({ label, tasks, sortable, onReorder, renderRow }: { label: string; tasks: Task[]; sortable?: boolean; onReorder?: (ids: string[]) => Promise<void>; renderRow: (task: Task, dragHandle?: ReactNode) => ReactNode }) {
   const ordered = [...tasks].sort(manualOrder);
-  const drop = async (targetId: string) => {
-    if (!sortable || !onReorder || !dragId || dragId === targetId) return;
-    const ids = ordered.map((task) => task.id);
-    const fromIdx = ids.indexOf(dragId);
-    const toIdx = ids.indexOf(targetId);
-    if (fromIdx < 0 || toIdx < 0) return;
-    ids.splice(fromIdx, 1);
-    ids.splice(toIdx, 0, dragId);
-    await onReorder(ids);
-  };
-  return <section className="overflow-visible"><GroupHeading label={label} dot={SUBJECT_DOT[taskSubjectGroup(tasks[0])]} count={tasks.length} />{ordered.map((task) => sortable && tasks.length > 1 ? <div
-    key={task.id}
-    draggable
-    onDragStart={() => setDragId(task.id)}
-    onDragEnd={() => { setDragId(null); setOverId(null); }}
-    onDragOver={(e) => { e.preventDefault(); setOverId(task.id); }}
-    onDrop={(e) => { e.preventDefault(); drop(task.id); setDragId(null); setOverId(null); }}
-    className={`transition-all ${dragId === task.id ? "opacity-40" : ""} ${overId === task.id && dragId !== task.id ? "border-t-2 border-primary" : ""}`}
-  >{renderRow(task)}</div> : renderRow(task))}</section>;
+  const canSort = !!sortable && !!onReorder && ordered.length > 1;
+  const list = useSortableList(ordered.map((task) => task.id), (ids) => onReorder?.(ids), canSort);
+  const byId = new Map(ordered.map((task) => [task.id, task]));
+  return <section className="overflow-visible"><GroupHeading label={label} dot={SUBJECT_DOT[taskSubjectGroup(tasks[0])]} count={tasks.length} />{list.order.map((id) => {
+    const task = byId.get(id);
+    if (!task) return null;
+    if (!canSort) return <div key={id}>{renderRow(task)}</div>;
+    const item = list.itemProps(id);
+    const handle = (
+      <button type="button" aria-label={`拖动调整“${task.title || "这项任务"}”的顺序`} title="按住拖动调整顺序" {...list.handleProps(id)}
+        className="flex h-9 w-8 shrink-0 items-center justify-center rounded-md text-stone-300 hover:bg-stone-100 hover:text-muted [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-10">
+        <GripVertical aria-hidden className="h-4 w-4" />
+      </button>
+    );
+    return <div key={id} ref={item.ref} style={item.style}>{renderRow(task, handle)}</div>;
+  })}</section>;
 }
 
-function TaskRow({ task, selected, selecting, onToggle, onCopy, onEdit, onDelete, onEnd, onExtend, sortable }: Props & { task: Task; selected: boolean; selecting: boolean; onToggle: () => void; sortable?: boolean }) {
+function TaskRow({ task, selected, selecting, onToggle, onCopy, onEdit, onDelete, onEnd, onExtend, dragHandle }: Props & { task: Task; selected: boolean; selecting: boolean; onToggle: () => void; dragHandle?: ReactNode }) {
   const [menu, setMenu] = useState(false);
   const [menuAbove, setMenuAbove] = useState(false);
   const finished = ["done", "cancelled"].includes(task.status);
@@ -137,7 +134,7 @@ function TaskRow({ task, selected, selecting, onToggle, onCopy, onEdit, onDelete
     }
     setMenu(!menu);
   };
-  return <div onClick={selecting ? onToggle : undefined} className={`relative ${menu ? "z-40" : ""} flex items-center gap-2.5 border-b border-ink/[0.07] px-3 py-2.5 last:border-0 sm:px-4 ${selecting ? "cursor-pointer" : ""} ${selected ? "bg-mint/50" : finished ? "bg-stone-50/40 text-stone-400" : "bg-white"}`}>{sortable && <GripVertical className="h-4 w-4 shrink-0 cursor-grab text-stone-300 active:cursor-grabbing" />}{selecting && <input type="checkbox" checked={selected} onChange={onToggle} onClick={(event) => event.stopPropagation()} aria-label={`选择 ${task.title}`} className="h-5 w-5 shrink-0 rounded accent-primary" />}<div className="min-w-0 flex-1"><div className="flex min-w-0 items-center gap-2">{formatTime(task) && <span className="shrink-0 rounded bg-ink/[0.05] px-1.5 text-[13px] font-medium leading-6 tabular-nums text-muted">{formatTime(task)}</span>}<p className={`min-w-0 truncate text-base font-semibold leading-6 ${finished ? "line-through" : "text-ink"}`}>{taskShortName(task)}</p></div><p className="truncate text-[13px] text-muted">{timeLabel(task)}{checklist}</p></div>{!selecting && <div className="relative"><button onClick={(event) => toggleMenu(event.currentTarget)} aria-label="任务操作" className="rounded-lg p-2 text-muted hover:bg-stone-100 hover:text-ink"><MoreHorizontal className="h-4 w-4" /></button>{menu && <div className={`absolute right-0 ${menuAbove ? "bottom-9" : "top-9"} z-50 max-h-[calc(100dvh-6rem)] w-48 overflow-y-auto rounded-lg border border-ink/10 bg-white p-1.5 text-sm text-ink shadow-card`}><button onClick={() => { onCopy(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 hover:bg-stone-50"><Copy className="h-4 w-4" />复制</button><button onClick={() => { onEdit(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 hover:bg-stone-50"><Pencil className="h-4 w-4" />编辑</button>{canEndRecurring(task) && !finished && <button onClick={() => { onEnd(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-amber-700 hover:bg-amber-50"><CalendarX className="h-4 w-4" />今天起不再安排</button>}{canExtendRecurring(task) && !finished && <button onClick={() => { onExtend(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-primary hover:bg-mint"><CalendarPlus className="h-4 w-4" />继续安排</button>}<button onClick={() => { onDelete(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-rose-600 hover:bg-rose-50"><Trash2 className="h-4 w-4" />删除</button></div>}</div>}</div>;
+  return <div onClick={selecting ? onToggle : undefined} className={`relative ${menu ? "z-40" : ""} flex items-center gap-2.5 border-b border-ink/[0.07] px-3 py-2.5 last:border-0 sm:px-4 ${selecting ? "cursor-pointer" : ""} ${selected ? "bg-mint/50" : finished ? "bg-stone-50/40 text-stone-400" : "bg-white"}`}>{selecting && <input type="checkbox" checked={selected} onChange={onToggle} onClick={(event) => event.stopPropagation()} aria-label={`选择 ${task.title}`} className="h-5 w-5 shrink-0 rounded accent-primary" />}<div className="min-w-0 flex-1"><div className="flex min-w-0 items-center gap-2">{formatTime(task) && <span className="shrink-0 rounded bg-ink/[0.05] px-1.5 text-[13px] font-medium leading-6 tabular-nums text-muted">{formatTime(task)}</span>}<p className={`min-w-0 truncate text-base font-semibold leading-6 ${finished ? "line-through" : "text-ink"}`}>{taskShortName(task)}</p></div><p className="truncate text-[13px] text-muted">{timeLabel(task)}{checklist}</p></div>{!selecting && dragHandle}{!selecting && <div className="relative"><button onClick={(event) => toggleMenu(event.currentTarget)} aria-label="任务操作" className="rounded-lg p-2 text-muted hover:bg-stone-100 hover:text-ink"><MoreHorizontal className="h-4 w-4" /></button>{menu && <div className={`absolute right-0 ${menuAbove ? "bottom-9" : "top-9"} z-50 max-h-[calc(100dvh-6rem)] w-48 overflow-y-auto rounded-lg border border-ink/10 bg-white p-1.5 text-sm text-ink shadow-card`}><button onClick={() => { onCopy(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 hover:bg-stone-50"><Copy className="h-4 w-4" />复制</button><button onClick={() => { onEdit(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 hover:bg-stone-50"><Pencil className="h-4 w-4" />编辑</button>{canEndRecurring(task) && !finished && <button onClick={() => { onEnd(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-amber-700 hover:bg-amber-50"><CalendarX className="h-4 w-4" />今天起不再安排</button>}{canExtendRecurring(task) && !finished && <button onClick={() => { onExtend(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-primary hover:bg-mint"><CalendarPlus className="h-4 w-4" />继续安排</button>}<button onClick={() => { onDelete(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-rose-600 hover:bg-rose-50"><Trash2 className="h-4 w-4" />删除</button></div>}</div>}</div>;
 }
 
 export function PlanPeriodManager({ periods, currentHoliday, onChanged, notify, embedded = false }: { periods: PlanPeriod[]; currentHoliday?: PlanPeriod; onChanged: () => void; notify: (text: string) => void; embedded?: boolean }) {

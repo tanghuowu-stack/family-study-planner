@@ -151,6 +151,11 @@ export interface Task {
    * 间断后重新建的任务接上以前的项目，打卡矩阵里合成一行、历史连在一起。存 metadata jsonb，不加列
    */
   habitKey?: string;
+  /**
+   * 每日记录（2026-11-14）：{ "YYYY-MM-DD": "语用2篇" }，今日页标题后点一下就能写，记下当天具体做了什么。
+   * 按查看的那天存；空文本即删除该天。存 metadata jsonb，不加列
+   */
+  dayNotes?: Record<string, string>;
   checklistItems?: ChecklistItem[];
   completedAt?: string;
   deletedAt?: string;

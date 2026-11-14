@@ -764,7 +764,7 @@ export const taskRepository = {
       completedAt: undefined, actualMinutes: undefined,
       // 复制出的任务不继承打卡身份：源任务若是打卡项目，副本被强制成 singleDate 后
       // 不再是 recurring，enableStreak 残留会变成"月历有卡但管理弹窗看不到"的孤儿
-      enableStreak: undefined, streakStartDate: undefined, habitKey: undefined,
+      enableStreak: undefined, streakStartDate: undefined, habitKey: undefined, dayNotes: undefined,
       checklistItems: source.checklistItems?.map((item, index) => ({ ...item, id: makeId(), done: false, completedDate: undefined, sortOrder: index, actualMinutes: undefined })),
       createdAt: now, updatedAt: now,
     });
@@ -940,6 +940,27 @@ export const taskRepository = {
     });
     onLocalWrite?.();
     return { parentId, synced: true };
+  },
+
+  /** 写某一天的记录（标题后的"记录"）。text 去首尾空格后为空即删除这天；返回写入后的任务 */
+  async writeDayNote(taskId: string, date: string, text: string): Promise<Task | undefined> {
+    const task = await db.tasks.get(taskId);
+    if (!task) return undefined;
+    const value = text.trim().slice(0, 200);
+    const notes = { ...(task.dayNotes ?? {}) };
+    if ((notes[date] ?? "") === value) return task;
+    if (value) notes[date] = value;
+    else delete notes[date];
+    const changes = { dayNotes: Object.keys(notes).length > 0 ? notes : undefined, updatedAt: new Date().toISOString() };
+    await db.tasks.update(taskId, changes);
+    return { ...task, ...changes };
+  },
+
+  /** 本地模式：写完即同步完成。返回值与云端版一致（是否已同步） */
+  async setDayNote(taskId: string, date: string, text: string, onLocalWrite?: () => void): Promise<boolean> {
+    await this.writeDayNote(taskId, date, text);
+    onLocalWrite?.();
+    return true;
   },
 
   async saveActualMinutes(taskId: string, itemId: string | null, additionalMinutes: number): Promise<void> {

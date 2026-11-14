@@ -59,6 +59,11 @@ describe("cloudUpload occurrence 过滤（A 类违规行不上传）", () => {
     await uploadLocalDataToCloud("fam-test");
     expect(Object.fromEntries(captured.upserts.tasks.map((row) => [row.id, row.metadata]))).toEqual({ yes: { pauseDuringTravel: true }, no: { pauseDuringTravel: false } });
   });
+  it("整体上传带上每日记录（dayNotes 走 metadata）", async () => {
+    await db.tasks.add(task("n", { dayNotes: { "2026-11-14": "语用2篇" } }));
+    await uploadLocalDataToCloud("fam-test");
+    expect(captured.upserts.tasks[0].metadata).toEqual({ dayNotes: { "2026-11-14": "语用2篇" } });
+  });
   it("15. 跳过非 occurrence 类任务和已软删任务名下的行，正常行照常上传", async () => {
     await db.tasks.bulkAdd([
       task("rec-ok", { timeType: "recurring", schedulePattern: "dailyRecurring", date: undefined, startDate: "2026-07-01" }),

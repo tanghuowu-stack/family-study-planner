@@ -257,6 +257,14 @@ export default function App() {
       else { markUnsynced(setUnsyncedItems, key); notifyFailure("⚠️ 未同步到云端，点击小项旁的标记可重试"); }
     } catch { refresh(); markUnsynced(setUnsyncedItems, key); notifyFailure("⚠️ 保存失败，请检查网络"); }
   };
+  // 当天记录：本机写完即刷新；云端没传上去时挂"未同步"标记，点它重试会把整条任务（含记录）重新上传
+  const saveDayNote = async (task: TaskDisplay, text: string, date: string) => {
+    const key = taskSyncKey(task);
+    try {
+      const synced = await repo().setDayNote(task.id, date, text, refresh);
+      if (!synced) { markUnsynced(setUnsyncedTasks, key); notifyFailure("⚠️ 记录未同步到云端，点击任务旁的标记可重试"); }
+    } catch { refresh(); notifyFailure("⚠️ 记录保存失败，请重试"); }
+  };
   const retryTaskSync = async (task: TaskDisplay) => {
     const key = taskSyncKey(task);
     const synced = await repo().resyncTask(task.id, task.occurrenceDate);
@@ -309,7 +317,7 @@ export default function App() {
     });
   };
   const openDay = (date: string) => { setSelectedDate(date); setPage("today"); window.scrollTo({ top: 0, behavior: "smooth" }); };
-  const actions = { onStatusChange: changeStatus, onChecklistToggle: toggleChecklist, onCopy: copyTask, onEdit: editTask, onDelete: deleteTask, onEnd: endTask, onExtend: extendTask, onOccurrenceCancel: cancelOccurrence, onOccurrencePostpone: postponeOccurrence, unsyncedTasks, unsyncedItems, onRetrySync: retryTaskSync, onRetryItemSync: retryItemSync };
+  const actions = { onStatusChange: changeStatus, onChecklistToggle: toggleChecklist, onDayNoteSave: saveDayNote, onCopy: copyTask, onEdit: editTask, onDelete: deleteTask, onEnd: endTask, onExtend: extendTask, onOccurrenceCancel: cancelOccurrence, onOccurrencePostpone: postponeOccurrence, unsyncedTasks, unsyncedItems, onRetrySync: retryTaskSync, onRetryItemSync: retryItemSync };
   return <div className="min-h-screen bg-paper text-ink">
     <aside className="fixed inset-y-0 left-0 z-50 hidden w-56 flex-col overflow-y-auto bg-ink px-3 py-5 text-white lg:flex">
       <button onClick={() => setPage("today")} className="flex items-center gap-3 px-2 text-left">

@@ -1,4 +1,4 @@
-import { CalendarPlus, CalendarX, Check, ChevronDown, Copy, MoreHorizontal, Pencil, Trash2, TriangleAlert } from "lucide-react";
+import { CalendarPlus, CalendarX, Check, ChevronDown, Copy, MoreHorizontal, NotebookPen, Pencil, Trash2, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ChecklistItem, TaskDisplay, TaskStatus } from "../types/task";
 import { STATUS_META, canEndRecurring, canExtendRecurring, isOccurrenceSchedule, taskShortName } from "../utils/taskMeta";
@@ -24,6 +24,8 @@ interface Props {
   onRetrySync?: () => void;
   onRetryItemSync?: (itemId: string) => void;
   onCopy?: (task: TaskDisplay) => void;
+  /** 写查看日（viewDate）的记录，空文本即删除；不传则不显示记录标记 */
+  onDayNoteSave?: (task: TaskDisplay, text: string) => void | Promise<void>;
 }
 
 /** 未同步到云端的持续可见标记（不是一闪而过的 toast），点击手动重试 */
@@ -77,7 +79,7 @@ function ChecklistRing({ completed, total, done }: { completed: number; total: n
   );
 }
 
-export function TaskItem({ task, compact = false, viewDate, dragHandle, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onExtend, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onRetrySync, onRetryItemSync, onCopy }: Props) {
+export function TaskItem({ task, compact = false, viewDate, dragHandle, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onExtend, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onDayNoteSave, onRetrySync, onRetryItemSync, onCopy }: Props) {
   const [menu, setMenu] = useState(false);
   const [showEarlier, setShowEarlier] = useState(false);
   // 菜单离屏幕底部（含底部导航栏）太近时向上展开，避免被遮住
@@ -96,6 +98,31 @@ export function TaskItem({ task, compact = false, viewDate, dragHandle, unsynced
   const [optimisticItems, setOptimisticItems] = useState<Record<string, boolean>>({});
 
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // 当天记录（2026-11-14）：标题后的小本子标记，点一下原地写"今天具体做了什么"，不用打开编辑表单
+  const savedNote = viewDate ? task.dayNotes?.[viewDate] ?? "" : "";
+  const [noteEditing, setNoteEditing] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [optimisticNote, setOptimisticNote] = useState<string | null>(null);
+  const noteOpen = useRef(false); // 回车/Esc 结束后输入框卸载可能再触发一次失焦，只处理第一次
+  const noteVersion = useRef(0);
+  const note = optimisticNote ?? savedNote;
+  const canNote = !!onDayNoteSave && !!viewDate;
+  useEffect(() => { setOptimisticNote((current) => (current !== null && current === savedNote ? null : current)); }, [savedNote]);
+  const openNote = () => { noteOpen.current = true; setNoteDraft(note); setNoteEditing(true); };
+  const finishNote = (save: boolean) => {
+    if (!noteOpen.current) return;
+    noteOpen.current = false;
+    setNoteEditing(false);
+    if (!save) return;
+    const value = noteDraft.trim();
+    if (value === note) return;
+    setOptimisticNote(value);
+    const version = ++noteVersion.current;
+    void Promise.resolve(onDayNoteSave?.(task, value)).catch(() => {}).finally(() => {
+      setTimeout(() => { if (noteVersion.current === version) setOptimisticNote(null); }, OPTIMISTIC_FALLBACK_MS);
+    });
+  };
 
   const effectiveStatus = task.occurrenceStatus === "postponed" && task.overrideDate ? "todo" : task.status;
   const statusDone = optimisticDone !== null ? optimisticDone : effectiveStatus === "done";
@@ -182,12 +209,47 @@ export function TaskItem({ task, compact = false, viewDate, dragHandle, unsynced
       <div className="min-w-0 flex-1 pt-0.5">
         <div className="flex min-w-0 items-start gap-2">
           {formatTime(task) && <span className="shrink-0 rounded bg-ink/[0.05] px-1.5 text-[13px] font-medium leading-6 tabular-nums text-muted">{formatTime(task).trim()}</span>}
-          <div className={`min-w-0 flex-1 text-base font-semibold leading-6 ${done || effectiveStatus === "cancelled" ? "line-through" : ""}`}>{taskShortName(task)}</div>
+          <div className="min-w-0 flex-1 text-base font-semibold leading-6">
+            <span className={done || effectiveStatus === "cancelled" ? "line-through" : ""}>{taskShortName(task)}</span>
+            {canNote && !note && !noteEditing && (
+              // 视觉 24px，点击热区向外扩到 44px（伪元素），不撑高标题行
+              <button type="button" onClick={openNote} aria-label="写当天记录" title="记下这次具体做了什么"
+                className="relative ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md align-top text-stone-300 hover:bg-stone-100 hover:text-primary after:absolute after:-inset-2.5 after:content-['']">
+                <NotebookPen className="h-4 w-4" />
+              </button>
+            )}
+          </div>
           {hasChecklist && <span className="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-6 text-muted">{!ringMode && <span className="relative h-1 w-10 overflow-hidden rounded-full bg-stone-200"><span className="absolute inset-y-0 left-0 rounded-full bg-primary transition-all" style={{ width: `${(completedItems / displayItems.length) * 100}%` }} /></span>}<span className="tabular-nums">{completedItems}/{displayItems.length}</span></span>}
           {unsynced && <UnsyncedBadge onRetry={onRetrySync} />}
         </div>
 
         {task.note && !task.overrideNote && <div className="min-w-0 truncate text-[13px] text-muted">{task.note}</div>}
+
+        {canNote && noteEditing && (
+          <input
+            autoFocus
+            value={noteDraft}
+            maxLength={200}
+            enterKeyHint="done"
+            aria-label="当天记录"
+            placeholder="这次具体做了什么，如：语用2篇"
+            onChange={(event) => setNoteDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return; // 中文输入法选词时的回车不算保存
+              if (event.key === "Enter") { event.preventDefault(); finishNote(true); }
+              if (event.key === "Escape") { event.preventDefault(); finishNote(false); }
+            }}
+            onBlur={() => finishNote(true)}
+            className="mt-1 w-full rounded-lg border border-primary/40 bg-white px-2.5 py-1.5 text-base font-normal text-ink outline-none placeholder:text-stone-400 focus:ring-2 focus:ring-primary/20"
+          />
+        )}
+        {canNote && note && !noteEditing && (
+          <button type="button" onClick={openNote} aria-label={`当天记录：${note}，点击修改`}
+            className="-mx-1 mt-0.5 flex max-w-full items-start gap-1.5 rounded-md px-1 py-0.5 text-left text-[13px] leading-5 text-ink/75 hover:bg-stone-100/70 [@media(pointer:coarse)]:min-h-8">
+            <NotebookPen className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+            <span className="min-w-0 break-words">{note}</span>
+          </button>
+        )}
 
         {/* Checklist 小项：在查看日之前就做完的收成一行"已完成 N 项"（点开可看、可取消勾选）；
             当天刚勾的仍原地划掉，让孩子看到反馈。重复任务的小项按天显示，不会有"之前做完的" */}

@@ -111,6 +111,7 @@ function buildMetadata(task: Task): Record<string, unknown> | null {
   if (task.enableTimer !== undefined) meta.enableTimer = task.enableTimer;
   if (task.pauseDuringTravel !== undefined) meta.pauseDuringTravel = task.pauseDuringTravel;
   if (task.habitKey !== undefined) meta.habitKey = task.habitKey;
+  if (task.dayNotes !== undefined && Object.keys(task.dayNotes).length > 0) meta.dayNotes = task.dayNotes;
   return Object.keys(meta).length > 0 ? meta : null;
 }
 

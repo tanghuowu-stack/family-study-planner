@@ -30,6 +30,7 @@ interface Props {
   onStatusChange: (task: TaskDisplay, status: TaskStatus, asOfDate?: string) => void | Promise<void>; onEdit: (task: TaskDisplay) => void;
   onDelete: (task: TaskDisplay) => void; onEnd: (task: TaskDisplay) => void; onExtend: (task: TaskDisplay) => void; onOccurrenceCancel: (task: TaskDisplay) => void;
   onOccurrencePostpone: (task: TaskDisplay) => void; onChecklistToggle: (task: TaskDisplay, itemId: string, asOfDate?: string) => void | Promise<void>;
+  onDayNoteSave: (task: TaskDisplay, text: string, date: string) => void | Promise<void>;
   onCopy: (task: TaskDisplay) => void; onOpenMonth: () => void;
   onAddTask: () => void;
   memo: string; onMemoFocus: () => void; onMemoChange: (value: string) => void; onMemoBlur: () => void; onMemoComplete: () => void;
@@ -96,7 +97,7 @@ export function DayPage(props: Props) {
     () => move(-1),  // right swipe → prev day
   );
   // 勾选动作带上本页的查看日：过去日补勾记为那天完成（数据层保证不晚于今天）
-  const rowProps = { compact: true, viewDate: props.date, onStatusChange: (task: TaskDisplay, status: TaskStatus) => props.onStatusChange(task, status, props.date), onEdit: props.onEdit, onDelete: props.onDelete, onEnd: props.onEnd, onExtend: props.onExtend, onOccurrenceCancel: props.onOccurrenceCancel, onOccurrencePostpone: props.onOccurrencePostpone, onChecklistToggle: (task: TaskDisplay, itemId: string) => props.onChecklistToggle(task, itemId, props.date), onCopy: props.onCopy };
+  const rowProps = { compact: true, viewDate: props.date, onStatusChange: (task: TaskDisplay, status: TaskStatus) => props.onStatusChange(task, status, props.date), onEdit: props.onEdit, onDelete: props.onDelete, onEnd: props.onEnd, onExtend: props.onExtend, onOccurrenceCancel: props.onOccurrenceCancel, onOccurrencePostpone: props.onOccurrencePostpone, onChecklistToggle: (task: TaskDisplay, itemId: string) => props.onChecklistToggle(task, itemId, props.date), onDayNoteSave: (task: TaskDisplay, text: string) => props.onDayNoteSave(task, text, props.date), onCopy: props.onCopy };
   const annotation = getCalendarAnnotation(props.date);
   const annotationLabels = [...annotation.solarTerms, ...annotation.festivals];
   const isToday = props.date === todayKey();

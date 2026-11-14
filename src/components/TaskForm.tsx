@@ -7,7 +7,7 @@ import { getCalendarAnnotation } from "../data/calendarAnnotations";
 import { courseHomeworkTitle, defaultRollover, homeworkDateDefault, regularSchoolHomeworkTitle, schoolHomeworkTitle } from "../utils/taskMeta";
 import { loadCustomTaskCategories, saveCustomTaskCategories, type CustomTaskCategories } from "../data/appSettingsRepository";
 import type { Course, ExtraContentType, MainCategory, PlanPeriod, SchedulePattern, Task, TaskDisplay, TaskDraft, TaskStatus, TaskTimeType, WeeklyQuota } from "../types/task";
-import { fromDateKey, getWeekStartKey, todayKey, toDateKey } from "../utils/date";
+import { formatCompactDate, fromDateKey, getWeekStartKey, todayKey, toDateKey } from "../utils/date";
 import { isTravelPauseEnabled } from "../utils/travelPause";
 import { EXTRA_CONTENT_OPTIONS_SIMPLE, MAIN_CATEGORY_META, STATUS_META, SUB_CATEGORY_OPTIONS, TIME_TYPE_META, WEEKDAY_LABELS, courseOptionLabel, customSubCategoryValue, defaultSortOrder, interestContentType, isCourseTask, isCustomSubCategory, isOccurrenceSchedule, isValidSubCategory, subCategoryLabel } from "../utils/taskMeta";
 
@@ -81,7 +81,7 @@ function newDraft(date: string): TaskDraft {
 
 // R3：编辑入口可能传入 TaskDisplay（今日清单里的行），它的 status 已被覆盖成当天单日状态，
 // 且带着 occurrenceDate 等运行时展示字段——这些一律不得进入保存的草稿（数据层写入口还有一道兜底清洗）。
-const strip = (task: Task): TaskDraft => { const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, occurrenceDate: _od, occurrenceStatus: _os, overrideDate: _ovd, overrideNote: _ovn, rolledFromDate: _rf, ...draft } = task as Task & Partial<TaskDisplay>; return { ...draft, date: normalizeDate(draft.date), startDate: normalizeDate(draft.startDate), endDate: normalizeDate(draft.endDate), weekStart: normalizeDate(draft.weekStart), recurrence: draft.recurrence ? { ...draft.recurrence, startDate: normalizeDate(draft.recurrence.startDate)!, endDate: normalizeDate(draft.recurrence.endDate) } : undefined, specificDates: draft.specificDates?.map((date) => normalizeDate(date)!).filter(Boolean) }; };
+const strip = (task: Task): TaskDraft => { const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, occurrenceDate: _od, occurrenceStatus: _os, overrideDate: _ovd, overrideNote: _ovn, rolledFromDate: _rf, dayNotes: _dn, ...draft } = task as Task & Partial<TaskDisplay>; return { ...draft, date: normalizeDate(draft.date), startDate: normalizeDate(draft.startDate), endDate: normalizeDate(draft.endDate), weekStart: normalizeDate(draft.weekStart), recurrence: draft.recurrence ? { ...draft.recurrence, startDate: normalizeDate(draft.recurrence.startDate)!, endDate: normalizeDate(draft.recurrence.endDate) } : undefined, specificDates: draft.specificDates?.map((date) => normalizeDate(date)!).filter(Boolean) }; };
 
 export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onContinue, carry, justAdded = [] }: Props) {
   const [draft, setDraft] = useState<TaskDraft>(() => {
@@ -439,6 +439,9 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
         {showTimeInline && <div><p className={label}>上课时间</p><div className="mt-1.5">{timeFields}</div></div>}
       </section>
 
+      {/* 每天记下的"做了什么"（今日页标题后的小本子写的），这里只回看；表单保存不改动这些记录 */}
+      {task?.dayNotes && Object.keys(task.dayNotes).length > 0 && <DayNotesHistory notes={task.dayNotes} />}
+
       {/* ── 3. 更多设置（默认收起，摘要里能看到当前选择） ── */}
       <section className="border-t border-ink/10 pt-2">
         <button type="button" onClick={() => setShowMore((v) => !v)} aria-expanded={showMore} className="flex min-h-11 w-full items-center justify-between gap-3 text-left"><span className="min-w-0"><span className="block text-base font-bold text-ink">更多设置</span>{!showMore && <span className="block truncate text-[13px] text-muted">{moreSummary}</span>}</span><ChevronDown className={`h-4 w-4 shrink-0 text-muted transition-transform ${showMore ? "rotate-180" : ""}`} /></button>
@@ -500,3 +503,16 @@ function defaultTitle(main: MainCategory, sub: string, extraContentType?: ExtraC
   return "";
 }
 const normalizeDate = (value?: string) => value?.replaceAll("/", "-");
+
+function DayNotesHistory({ notes }: { notes: Record<string, string> }) {
+  const [showAll, setShowAll] = useState(false);
+  const entries = Object.entries(notes).sort(([a], [b]) => b.localeCompare(a));
+  const visible = showAll ? entries : entries.slice(0, 5);
+  return <section className="space-y-2 border-t border-ink/10 pt-5">
+    <h3 className="flex items-baseline gap-2 text-base font-bold text-ink">完成记录<span className="text-[13px] font-normal text-muted">共 {entries.length} 天 · 在今日页标题后的小本子里写</span></h3>
+    <ul className="divide-y divide-ink/[0.06] rounded-lg border border-ink/10 bg-white">
+      {visible.map(([date, text]) => <li key={date} className="flex gap-3 px-3 py-2 text-sm"><span className="w-20 shrink-0 tabular-nums text-muted">{formatCompactDate(date)}</span><span className="min-w-0 break-words text-ink">{text}</span></li>)}
+    </ul>
+    {entries.length > 5 && <button type="button" onClick={() => setShowAll((value) => !value)} className="min-h-9 text-[13px] font-medium text-primary">{showAll ? "收起" : `查看全部 ${entries.length} 天`}</button>}
+  </section>;
+}

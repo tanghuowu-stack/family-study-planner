@@ -275,8 +275,8 @@ export default function App() {
       if (!synced) { markUnsynced(setUnsyncedTasks, key); notifyFailure("⚠️ 记录未同步到云端，点击任务旁的标记可重试"); }
     } catch { refresh(); notifyFailure("⚠️ 记录保存失败，请重试"); }
   };
-  // 每周几次：记一次 / 撤销一次（记在查看的那天）；同步失败挂"未同步"标记，点它重试整条任务
-  const logWeeklyTime = async (task: TaskDisplay, delta: 1 | -1, date: string) => {
+  // 每周几次：某天的数量加减（点哪天的圆点就记哪天，补记以前的日子同样走这里）；同步失败挂"未同步"标记，点它重试整条任务
+  const logWeeklyTime = async (task: TaskDisplay, delta: number, date: string) => {
     const key = taskSyncKey(task);
     try {
       const synced = await repo().logWeeklyTime(task.id, date, delta, refresh);

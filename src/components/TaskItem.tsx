@@ -1,17 +1,17 @@
-import { CalendarPlus, CalendarX, Check, ChevronDown, Copy, MoreHorizontal, NotebookPen, Pencil, Trash2, TriangleAlert } from "lucide-react";
+import { CalendarPlus, CalendarX, Check, ChevronDown, Copy, Minus, MoreHorizontal, NotebookPen, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ChecklistItem, TaskDisplay, TaskStatus } from "../types/task";
-import { WEEKLY_LOG_DAY_MAX, type WeeklyTimesProgress } from "../utils/weeklyTimes";
+import { WEEKLY_LOG_DAY_MAX, isPerDayWeekly, type WeeklyTimesProgress } from "../utils/weeklyTimes";
 import { STATUS_META, canEndRecurring, canExtendRecurring, isOccurrenceSchedule, taskShortName } from "../utils/taskMeta";
-import { formatCompactDate } from "../utils/date";
+import { formatCompactDate, todayKey } from "../utils/date";
 
 interface Props {
   task: TaskDisplay;
   compact?: boolean;
   /** 今日页正在看的日期：在这一天之前就做完的小项收成一行"已完成 N 项" */
   viewDate?: string;
-  /** 每周几次（今日页右栏"每周练习"）：左侧显示本周进度环，标题下是一周七天的记录和"记一次" / 加减器 */
-  weekly?: { progress: WeeklyTimesProgress; canLog: boolean; isToday: boolean; onLog: (delta: 1 | -1) => void };
+  /** 每周几次（今日页右栏"每周练习"）：左侧显示本周进度环，标题下是一周七天的圆点（点哪天记哪天），目标 > 7 时旁边有加减 */
+  weekly?: { progress: WeeklyTimesProgress; onLog: (date: string, delta: number) => void };
   /** 小项默认收起成一行"还有 N 项"，点开再勾（今日页"本周作业"：一周的事不必每天摊开全部小项） */
   collapseChecklist?: boolean;
   /** 截止标签（今日页"本周作业"里的"周五截止"、截止日当天的"今天截止"）：today 红、soon（明天）琥珀、其余主色 */
@@ -236,7 +236,7 @@ export function TaskItem({ task, compact = false, viewDate, weekly, collapseChec
           {weekly && <span className={`shrink-0 text-[13px] font-semibold leading-6 tabular-nums ${weekly.progress.reached ? "text-primary" : "text-muted"}`}>{weekly.progress.done}/{weekly.progress.target} {weekly.progress.unit}</span>}
           {unsynced && <UnsyncedBadge onRetry={onRetrySync} />}
         </div>
-        {weekly && <WeeklyTimesBar weekly={weekly} viewDate={viewDate} />}
+        {weekly && <WeeklyTimesBar task={task} weekly={weekly} viewDate={viewDate} />}
 
         {task.note && !task.overrideNote && <div className="min-w-0 truncate text-[13px] text-muted">{task.note}</div>}
 
@@ -391,34 +391,52 @@ function formatTime(task: TaskDisplay) {
 
 const WEEKDAY_SHORT = ["一", "二", "三", "四", "五", "六", "日"];
 
-/** 每周几次：一周七天哪天做了（做了的填色，一天多次标数字，查看的那天加框）。
- *  这天还没记：一个"记一次"按钮；记过以后变成 − 今天 3 本 + 的加减器，一天做几本 / 几篇直接点到几（2026-11-17） */
-function WeeklyTimesBar({ weekly, viewDate }: { weekly: NonNullable<Props["weekly"]>; viewDate?: string }) {
-  const { progress, canLog, isToday, onLog } = weekly;
-  const dayWord = isToday ? "今天" : "这天";
-  const logLabel = isToday ? "记一次" : "补记一次";
-  const stepButton = "flex h-8 w-8 items-center justify-center text-base font-semibold text-primary hover:bg-primary/5 disabled:opacity-30 [@media(pointer:coarse)]:h-10 [@media(pointer:coarse)]:w-10";
+/** 每周几次：一周七天的圆点，点哪天就记哪天（以前的日子就是补记，今天之后、任务有效期外的点不了）。2026-11-17 用户反馈改：
+ *  - 每周目标 ≤ 7（钢琴 3 次、背诗 5 次）：一天算一次，点圆点 = 这天做了，再点取消。
+ *  - 每周目标 > 7（RAZ 10 本、FCE 语用 8 篇）：一天可以做好几份，做了的圆点上显示那天的数量；
+ *    点圆点选中那天（默认查看的那天），旁边 − 2 本 + 调这天的数量。 */
+function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly: NonNullable<Props["weekly"]>; viewDate?: string }) {
+  const { progress, onLog } = weekly;
+  const today = todayKey();
+  const loggable = (date: string) => date <= today && (!task.startDate || date >= task.startDate) && (!task.endDate || date <= task.endDate);
+  const perDay = isPerDayWeekly(progress.target);
+  const [picked, setPicked] = useState<string>();
+  const fallback = progress.days.find((day) => day.date === viewDate && loggable(day.date))?.date ?? [...progress.days].reverse().find((day) => loggable(day.date))?.date;
+  const selected = picked && progress.days.some((day) => day.date === picked) && loggable(picked) ? picked : fallback;
+  const selectedIndex = progress.days.findIndex((day) => day.date === selected);
+  const selectedCount = selectedIndex >= 0 ? progress.days[selectedIndex].count : 0;
+  const selectedWord = selected === today ? "今天" : `周${WEEKDAY_SHORT[selectedIndex]}`;
+  const stepButton = "flex h-7 w-7 items-center justify-center rounded-full border border-primary/30 text-primary hover:bg-primary/5 disabled:border-ink/10 disabled:text-stone-300 disabled:hover:bg-transparent [@media(pointer:coarse)]:h-9 [@media(pointer:coarse)]:w-9";
   return (
     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5">
       <ol className="flex items-center gap-1" aria-label="本周每天的记录">
-        {progress.days.map((day, index) => (
-          <li key={day.date} title={`周${WEEKDAY_SHORT[index]}${day.count ? ` 做了 ${day.count} ${progress.unit}` : ""}`}
-            className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums ${day.count ? "bg-primary text-white" : "bg-stone-100 text-stone-400"} ${day.date === viewDate ? "ring-2 ring-primary/35 ring-offset-1" : ""}`}>
-            {day.count > 1 ? day.count : WEEKDAY_SHORT[index]}
-          </li>
-        ))}
+        {progress.days.map((day, index) => {
+          const can = loggable(day.date);
+          const isSelected = !perDay && day.date === selected;
+          const ring = isSelected ? "ring-2 ring-primary ring-offset-1" : day.date === viewDate ? "ring-2 ring-primary/35 ring-offset-1" : "";
+          const tone = day.count ? "bg-primary text-white hover:bg-primary/85" : can ? "bg-stone-100 text-stone-500 hover:bg-primary/10 hover:text-primary" : "bg-stone-50 text-stone-300";
+          const name = `周${WEEKDAY_SHORT[index]}`;
+          const label = perDay
+            ? `${name}${day.count ? "做了，点一下取消" : "没做，点一下记上"}`
+            : `${name}做了 ${day.count} ${progress.unit}，点一下用加减调整`;
+          return (
+            <li key={day.date}>
+              <button type="button" disabled={!can} aria-label={can ? label : `${name}${day.count ? ` 做了 ${day.count} ${progress.unit}` : ""}`} aria-pressed={perDay ? day.count > 0 : isSelected}
+                title={`${name}${day.count ? ` 做了 ${day.count} ${progress.unit}` : ""}`}
+                onClick={() => perDay ? onLog(day.date, day.count > 0 ? -day.count : 1) : setPicked(day.date)}
+                className={`flex h-7 w-7 items-center justify-center rounded-full text-[12px] font-semibold tabular-nums transition-colors disabled:cursor-default [@media(pointer:coarse)]:h-8 [@media(pointer:coarse)]:w-8 ${tone} ${ring}`}>
+                {/* 做了的：按天记显示 ✓（"一"在实心圆上像减号），按数量记显示那天的数量 */}
+                {day.count > 0 ? (perDay ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : day.count) : WEEKDAY_SHORT[index]}
+              </button>
+            </li>
+          );
+        })}
       </ol>
-      {canLog && progress.dayCount === 0 && (
-        <button type="button" onClick={() => onLog(1)} aria-label={`${dayWord}做了一${progress.unit}`}
-          className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-primary/40 bg-white px-2.5 text-[13px] font-semibold text-primary hover:bg-primary/5 [@media(pointer:coarse)]:min-h-10">
-          <Check className="h-3.5 w-3.5" strokeWidth={3} />{logLabel}
-        </button>
-      )}
-      {canLog && progress.dayCount > 0 && (
-        <span role="group" aria-label={`${dayWord}做了几${progress.unit}`} className="inline-flex items-center overflow-hidden rounded-lg border border-primary/40 bg-white">
-          <button type="button" onClick={() => onLog(-1)} aria-label={`${dayWord}少记一${progress.unit}`} className={stepButton}>−</button>
-          <span aria-live="polite" className="min-w-[4.5rem] px-1 text-center text-[13px] font-semibold tabular-nums text-ink">{dayWord} {progress.dayCount} {progress.unit}</span>
-          <button type="button" onClick={() => onLog(1)} disabled={progress.dayCount >= WEEKLY_LOG_DAY_MAX} aria-label={`${dayWord}多记一${progress.unit}`} className={stepButton}>+</button>
+      {!perDay && selected && (
+        <span role="group" aria-label={`${selectedWord}做了几${progress.unit}`} className="inline-flex items-center gap-1.5">
+          <button type="button" onClick={() => onLog(selected, -1)} disabled={selectedCount === 0} aria-label={`${selectedWord}少记一${progress.unit}`} className={stepButton}><Minus className="h-3.5 w-3.5" strokeWidth={2.5} /></button>
+          <span aria-live="polite" className="min-w-[3.25rem] text-center text-[13px] font-semibold tabular-nums text-ink">{selected !== today && <span className="mr-1 font-medium text-muted">{selectedWord}</span>}{selectedCount} {progress.unit}</span>
+          <button type="button" onClick={() => onLog(selected, 1)} disabled={selectedCount >= WEEKLY_LOG_DAY_MAX} aria-label={`${selectedWord}多记一${progress.unit}`} className={stepButton}><Plus className="h-3.5 w-3.5" strokeWidth={2.5} /></button>
         </span>
       )}
     </div>

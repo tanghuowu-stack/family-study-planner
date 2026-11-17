@@ -827,15 +827,18 @@ export const taskRepository = {
     return { ...task, ...changes };
   },
 
-  /** 每周几次：某天记一次（delta=1）或撤销一次（delta=-1）。不能记到今天之后；返回写入后的任务，没变化时返回 undefined */
+  /** 每周几次：某天的数量加减 delta（记一次 +1、减一份 -1、取消那天 -那天数量）。不能记到今天之后；返回写入后的任务，没变化时返回 undefined。
+   *  读改写放在一个事务里：连点加号时几次写入排队执行，不会互相覆盖少记 */
   async writeWeeklyLog(taskId: string, date: string, delta: number): Promise<Task | undefined> {
-    const task = await db.tasks.get(taskId);
-    if (!task || !isWeeklyTimes(task) || date > todayKey()) return undefined;
-    const weeklyLog = applyWeeklyLog(task.weeklyLog, date, delta);
-    if ((weeklyLog?.[date] ?? 0) === (task.weeklyLog?.[date] ?? 0)) return undefined;
-    const changes = { weeklyLog, updatedAt: new Date().toISOString() };
-    await db.tasks.update(taskId, changes);
-    return { ...task, ...changes };
+    return db.transaction("rw", db.tasks, async () => {
+      const task = await db.tasks.get(taskId);
+      if (!task || !isWeeklyTimes(task) || date > todayKey()) return undefined;
+      const weeklyLog = applyWeeklyLog(task.weeklyLog, date, delta);
+      if ((weeklyLog?.[date] ?? 0) === (task.weeklyLog?.[date] ?? 0)) return undefined;
+      const changes = { weeklyLog, updatedAt: new Date().toISOString() };
+      await db.tasks.update(taskId, changes);
+      return { ...task, ...changes };
+    });
   },
 
   async logWeeklyTime(taskId: string, date: string, delta: number, onLocalWrite?: () => void): Promise<boolean> {

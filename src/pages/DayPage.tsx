@@ -32,7 +32,7 @@ interface Props {
   onDelete: (task: TaskDisplay) => void; onEnd: (task: TaskDisplay) => void; onExtend: (task: TaskDisplay) => void; onOccurrenceCancel: (task: TaskDisplay) => void;
   onOccurrencePostpone: (task: TaskDisplay) => void; onChecklistToggle: (task: TaskDisplay, itemId: string, asOfDate?: string) => void | Promise<void>;
   onDayNoteSave: (task: TaskDisplay, text: string, date: string) => void | Promise<void>;
-  onWeeklyLog: (task: TaskDisplay, delta: 1 | -1, date: string) => void | Promise<void>;
+  onWeeklyLog: (task: TaskDisplay, delta: number, date: string) => void | Promise<void>;
   onCopy: (task: TaskDisplay) => void; onOpenMonth: () => void;
   onAddTask: () => void;
   memo: string; onMemoFocus: () => void; onMemoChange: (value: string) => void; onMemoBlur: () => void; onMemoComplete: () => void;
@@ -135,13 +135,12 @@ export function DayPage(props: Props) {
   const isToday = props.date === todayKey();
   const [dateLabel, weekdayLabel] = formatFullDate(props.date).split(" ");
   const navButton = "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-ink/15 bg-white text-muted shadow-sm hover:border-primary/30 hover:text-primary sm:h-10 sm:w-10";
-  const canLogWeekly = props.date <= todayKey();
   const renderTask = (task: TaskDisplay, dragHandle?: ReactNode) => <TaskItem
     key={dayTaskKey(task)}
     dragHandle={dragHandle}
     dueLabel={dueLabelFor(task)}
     collapseChecklist={isWeekPlanTask(task, props.date)}
-    weekly={task.timeType === "weeklyTimes" ? { progress: weeklyTimesProgress(task, props.date), canLog: canLogWeekly, isToday, onLog: (delta) => props.onWeeklyLog(task, delta, props.date) } : undefined}
+    weekly={task.timeType === "weeklyTimes" ? { progress: weeklyTimesProgress(task, props.date), onLog: (date, delta) => props.onWeeklyLog(task, delta, date) } : undefined}
     task={task}
     unsynced={props.unsyncedTasks?.has(taskSyncKey(task))}
     unsyncedItemIds={props.unsyncedItems && task.checklistItems ? new Set(task.checklistItems.filter((item) => props.unsyncedItems!.has(itemSyncKey(task.id, item.id))).map((item) => item.id)) : undefined}

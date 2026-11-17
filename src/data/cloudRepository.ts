@@ -626,6 +626,19 @@ export const cloudRepository = {
     return { task, synced };
   },
 
+  /** 重复任务改成每周几次：本地停掉原任务、另建新任务（见 taskRepository），再把两条都上传 */
+  async convertToWeeklyTimes(id: string, draft: TaskDraft, today?: string): Promise<TaskWriteResult & { ended?: Task }> {
+    const result = await taskRepository.convertToWeeklyTimes(id, draft, today);
+    let synced = true;
+    if (_familyId) {
+      for (const task of [result.ended, result.task]) {
+        if (!task) continue;
+        await upsertTask(task, _familyId).catch((e) => { notifySyncError("任务云端同步失败", e); synced = false; });
+      }
+    }
+    return { ...result, synced };
+  },
+
   async endRecurring(id: string, today?: string): Promise<TaskWriteResult> {
     const { task } = await taskRepository.endRecurring(id, today);
     let synced = true;

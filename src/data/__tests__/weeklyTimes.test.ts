@@ -201,3 +201,57 @@ describe("第 3 步：本周条与打卡", () => {
     expect(cals[0].days.find((d) => d.date === "2026-11-17")!.status).toBe("off");
   });
 });
+
+describe("把已有的重复任务改成每周几次", () => {
+  const OLD = "2026-01-01T00:00:00.000Z";
+  const daily = (overrides: Partial<Task> = {}) => ({
+    id: "daily-read", title: "课外读书", mainCategory: "extraHomework", subCategory: "chinese", extraContentType: "homework", timeType: "recurring", schedulePattern: "dailyRecurring",
+    recurrence: { frequency: "daily", startDate: "2026-11-01" }, status: "todo", rolloverMode: "skipIfMissed", allowRollover: false, childVisible: true,
+    enableStreak: true, streakStartDate: "2026-11-01", createdAt: OLD, updatedAt: OLD, ...overrides,
+  } as Task);
+  const asWeekly = (task: Task): TaskDraft => ({ ...task, id: undefined, createdAt: undefined, updatedAt: undefined, timeType: "weeklyTimes", schedulePattern: "singleDate", recurrence: undefined, startDate: "2026-11-01",
+    weeklyQuota: { enabled: true, targetCount: 2, unit: "本", isWeeklyRecurring: true, allowAutoDistribute: false, allowRollover: false } } as unknown as TaskDraft);
+  const occ = (date: string) => ({ id: `daily-read:${date}`, taskId: "daily-read", occurrenceDate: date, status: "done" as const, completedAt: `${date}T12:00:00.000Z`, createdAt: OLD, updatedAt: OLD });
+
+  it("12. 有历史的：原任务排期截到昨天、历史照旧；另建每周几次从今天开始，接上打卡；今天勾过的算今天一次", async () => {
+    await db.tasks.add(daily());
+    await db.taskOccurrenceStatuses.bulkAdd([occ("2026-11-17"), occ(TODAY)]);
+    const before = await getHabitCalendars("2026-11", TODAY);
+    expect(before[0].days.find((d) => d.date === "2026-11-17")!.status).toBe("done");
+
+    const { task, ended } = await taskRepository.convertToWeeklyTimes("daily-read", asWeekly(daily()), TODAY);
+    expect(ended!.id).toBe("daily-read");
+    expect(ended!.recurrence!.endDate).toBe("2026-11-18");
+    expect(ended!.timeType).toBe("recurring");
+    expect(task.id).not.toBe("daily-read");
+    expect(task).toMatchObject({ timeType: "weeklyTimes", startDate: TODAY, weeklyLog: { [TODAY]: 1 }, habitKey: "daily-read", enableStreak: true, streakStartDate: TODAY });
+    // 今日页往回翻：17 号原任务照旧在、显示已完成；今天原任务不再出现，新任务在本周计划
+    const on17 = (await taskRepository.getTasksForDate("2026-11-17")).find((t) => t.id === "daily-read");
+    expect(on17?.status).toBe("done");
+    expect((await taskRepository.getTasksForDate(TODAY)).map((t) => t.id)).not.toContain("daily-read");
+    expect((await taskRepository.getWeeklyTimes(TODAY)).map((t) => t.id)).toEqual([task.id]);
+    // 打卡：还是一行，17 号、今天都算完成
+    const after = await getHabitCalendars("2026-11", TODAY);
+    expect(after).toHaveLength(1);
+    expect(after[0].days.find((d) => d.date === "2026-11-17")!.status).toBe("done");
+    expect(after[0].days.find((d) => d.date === TODAY)!.status).toBe("done");
+  });
+
+  it("13. 还没开始过的（起点在今天以后、没有记录）：直接原地改，不另建", async () => {
+    await db.tasks.add(daily({ recurrence: { frequency: "daily", startDate: "2026-11-20" }, enableStreak: undefined, streakStartDate: undefined }));
+    const { task, ended } = await taskRepository.convertToWeeklyTimes("daily-read", asWeekly(daily()), TODAY);
+    expect(ended).toBeUndefined();
+    expect(task.id).toBe("daily-read");
+    expect(task.timeType).toBe("weeklyTimes");
+    expect(await db.tasks.count()).toBe(1);
+  });
+
+  it("14. 云端模式：停掉的原任务和新任务都上传", async () => {
+    cloudRepository.setFamilyId("fam");
+    await db.tasks.add(daily());
+    await db.taskOccurrenceStatuses.add(occ("2026-11-17"));
+    const { task, synced } = await cloudRepository.convertToWeeklyTimes("daily-read", asWeekly(daily()), TODAY);
+    expect(synced).toBe(true);
+    expect((captured.upserts.tasks ?? []).map((row) => [row.id, row.time_type])).toEqual([["daily-read", "recurring"], [task.id, "weeklyTimes"]]);
+  });
+});

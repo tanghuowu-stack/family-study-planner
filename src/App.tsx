@@ -225,11 +225,16 @@ export default function App() {
     const conflicts = force ? [] : await repo().findTimeConflicts(draft, form.task?.id);
     if (conflicts.length) throw new Error(`TIME_CONFLICT:${conflicts[0].title}`);
     const isEdit = !!form.task;
-    const { task, synced } = isEdit ? await repo().update(form.task!.id, draft) : await repo().create(draft);
+    // 重复任务改成每周几次：原任务今天起停、另建一条接上（历史和打卡都保留，见 convertToWeeklyTimes）
+    const converting = isEdit && isOccurrenceSchedule(form.task!) && draft.timeType === "weeklyTimes";
+    const result = converting ? await repo().convertToWeeklyTimes(form.task!.id, draft)
+      : isEdit ? await repo().update(form.task!.id, draft) : await repo().create(draft);
+    const { task, synced } = result;
+    const ended = "ended" in result && !!result.ended;
     refresh();
     // 本地写入必成功，云端同步据实反馈：失败则挂黄标（复用打钩失败的重试入口），不再误报"已添加"
     const key = taskSyncKey(task);
-    if (synced) { clearUnsynced(setUnsyncedTasks, key); notify(isEdit ? "任务已更新" : "任务已添加"); }
+    if (synced) { clearUnsynced(setUnsyncedTasks, key); notify(ended ? "已改成每周几次，原来的记录都保留" : isEdit ? "任务已更新" : "任务已添加"); }
     else { markUnsynced(setUnsyncedTasks, key); notifyFailure("⚠️ 已保存到本地，未同步云端，点任务旁的标记可重试"); }
   };
   // 过去日补勾：非重复任务记为查看日完成，提示用户记到了哪天（重复类的完成本来就记在它自己那天，不提示）

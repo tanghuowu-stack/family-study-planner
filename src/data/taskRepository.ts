@@ -548,6 +548,45 @@ export const taskRepository = {
     return this.update(id, { recurrence: { ...task.recurrence, endDate: yesterday } });
   },
 
+  /**
+   * 把重复任务改成每周几次（2026-11-17）。不在原任务上改类型：原任务的排期和单日完成记录是今日页历史、
+   * 打卡月历的依据，原地改成 weeklyTimes 后这些都读不到了（数据还在，但今日页往回翻和打卡历史都没了）。
+   * 做法：原任务今天起不再安排（排期截到昨天，历史全部保留）；另建一条每周几次从今天开始——
+   * 原任务打过卡的，新任务接上同一个打卡项目（habitKey）；今天已经勾过的那一次记进新任务今天的次数。
+   * 原任务还没开始过（起点在今天及以后、也没有任何单日记录）时直接原地改。
+   * 返回新的（或原地改好的）任务，ended 是被停掉的原任务。
+   */
+  async convertToWeeklyTimes(id: string, draft: TaskDraft, today: string = todayKey()): Promise<TaskWriteResult & { ended?: Task }> {
+    const old = await db.tasks.get(id);
+    if (!old || !isOccurrenceSchedule(old) || draft.timeType !== "weeklyTimes") return this.update(id, draft);
+    const occurrences = await db.taskOccurrenceStatuses.where("taskId").equals(id).toArray();
+    const start = old.recurrence?.startDate ?? old.startDate ?? (old.specificDates?.length ? [...old.specificDates].sort()[0] : undefined);
+    if (!(start && start < today) && occurrences.length === 0) return this.update(id, draft);
+
+    const yesterday = toDateKey(addDays(parseISO(today), -1));
+    const cut = (date?: string) => (date && date < yesterday ? date : yesterday);
+    const endChanges: Partial<TaskDraft> = ["dailyRecurring", "weeklyRecurring"].includes(old.schedulePattern ?? "") && old.recurrence
+      ? { recurrence: { ...old.recurrence, endDate: cut(old.recurrence.endDate) } }
+      : old.schedulePattern === "specificDates"
+        ? { specificDates: (old.specificDates ?? []).filter((date) => date <= yesterday) }
+        : { endDate: cut(old.endDate) };
+    const { task: ended } = await this.update(id, endChanges);
+
+    const doneToday = occurrences.some((o) => o.occurrenceDate === today && o.status === "done");
+    const tracked = old.enableStreak === true || !!old.streakStartDate;
+    const { task } = await this.create({
+      ...draft,
+      recurrence: undefined, schedulePattern: "singleDate", specificDates: undefined, rangeWeekdays: undefined, date: undefined,
+      startDate: draft.startDate && draft.startDate > today ? draft.startDate : today,
+      weeklyLog: doneToday ? { [today]: 1 } : undefined,
+      habitKey: tracked ? old.habitKey ?? old.id : undefined,
+      enableStreak: old.enableStreak === true ? true : undefined,
+      streakStartDate: old.enableStreak === true ? today : undefined,
+      status: "todo", completedAt: undefined,
+    });
+    return { task, ended, synced: true };
+  },
+
   // 「延长周期」：只改 recurrence.endDate（连带镜像的 task.endDate），任务本体、
   // streakStartDate、历史 occurrence 完全不动，排期自然延续——不创建任何新任务，
   // 从根上替代"到期后手动新建同名任务续期"这种会产生打卡孤儿数据的做法。

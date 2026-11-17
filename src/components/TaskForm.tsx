@@ -330,7 +330,9 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
     ...current, timeType,
     schedulePattern: timeType === "recurring" ? current.schedulePattern === "singleDate" ? "weeklyRecurring" : current.schedulePattern : "singleDate",
     date: timeType === "singleDate" ? current.date ?? initialDate : undefined,
-    startDate: ["dateRange", "recurring", "weeklyTimes"].includes(timeType) ? current.startDate ?? initialDate : undefined,
+    // 已有的重复任务改成每周几次：从今天开始（以前的日子留在原任务里，见 convertToWeeklyTimes）
+    startDate: timeType === "weeklyTimes" && task && isOccurrenceSchedule(task) ? todayKey()
+      : ["dateRange", "recurring", "weeklyTimes"].includes(timeType) ? current.startDate ?? initialDate : undefined,
     // 每周几次默认不设结束日（长期做），需要时再填
     endDate: ["dateRange", "recurring"].includes(timeType) ? current.endDate ?? initialDate : undefined,
     weeklyQuota: timeType === "weeklyTimes" ? current.weeklyQuota ?? WEEKLY_TIMES_DEFAULT : current.mainCategory === "readingPlan" ? current.weeklyQuota : undefined,
@@ -440,6 +442,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
         <h3 className={sectionTitle}>哪天做</h3>
         {!reading && ["singleDate", "dateRange", "weeklyTimes", "recurring"].includes(draft.timeType) && <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">{(["singleDate", "dateRange", "weeklyTimes", "recurring"] as TaskTimeType[]).map((value) => <button key={value} type="button" onClick={() => changeTimeType(value)} className={segment(draft.timeType === value)}>{value === "singleDate" ? "某一天" : value === "dateRange" ? "几天内做完" : value === "weeklyTimes" ? "每周几次" : "重复"}</button>)}</div>}
         {draft.timeType === "weeklyTimes" && <WeeklyTimesFields draft={draft} set={set} input={input} label={label} chip={chip} />}
+        {task && isOccurrenceSchedule(task) && draft.timeType === "weeklyTimes" && <p className="rounded-lg bg-sun/20 px-3 py-2 text-[13px] leading-5 text-ink">保存后：原来的“重复”今天起不再安排，以前每天的完成记录{task.enableStreak || task.streakStartDate ? "和打卡" : ""}都保留；从今天起按每周几次{task.enableStreak ? "，打卡接着算在同一行" : ""}。今天已经勾过的算作今天做了一次。</p>}
 
         {draft.timeType === "singleDate" && <DayPicker value={draft.date} onChange={(value) => set("date", value)} chip={chip} input={input} />}
         {draft.timeType === "dateRange" && <><DateRange draft={draft} set={set} input={input} label={label} /><p className="text-[13px] text-muted">这几天里做完一次就行，每天都显示到做完为止。每天都要做的事请选“重复”。</p></>}

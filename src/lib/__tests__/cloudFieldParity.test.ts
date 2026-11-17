@@ -57,6 +57,7 @@ function fullTask(): Task {
     pauseDuringTravel: false,
     habitKey: "habit-project-1",
     dayNotes: { "2026-07-18": "语用2篇", "2026-07-19": "听力 Part 1" },
+    weeklyLog: { "2026-07-14": 1, "2026-07-16": 2 },
     streakStartDate: "2026-07-02",
     completedAt: "2026-07-19T10:00:00.000Z",
     deletedAt: "2026-07-19T11:00:00.000Z",
@@ -83,7 +84,7 @@ const FIELD_PAIRS: [keyof Task, unknown][] = (() => {
     ["important", t.important], ["calendarVisibility", t.calendarVisibility], ["parentTaskId", t.parentTaskId],
     ["sessionIndex", t.sessionIndex], ["allocationWeekStart", t.allocationWeekStart],
     ["enableStreak", t.enableStreak], ["streakStartDate", t.streakStartDate], ["pauseDuringTravel", t.pauseDuringTravel],
-    ["habitKey", t.habitKey], ["dayNotes", t.dayNotes],
+    ["habitKey", t.habitKey], ["dayNotes", t.dayNotes], ["weeklyLog", t.weeklyLog],
     ["completedAt", t.completedAt], ["deletedAt", t.deletedAt], ["deletedByDevice", t.deletedByDevice],
     ["deletedByActor", t.deletedByActor], ["createdAt", t.createdAt], ["updatedAt", t.updatedAt],
   ];

@@ -1,14 +1,14 @@
 import { addDays } from "date-fns";
 import { db } from "../data/db";
 import type { Task } from "../types/task";
-import { fromDateKey, todayKey, toDateKey } from "../utils/date";
+import { fromDateKey, getWeekStartKey, todayKey, toDateKey } from "../utils/date";
 
 const day = (offset: number) => toDateKey(addDays(fromDateKey(todayKey()), offset));
 
 export async function seedPreviewData() {
   try {
     // 2026-11-17 起示例里有"本周计划"（几天内做完的作业）；旧浏览器里缺这几条时整体重灌一次
-    if (await db.tasks.get("preview-week-dazeng")) return;
+    if (await db.tasks.get("preview-times-piano")) return;
 
     const today = todayKey();
     const now = new Date().toISOString();
@@ -211,6 +211,24 @@ export async function seedPreviewData() {
         endDate: day(0),
         sortOrder: 50,
       },
+      // 每周几次：一周内做够就行，不排到哪一天
+      ...([
+        { id: "preview-times-piano", title: "钢琴练习", mainCategory: "interestClass", subCategory: "pianoPractice", targetCount: 3, unit: "次", log: { [getWeekStartKey(today)]: 1 } },
+        { id: "preview-times-books", title: "课外读书", mainCategory: "extraHomework", subCategory: "chinese", targetCount: 2, unit: "本", log: {} },
+        { id: "preview-times-essay", title: "写一篇作文", mainCategory: "extraHomework", subCategory: "chinese", targetCount: 1, unit: "篇", log: { [getWeekStartKey(today)]: 1 } },
+      ] as const).map((item, index): Task => ({
+        ...base,
+        id: item.id,
+        title: item.title,
+        mainCategory: item.mainCategory,
+        subCategory: item.subCategory,
+        extraContentType: item.mainCategory === "extraHomework" ? "homework" : undefined,
+        timeType: "weeklyTimes",
+        startDate: day(-14),
+        weeklyQuota: { enabled: true, targetCount: item.targetCount, unit: item.unit, isWeeklyRecurring: true, allowAutoDistribute: false, allowRollover: false },
+        weeklyLog: Object.keys(item.log).length ? item.log : undefined,
+        sortOrder: 60 + index,
+      })),
     ];
 
     await db.tasks.bulkPut(tasks);

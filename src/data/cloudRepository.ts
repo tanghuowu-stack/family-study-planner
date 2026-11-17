@@ -185,6 +185,7 @@ function buildMetadata(task: Task): Record<string, unknown> | null {
   if (task.pauseDuringTravel !== undefined) meta.pauseDuringTravel = task.pauseDuringTravel;
   if (task.habitKey !== undefined) meta.habitKey = task.habitKey;
   if (task.dayNotes !== undefined && Object.keys(task.dayNotes).length > 0) meta.dayNotes = task.dayNotes;
+  if (task.weeklyLog !== undefined && Object.keys(task.weeklyLog).length > 0) meta.weeklyLog = task.weeklyLog;
   return Object.keys(meta).length > 0 ? meta : null;
 }
 
@@ -774,6 +775,23 @@ export const cloudRepository = {
     const synced = await enqueueCompletionSync(task.id, completionGuardKeys(task.id, task.occurrenceDate, parentId), () =>
       pushCompletionToCloud(familyId, task.id, task.occurrenceDate, parentId));
     return { parentId, synced };
+  },
+
+  /** 每周几次记一次/撤销一次：先写本机（onLocalWrite 后界面刷新），再排进该任务的上传队列；返回是否已同步到云端 */
+  async logWeeklyTime(taskId: string, date: string, delta: number, onLocalWrite?: () => void): Promise<boolean> {
+    const after = await taskRepository.writeWeeklyLog(taskId, date, delta);
+    onLocalWrite?.();
+    if (!_familyId || !after) return true;
+    const familyId = _familyId;
+    return enqueueCompletionSync(taskId, [taskId], async () => {
+      const latest = await db.tasks.get(taskId);
+      if (!latest) return true;
+      return withRetry(() => upsertTask(latest, familyId)).then(() => true, (e) => { notifySyncError("每周记录云端同步失败", e); return false; });
+    });
+  },
+
+  async getWeeklyTimes(date: string) {
+    return taskRepository.getWeeklyTimes(date);
   },
 
   /** 写某一天的记录：先写本机（onLocalWrite 后界面刷新），再排进该任务的上传队列；返回是否已同步到云端 */

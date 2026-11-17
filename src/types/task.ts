@@ -12,7 +12,12 @@ export type ReadingPlanType = "chineseReading" | "englishReading";
 export type TemporaryType = "examCompetition" | "travel" | "leisure" | "other";
 export type SubCategory = SchoolHomeworkType | ExtraHomeworkType | InterestClassType | ReadingPlanType | TemporaryType;
 
-export type TaskTimeType = "singleDate" | "dateRange" | "weekGoal" | "monthGoal" | "assignmentWindow" | "recurring";
+/**
+ * weeklyTimes（2026-11-17）：每周几次——一周内（周一到周日）做够 weeklyQuota.targetCount 次就行，不排到哪一天。
+ * 每次做了记在 weeklyLog；本体 status 只有 todo / cancelled（同重复类，完成情况按周看记录）。
+ * weekGoal 是 7 月取消的旧"周任务池"，不再新建，旧数据不显示。
+ */
+export type TaskTimeType = "singleDate" | "dateRange" | "weekGoal" | "monthGoal" | "assignmentWindow" | "recurring" | "weeklyTimes";
 export type RolloverMode = "autoNextDay" | "keepOverdue" | "skipIfMissed";
 export type PlanPeriodType = "regular" | "holiday" | "custom";
 export type ApplicablePeriodType = "all" | "regular" | "holiday";
@@ -156,6 +161,8 @@ export interface Task {
    * 按查看的那天存；空文本即删除该天。存 metadata jsonb，不加列
    */
   dayNotes?: Record<string, string>;
+  /** 每周几次的记录（2026-11-17）：{ "YYYY-MM-DD": 那天做了几次 }，0 次不存。存 metadata jsonb，不加列 */
+  weeklyLog?: Record<string, number>;
   checklistItems?: ChecklistItem[];
   completedAt?: string;
   deletedAt?: string;

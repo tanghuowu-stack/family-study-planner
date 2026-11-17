@@ -126,7 +126,8 @@ const HABIT_GROUPS: Record<string, { groupKey: string; label: string }> = {
 export const habitProjectKey = (task: Pick<Task, "id" | "subCategory" | "habitKey">): string =>
   HABIT_GROUPS[task.subCategory]?.groupKey ?? task.habitKey ?? task.id;
 /** 能计入某个打卡项目的任务：固定分组不限排期类型（每次单独建的钢琴课），其余只认重复类 */
-const isHabitMember = (task: Task) => !!HABIT_GROUPS[task.subCategory] || isOccurrenceSchedule(task);
+// 每周几次（weeklyTimes）暂不进打卡（没有固定的应做日，口径在第 3 步再定）
+const isHabitMember = (task: Task) => task.timeType !== "weeklyTimes" && (!!HABIT_GROUPS[task.subCategory] || isOccurrenceSchedule(task));
 /** 项目显示名：固定分组用分组名，其余用最近那个任务的名字 */
 const latestFirst = (a: Task, b: Task) => (b.recurrence?.startDate ?? b.startDate ?? b.createdAt).localeCompare(a.recurrence?.startDate ?? a.startDate ?? a.createdAt);
 const projectTitle = (members: Task[]) => HABIT_GROUPS[members[0].subCategory]?.label ?? taskShortName([...members].sort(latestFirst)[0]);

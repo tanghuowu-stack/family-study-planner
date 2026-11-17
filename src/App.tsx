@@ -265,6 +265,15 @@ export default function App() {
       if (!synced) { markUnsynced(setUnsyncedTasks, key); notifyFailure("⚠️ 记录未同步到云端，点击任务旁的标记可重试"); }
     } catch { refresh(); notifyFailure("⚠️ 记录保存失败，请重试"); }
   };
+  // 每周几次：记一次 / 撤销一次（记在查看的那天）；同步失败挂"未同步"标记，点它重试整条任务
+  const logWeeklyTime = async (task: TaskDisplay, delta: 1 | -1, date: string) => {
+    const key = taskSyncKey(task);
+    try {
+      const synced = await repo().logWeeklyTime(task.id, date, delta, refresh);
+      if (synced) clearUnsynced(setUnsyncedTasks, key);
+      else { markUnsynced(setUnsyncedTasks, key); notifyFailure("⚠️ 未同步到云端，点击任务旁的标记可重试"); }
+    } catch { refresh(); notifyFailure("⚠️ 记录保存失败，请重试"); }
+  };
   const retryTaskSync = async (task: TaskDisplay) => {
     const key = taskSyncKey(task);
     const synced = await repo().resyncTask(task.id, task.occurrenceDate);
@@ -317,7 +326,7 @@ export default function App() {
     });
   };
   const openDay = (date: string) => { setSelectedDate(date); setPage("today"); window.scrollTo({ top: 0, behavior: "smooth" }); };
-  const actions = { onStatusChange: changeStatus, onChecklistToggle: toggleChecklist, onDayNoteSave: saveDayNote, onCopy: copyTask, onEdit: editTask, onDelete: deleteTask, onEnd: endTask, onExtend: extendTask, onOccurrenceCancel: cancelOccurrence, onOccurrencePostpone: postponeOccurrence, unsyncedTasks, unsyncedItems, onRetrySync: retryTaskSync, onRetryItemSync: retryItemSync };
+  const actions = { onStatusChange: changeStatus, onChecklistToggle: toggleChecklist, onDayNoteSave: saveDayNote, onWeeklyLog: logWeeklyTime, onCopy: copyTask, onEdit: editTask, onDelete: deleteTask, onEnd: endTask, onExtend: extendTask, onOccurrenceCancel: cancelOccurrence, onOccurrencePostpone: postponeOccurrence, unsyncedTasks, unsyncedItems, onRetrySync: retryTaskSync, onRetryItemSync: retryItemSync };
   return <div className="min-h-screen bg-paper text-ink">
     <aside className="fixed inset-y-0 left-0 z-50 hidden w-56 flex-col overflow-y-auto bg-ink px-3 py-5 text-white lg:flex">
       <button onClick={() => setPage("today")} className="flex items-center gap-3 px-2 text-left">

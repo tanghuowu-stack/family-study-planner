@@ -1,6 +1,7 @@
 import { CalendarPlus, CalendarX, Check, ChevronDown, Copy, MoreHorizontal, NotebookPen, Pencil, Trash2, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ChecklistItem, TaskDisplay, TaskStatus } from "../types/task";
+import type { WeeklyTimesProgress } from "../utils/weeklyTimes";
 import { STATUS_META, canEndRecurring, canExtendRecurring, isOccurrenceSchedule, taskShortName } from "../utils/taskMeta";
 import { formatCompactDate } from "../utils/date";
 
@@ -9,6 +10,8 @@ interface Props {
   compact?: boolean;
   /** 今日页正在看的日期：在这一天之前就做完的小项收成一行"已完成 N 项" */
   viewDate?: string;
+  /** 每周几次（今日页本周计划）：左侧显示本周进度环，标题下是一周七天的记录和"做了一次"按钮 */
+  weekly?: { progress: WeeklyTimesProgress; canLog: boolean; isToday: boolean; onLog: (delta: 1 | -1) => void };
   /** 截止说明（今日页"本周计划"里的"周五截止"、截止日当天的"今天截止"），urgent 时用醒目色 */
   dueLabel?: { text: string; urgent?: boolean };
   /** 拖拽手柄（今日页可排序的任务才有），放在"…"左边，不挤占勾选框的位置 */
@@ -66,12 +69,12 @@ function checkboxClass(animState: AnimState, checked: boolean, size: "md" | "sm"
  * 小项全部勾完后数据层自动把任务记为完成（recomputeStatusFromChecklist），
  * 避免孩子点偏到主框把所有小项一次性标完成。
  */
-function ChecklistRing({ completed, total, done }: { completed: number; total: number; done: boolean }) {
+function ChecklistRing({ completed, total, done, label }: { completed: number; total: number; done: boolean; label?: string }) {
   const radius = 11;
   const circumference = 2 * Math.PI * radius;
   const ratio = done ? 1 : total === 0 ? 0 : completed / total;
   return (
-    <span role="img" aria-label={done ? "小项已全部完成" : `小项已完成 ${completed}/${total}`} title="勾完全部小项后自动完成" className="relative flex h-7 w-7 shrink-0 items-center justify-center">
+    <span role="img" aria-label={label ?? (done ? "小项已全部完成" : `小项已完成 ${completed}/${total}`)} title={label ?? "勾完全部小项后自动完成"} className="relative flex h-7 w-7 shrink-0 items-center justify-center">
       <svg viewBox="0 0 28 28" className="h-7 w-7 -rotate-90">
         <circle cx="14" cy="14" r={radius} strokeWidth="3" className={`stroke-stone-200 transition-all duration-300 ${done ? "fill-primary" : "fill-none"}`} />
         <circle cx="14" cy="14" r={radius} strokeWidth="3" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - ratio)} className="fill-none stroke-primary transition-all duration-300" />
@@ -81,7 +84,7 @@ function ChecklistRing({ completed, total, done }: { completed: number; total: n
   );
 }
 
-export function TaskItem({ task, compact = false, viewDate, dueLabel, dragHandle, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onExtend, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onDayNoteSave, onRetrySync, onRetryItemSync, onCopy }: Props) {
+export function TaskItem({ task, compact = false, viewDate, weekly, dueLabel, dragHandle, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onExtend, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onDayNoteSave, onRetrySync, onRetryItemSync, onCopy }: Props) {
   const [menu, setMenu] = useState(false);
   const [showEarlier, setShowEarlier] = useState(false);
   // 菜单离屏幕底部（含底部导航栏）太近时向上展开，避免被遮住
@@ -134,7 +137,7 @@ export function TaskItem({ task, compact = false, viewDate, dueLabel, dragHandle
   // 重复类任务的小项是跨天共用的一份，某天是否完成记在当天的单日状态上，必须保留整体勾选框；
   // 其余带小项的任务由小项驱动完成，左侧只显示进度环。
   const ringMode = hasChecklist && !isOccurrenceSchedule(task);
-  const done = ringMode && Object.keys(optimisticItems).length > 0 ? completedItems === displayItems.length : statusDone;
+  const done = weekly ? weekly.progress.reached : ringMode && Object.keys(optimisticItems).length > 0 ? completedItems === displayItems.length : statusDone;
 
   // 乐观覆盖的清除时机（2026-11）：
   // - 数据已经跟上（刷新后的值与乐观值一致）→ 清掉对应那一项；
@@ -199,7 +202,9 @@ export function TaskItem({ task, compact = false, viewDate, dueLabel, dragHandle
 
   return (
     <div className={`group relative flex items-start gap-2.5 border-b border-ink/[0.07] last:border-0 hover:bg-stone-50/70 ${compact ? "px-2.5 py-2.5 sm:px-3" : "px-4 py-3"} ${done || effectiveStatus === "cancelled" ? "text-stone-400" : "text-ink"}`}>
-      {ringMode ? (
+      {weekly ? (
+        <ChecklistRing completed={Math.min(weekly.progress.done, weekly.progress.target)} total={weekly.progress.target} done={weekly.progress.reached} label={`本周已做 ${weekly.progress.done}/${weekly.progress.target} ${weekly.progress.unit}`} />
+      ) : ringMode ? (
         <ChecklistRing completed={completedItems} total={displayItems.length} done={done} />
       ) : (
         // 视觉 28px，点击热区 44px（负外边距抵消，不改变行内排版）
@@ -222,8 +227,10 @@ export function TaskItem({ task, compact = false, viewDate, dueLabel, dragHandle
             )}
           </div>
           {hasChecklist && <span className="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-6 text-muted">{!ringMode && <span className="relative h-1 w-10 overflow-hidden rounded-full bg-stone-200"><span className="absolute inset-y-0 left-0 rounded-full bg-primary transition-all" style={{ width: `${(completedItems / displayItems.length) * 100}%` }} /></span>}<span className="tabular-nums">{completedItems}/{displayItems.length}</span></span>}
+          {weekly && <span className={`shrink-0 text-[13px] font-semibold leading-6 tabular-nums ${weekly.progress.reached ? "text-primary" : "text-muted"}`}>{weekly.progress.done}/{weekly.progress.target} {weekly.progress.unit}</span>}
           {unsynced && <UnsyncedBadge onRetry={onRetrySync} />}
         </div>
+        {weekly && <WeeklyTimesBar weekly={weekly} viewDate={viewDate} />}
 
         {dueLabel && !task.rolledFromDate && <div className={`text-[13px] ${dueLabel.urgent && !done ? "font-semibold text-amber-700" : "text-muted"}`}>{dueLabel.text}</div>}
         {task.note && !task.overrideNote && <div className="min-w-0 truncate text-[13px] text-muted">{task.note}</div>}
@@ -362,4 +369,38 @@ function formatTime(task: TaskDisplay) {
   const start = task.startTime ?? task.time;
   if (!start) return "";
   return `${start}${task.endTime ? `-${task.endTime}` : ""}`;
+}
+
+const WEEKDAY_SHORT = ["一", "二", "三", "四", "五", "六", "日"];
+
+/** 每周几次：一周七天哪天做了（做了的填色，一天多次标数字，查看的那天加框）+ "做了一次" / 撤销 */
+function WeeklyTimesBar({ weekly, viewDate }: { weekly: NonNullable<Props["weekly"]>; viewDate?: string }) {
+  const { progress, canLog, isToday, onLog } = weekly;
+  const dayWord = isToday ? "今天" : "这天";
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      <ol className="flex items-center gap-1" aria-label="本周每天的记录">
+        {progress.days.map((day, index) => (
+          <li key={day.date} title={`周${WEEKDAY_SHORT[index]}${day.count ? ` 做了 ${day.count} ${progress.unit}` : ""}`}
+            className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums ${day.count ? "bg-primary text-white" : "bg-stone-100 text-stone-400"} ${day.date === viewDate ? "ring-2 ring-primary/35 ring-offset-1" : ""}`}>
+            {day.count > 1 ? day.count : WEEKDAY_SHORT[index]}
+          </li>
+        ))}
+      </ol>
+      {canLog && (
+        <span className="flex items-center gap-1.5">
+          <button type="button" onClick={() => onLog(1)}
+            className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-primary/40 bg-white px-2.5 text-[13px] font-semibold text-primary hover:bg-primary/5 [@media(pointer:coarse)]:min-h-10">
+            <Check className="h-3.5 w-3.5" strokeWidth={3} />{dayWord}做了一次
+          </button>
+          {progress.dayCount > 0 && (
+            <button type="button" onClick={() => onLog(-1)} aria-label={`撤销${dayWord}的一次记录`}
+              className="min-h-8 rounded-lg px-2 text-[13px] text-muted hover:bg-stone-100 [@media(pointer:coarse)]:min-h-10">
+              撤销
+            </button>
+          )}
+        </span>
+      )}
+    </div>
+  );
 }

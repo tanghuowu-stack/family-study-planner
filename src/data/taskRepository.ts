@@ -10,6 +10,7 @@ import { createTravelPauseCheck } from "../utils/travelPause";
 export { scheduleOccursOn } from "../utils/recurrence";
 import { defaultSortOrder, isCourseTask, isOccurrenceSchedule, subCategoryLabel, checklistOnDay } from "../utils/taskMeta";
 import { TASK_SUBJECT_GROUPS, taskSubjectGroup } from "../utils/taskGrouping";
+import { applyWeeklyLog, isWeeklyTimes, weeklyTimesActiveIn } from "../utils/weeklyTimes";
 
 const makeId = () => crypto.randomUUID();
 const isActiveTask = (task: Task) => !task.deletedAt;
@@ -165,6 +166,11 @@ function sanitizeTaskWrite(task: Task, previousStatus?: TaskStatus): Task {
   delete clean.occurrenceDate; delete clean.occurrenceStatus; delete clean.overrideDate; delete clean.overrideNote; delete clean.rolledFromDate;
   if (isOccurrenceSchedule(clean)) {
     if (!["todo", "cancelled"].includes(clean.status)) clean.status = previousStatus && ["todo", "cancelled"].includes(previousStatus) ? previousStatus : "todo";
+    clean.completedAt = undefined;
+  }
+  // 每周几次：完成情况按周看 weeklyLog，本体不记"整体完成"（否则做完一周就永远显示完成）
+  if (isWeeklyTimes(clean)) {
+    if (!["todo", "cancelled"].includes(clean.status)) clean.status = previousStatus === "cancelled" ? "cancelled" : "todo";
     clean.completedAt = undefined;
   }
   // dailyRecurring/weeklyRecurring 排期只读 recurrence.endDate，本体 endDate 无独立消费者，
@@ -416,6 +422,13 @@ export const taskRepository = {
     return tasks.filter((task) => task.mainCategory !== "readingPlan" && task.mainCategory !== "temporary" && task.childVisible
       && task.timeType === "dateRange" && task.status === "done" && !!task.completedAt && !!task.startDate && !!task.endDate
       && task.startDate <= date && date <= task.endDate && toLocalDateKey(task.completedAt) < date)
+      .sort(taskSort);
+  },
+
+  /** 今日页"本周计划"里的每周几次：这一周在有效期内、没取消、在今日清单显示的 */
+  async getWeeklyTimes(date: string): Promise<TaskDisplay[]> {
+    const tasks = (await db.tasks.toArray()).filter(isActiveTask);
+    return tasks.filter((task) => isWeeklyTimes(task) && task.mainCategory !== "readingPlan" && task.childVisible && task.status !== "cancelled" && weeklyTimesActiveIn(task, date))
       .sort(taskSort);
   },
 
@@ -777,7 +790,7 @@ export const taskRepository = {
       completedAt: undefined, actualMinutes: undefined,
       // 复制出的任务不继承打卡身份：源任务若是打卡项目，副本被强制成 singleDate 后
       // 不再是 recurring，enableStreak 残留会变成"月历有卡但管理弹窗看不到"的孤儿
-      enableStreak: undefined, streakStartDate: undefined, habitKey: undefined, dayNotes: undefined,
+      enableStreak: undefined, streakStartDate: undefined, habitKey: undefined, dayNotes: undefined, weeklyLog: undefined,
       checklistItems: source.checklistItems?.map((item, index) => ({ ...item, id: makeId(), done: false, completedDate: undefined, sortOrder: index, actualMinutes: undefined })),
       createdAt: now, updatedAt: now,
     });
@@ -967,6 +980,23 @@ export const taskRepository = {
     const changes = { dayNotes: Object.keys(notes).length > 0 ? notes : undefined, updatedAt: new Date().toISOString() };
     await db.tasks.update(taskId, changes);
     return { ...task, ...changes };
+  },
+
+  /** 每周几次：某天记一次（delta=1）或撤销一次（delta=-1）。不能记到今天之后；返回写入后的任务，没变化时返回 undefined */
+  async writeWeeklyLog(taskId: string, date: string, delta: number): Promise<Task | undefined> {
+    const task = await db.tasks.get(taskId);
+    if (!task || !isWeeklyTimes(task) || date > todayKey()) return undefined;
+    const weeklyLog = applyWeeklyLog(task.weeklyLog, date, delta);
+    if ((weeklyLog?.[date] ?? 0) === (task.weeklyLog?.[date] ?? 0)) return undefined;
+    const changes = { weeklyLog, updatedAt: new Date().toISOString() };
+    await db.tasks.update(taskId, changes);
+    return { ...task, ...changes };
+  },
+
+  async logWeeklyTime(taskId: string, date: string, delta: number, onLocalWrite?: () => void): Promise<boolean> {
+    await this.writeWeeklyLog(taskId, date, delta);
+    onLocalWrite?.();
+    return true;
   },
 
   /** 本地模式：写完即同步完成。返回值与云端版一致（是否已同步） */

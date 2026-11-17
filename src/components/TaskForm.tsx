@@ -81,7 +81,11 @@ function newDraft(date: string): TaskDraft {
 
 // R3：编辑入口可能传入 TaskDisplay（今日清单里的行），它的 status 已被覆盖成当天单日状态，
 // 且带着 occurrenceDate 等运行时展示字段——这些一律不得进入保存的草稿（数据层写入口还有一道兜底清洗）。
-const strip = (task: Task): TaskDraft => { const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, occurrenceDate: _od, occurrenceStatus: _os, overrideDate: _ovd, overrideNote: _ovn, rolledFromDate: _rf, dayNotes: _dn, ...draft } = task as Task & Partial<TaskDisplay>; return { ...draft, date: normalizeDate(draft.date), startDate: normalizeDate(draft.startDate), endDate: normalizeDate(draft.endDate), weekStart: normalizeDate(draft.weekStart), recurrence: draft.recurrence ? { ...draft.recurrence, startDate: normalizeDate(draft.recurrence.startDate)!, endDate: normalizeDate(draft.recurrence.endDate) } : undefined, specificDates: draft.specificDates?.map((date) => normalizeDate(date)!).filter(Boolean) }; };
+/** 每周几次的默认目标：一周 3 次 */
+const WEEKLY_TIMES_DEFAULT: WeeklyQuota = { enabled: true, targetCount: 3, unit: "次", isWeeklyRecurring: true, allowAutoDistribute: false, allowRollover: false };
+const WEEKLY_UNITS: WeeklyQuota["unit"][] = ["次", "本", "篇", "页", "题", "分钟"];
+
+const strip = (task: Task): TaskDraft => { const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, occurrenceDate: _od, occurrenceStatus: _os, overrideDate: _ovd, overrideNote: _ovn, rolledFromDate: _rf, dayNotes: _dn, weeklyLog: _wl, ...draft } = task as Task & Partial<TaskDisplay>; return { ...draft, date: normalizeDate(draft.date), startDate: normalizeDate(draft.startDate), endDate: normalizeDate(draft.endDate), weekStart: normalizeDate(draft.weekStart), recurrence: draft.recurrence ? { ...draft.recurrence, startDate: normalizeDate(draft.recurrence.startDate)!, endDate: normalizeDate(draft.recurrence.endDate) } : undefined, specificDates: draft.specificDates?.map((date) => normalizeDate(date)!).filter(Boolean) }; };
 
 export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onContinue, carry, justAdded = [] }: Props) {
   const [draft, setDraft] = useState<TaskDraft>(() => {
@@ -326,8 +330,10 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
     ...current, timeType,
     schedulePattern: timeType === "recurring" ? current.schedulePattern === "singleDate" ? "weeklyRecurring" : current.schedulePattern : "singleDate",
     date: timeType === "singleDate" ? current.date ?? initialDate : undefined,
-    startDate: ["dateRange", "recurring"].includes(timeType) ? current.startDate ?? initialDate : undefined,
+    startDate: ["dateRange", "recurring", "weeklyTimes"].includes(timeType) ? current.startDate ?? initialDate : undefined,
+    // 每周几次默认不设结束日（长期做），需要时再填
     endDate: ["dateRange", "recurring"].includes(timeType) ? current.endDate ?? initialDate : undefined,
+    weeklyQuota: timeType === "weeklyTimes" ? current.weeklyQuota ?? WEEKLY_TIMES_DEFAULT : current.mainCategory === "readingPlan" ? current.weeklyQuota : undefined,
     weekStart: timeType === "weekGoal" ? current.weekStart ?? getWeekStartKey(initialDate) : undefined,
     assignmentWindow: timeType === "assignmentWindow" ? current.assignmentWindow ?? { startDate: initialDate, endDate: initialDate } : undefined,
     recurrence: timeType === "recurring" ? current.recurrence ?? { frequency: "weekly", weekdays: [new Date(`${initialDate}T00:00:00`).getDay()], startDate: initialDate } : undefined,
@@ -360,11 +366,13 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
     if (draft.endTime && (!draft.startTime || draft.endTime <= draft.startTime)) return setError("结束时间必须晚于开始时间");
     if ((draft.timeType === "dateRange" || (draft.timeType === "recurring" && ["dateRangeDaily", "dateRangeWeekdays"].includes(draft.schedulePattern ?? ""))) && (!draft.startDate || !draft.endDate || draft.startDate > draft.endDate)) return setError("日期范围不正确");
     if (draft.timeType === "recurring" && draft.schedulePattern === "specificDates" && !draft.specificDates?.length) return setError("请至少填写一个指定日期");
+    if (draft.timeType === "weeklyTimes" && (!draft.startDate || !(draft.weeklyQuota?.targetCount && draft.weeklyQuota.targetCount >= 1))) return setError("请填写每周几次和从哪天开始");
+    if (draft.timeType === "weeklyTimes" && draft.endDate && draft.startDate && draft.endDate < draft.startDate) return setError("结束日期不能早于开始日期");
     if (draft.timeType === "recurring" && draft.schedulePattern === "weeklyRecurring" && !draft.recurrence?.weekdays?.length) return setError("请至少选择一个重复星期");
     if (draft.timeType === "assignmentWindow" && (!draft.assignmentWindow?.startDate || !draft.assignmentWindow.endDate || draft.assignmentWindow.startDate > draft.assignmentWindow.endDate)) return setError("作业周期不正确");
     setSaving(true);
     const normalizedWeek = normalizeDate(draft.weekStart);
-    const cleaned = { ...draft, title: draft.title.trim(), checklistItems: draft.checklistItems?.filter((item) => item.title.trim()).map((item, index) => ({ ...item, title: item.title.trim(), sortOrder: index })), weekStart: normalizedWeek ? getWeekStartKey(normalizedWeek) : undefined };
+    const cleaned = { ...draft, title: draft.title.trim(), checklistItems: draft.timeType === "weeklyTimes" ? undefined : draft.checklistItems?.filter((item) => item.title.trim()).map((item, index) => ({ ...item, title: item.title.trim(), sortOrder: index })), weekStart: normalizedWeek ? getWeekStartKey(normalizedWeek) : undefined };
     try {
       await onSave(cleaned);
       if (!task) localStorage.setItem(PREF_KEY, JSON.stringify({ mainCategory: draft.mainCategory, subCategory: draft.subCategory, extraContentType: draft.extraContentType, timeType: draft.timeType, schedulePattern: draft.schedulePattern, rolloverMode: draft.rolloverMode, allowRollover: draft.allowRollover, childVisible: draft.childVisible, calendarVisibility: draft.calendarVisibility, planPeriodId: draft.planPeriodId, applicablePeriodType: draft.applicablePeriodType }));
@@ -390,7 +398,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
   const segment = (active: boolean) => `min-h-10 rounded-lg border px-2 text-sm font-semibold transition-colors ${active ? "border-primary bg-primary text-white" : "border-ink/10 bg-white text-muted hover:border-primary/30 hover:text-ink"}`;
   const chip = (active: boolean) => `min-h-9 rounded-lg px-3 text-sm font-semibold transition-colors ${active ? "bg-primary text-white" : "bg-white text-muted ring-1 ring-inset ring-ink/10 hover:text-ink"}`;
   const sectionTitle = "text-base font-bold text-ink";
-  const moreSummary = [`没做完：${rolloverText(draft.rolloverMode)}`, !showTimeInline && draft.startTime ? `${draft.startTime}${draft.endTime ? `–${draft.endTime}` : ""}` : "", draft.note ? "有备注" : ""].filter(Boolean).join(" · ");
+  const moreSummary = [draft.timeType === "weeklyTimes" ? "" : `没做完：${rolloverText(draft.rolloverMode)}`, !showTimeInline && draft.startTime ? `${draft.startTime}${draft.endTime ? `–${draft.endTime}` : ""}` : "", draft.note ? "有备注" : ""].filter(Boolean).join(" · ");
   const timeFields = <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5"><label htmlFor="task-start-time" className={label}>开始</label><div className="flex items-center gap-1"><input id="task-start-time" aria-label="开始时间" type="time" value={draft.startTime ?? ""} onChange={(event) => set("startTime", event.target.value || undefined)} className="w-full min-w-0 rounded-lg border border-ink/15 bg-white px-2.5 py-2 text-sm text-ink outline-none focus:border-primary" />{draft.startTime && <button type="button" aria-label="清除开始时间" title="清除开始时间" onClick={() => set("startTime", undefined)} className="rounded p-1 text-muted hover:bg-white hover:text-ink"><X className="h-3.5 w-3.5" /></button>}</div><label htmlFor="task-end-time" className={label}>结束</label><div className="flex items-center gap-1"><input id="task-end-time" aria-label="结束时间" type="time" value={draft.endTime ?? ""} onChange={(event) => set("endTime", event.target.value || undefined)} className="w-full min-w-0 rounded-lg border border-ink/15 bg-white px-2.5 py-2 text-sm text-ink outline-none focus:border-primary" />{draft.endTime && <button type="button" aria-label="清除结束时间" title="清除结束时间" onClick={() => set("endTime", undefined)} className="rounded p-1 text-muted hover:bg-white hover:text-ink"><X className="h-3.5 w-3.5" /></button>}</div></div>;
 
   return <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/45 backdrop-blur-sm sm:items-center sm:p-5" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><form onSubmit={(event) => submit(event)} className="max-h-[96vh] w-full max-w-2xl overflow-y-auto rounded-t-lg bg-paper shadow-2xl sm:rounded-lg">
@@ -424,13 +432,14 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
           <label className={label}>标题{draft.mainCategory === "interestClass" || (draft.mainCategory === "extraHomework" && draft.subCategory === "reading") ? "（可不填）" : ""}<input ref={titleInput} autoFocus value={draft.title} onChange={(e) => { setTitleTouched(true); setDraft((current) => ({ ...current, title: e.target.value })); }} className={input} placeholder={draft.mainCategory === "interestClass" || (draft.mainCategory === "extraHomework" && draft.subCategory === "reading") ? "不填就显示分类名" : "要做的事，例如：数学练习册第 12 页"} /></label>
         </div>
 
-        {homework && (!isCourseTask(draft) || !!draft.checklistItems?.length) && <div><div className="flex items-center justify-between"><p className={label}>小项（孩子逐项打勾）</p><button type="button" onClick={addChecklist} className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2.5 text-sm font-semibold text-primary hover:bg-primary/5"><Plus className="h-4 w-4" />加一项</button></div>{!!draft.checklistItems?.length && <div className="mt-1.5 space-y-1.5">{draft.checklistItems.map((item, index) => <div key={item.id} className="flex items-center gap-1.5"><input ref={(node) => { checklistInputs.current[item.id] = node; }} aria-label={`小项 ${index + 1}`} value={item.title} onChange={(e) => set("checklistItems", draft.checklistItems?.map((value) => value.id === item.id ? { ...value, title: e.target.value } : value))} onKeyDown={(event) => { if (event.key !== "Enter" || event.nativeEvent.isComposing) return; event.preventDefault(); if (!item.title.trim()) return; const next = draft.checklistItems?.[index + 1]; if (next) checklistInputs.current[next.id]?.focus(); else addChecklist(); }} className="min-w-0 flex-1 rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm" placeholder="回车再加一项" /><button type="button" aria-label="上移" title="上移" onClick={() => moveChecklist(index, -1)} className="p-1 text-muted"><ArrowUp className="h-4 w-4" /></button><button type="button" aria-label="下移" title="下移" onClick={() => moveChecklist(index, 1)} className="p-1 text-muted"><ArrowDown className="h-4 w-4" /></button><button type="button" aria-label="删除小项" title="删除小项" onClick={() => set("checklistItems", draft.checklistItems?.filter((value) => value.id !== item.id))} className="p-1"><Trash2 className="h-4 w-4 text-rose-400" /></button></div>)}</div>}</div>}
+        {homework && draft.timeType !== "weeklyTimes" && (!isCourseTask(draft) || !!draft.checklistItems?.length) && <div><div className="flex items-center justify-between"><p className={label}>小项（孩子逐项打勾）</p><button type="button" onClick={addChecklist} className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2.5 text-sm font-semibold text-primary hover:bg-primary/5"><Plus className="h-4 w-4" />加一项</button></div>{!!draft.checklistItems?.length && <div className="mt-1.5 space-y-1.5">{draft.checklistItems.map((item, index) => <div key={item.id} className="flex items-center gap-1.5"><input ref={(node) => { checklistInputs.current[item.id] = node; }} aria-label={`小项 ${index + 1}`} value={item.title} onChange={(e) => set("checklistItems", draft.checklistItems?.map((value) => value.id === item.id ? { ...value, title: e.target.value } : value))} onKeyDown={(event) => { if (event.key !== "Enter" || event.nativeEvent.isComposing) return; event.preventDefault(); if (!item.title.trim()) return; const next = draft.checklistItems?.[index + 1]; if (next) checklistInputs.current[next.id]?.focus(); else addChecklist(); }} className="min-w-0 flex-1 rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm" placeholder="回车再加一项" /><button type="button" aria-label="上移" title="上移" onClick={() => moveChecklist(index, -1)} className="p-1 text-muted"><ArrowUp className="h-4 w-4" /></button><button type="button" aria-label="下移" title="下移" onClick={() => moveChecklist(index, 1)} className="p-1 text-muted"><ArrowDown className="h-4 w-4" /></button><button type="button" aria-label="删除小项" title="删除小项" onClick={() => set("checklistItems", draft.checklistItems?.filter((value) => value.id !== item.id))} className="p-1"><Trash2 className="h-4 w-4 text-rose-400" /></button></div>)}</div>}</div>}
       </section>
 
       {/* ── 2. 哪天做 ── */}
       <section className="space-y-3 border-t border-ink/10 pt-5">
         <h3 className={sectionTitle}>哪天做</h3>
-        {!reading && ["singleDate", "dateRange", "recurring"].includes(draft.timeType) && <div className="grid grid-cols-3 gap-1.5">{(["singleDate", "dateRange", "recurring"] as TaskTimeType[]).map((value) => <button key={value} type="button" onClick={() => changeTimeType(value)} className={segment(draft.timeType === value)}>{value === "singleDate" ? "某一天" : value === "dateRange" ? "几天内做完" : "重复"}</button>)}</div>}
+        {!reading && ["singleDate", "dateRange", "weeklyTimes", "recurring"].includes(draft.timeType) && <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">{(["singleDate", "dateRange", "weeklyTimes", "recurring"] as TaskTimeType[]).map((value) => <button key={value} type="button" onClick={() => changeTimeType(value)} className={segment(draft.timeType === value)}>{value === "singleDate" ? "某一天" : value === "dateRange" ? "几天内做完" : value === "weeklyTimes" ? "每周几次" : "重复"}</button>)}</div>}
+        {draft.timeType === "weeklyTimes" && <WeeklyTimesFields draft={draft} set={set} input={input} label={label} chip={chip} />}
 
         {draft.timeType === "singleDate" && <DayPicker value={draft.date} onChange={(value) => set("date", value)} chip={chip} input={input} />}
         {draft.timeType === "dateRange" && <><DateRange draft={draft} set={set} input={input} label={label} /><p className="text-[13px] text-muted">这几天里做完一次就行，每天都显示到做完为止。每天都要做的事请选“重复”。</p></>}
@@ -447,7 +456,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
         <button type="button" onClick={() => setShowMore((v) => !v)} aria-expanded={showMore} className="flex min-h-11 w-full items-center justify-between gap-3 text-left"><span className="min-w-0"><span className="block text-base font-bold text-ink">更多设置</span>{!showMore && <span className="block truncate text-[13px] text-muted">{moreSummary}</span>}</span><ChevronDown className={`h-4 w-4 shrink-0 text-muted transition-transform ${showMore ? "rotate-180" : ""}`} /></button>
 
         {showMore && <div className="mt-2 space-y-4">
-          <div><p className={label}>没做完时</p><div className="mt-1.5 grid grid-cols-3 gap-1.5">{ROLLOVER_CHOICES.map(([value, text]) => <button key={value} type="button" onClick={() => { set("rolloverMode", value); set("allowRollover", value === "autoNextDay"); }} className={segment(draft.rolloverMode === value)}>{text}</button>)}</div><p className="mt-1.5 text-[13px] text-muted">{draft.rolloverMode === "autoNextDay" ? "没打勾就自动出现在第二天，直到做完。" : draft.rolloverMode === "skipIfMissed" ? "过了这天就不再出现，也不算逾期。" : "留在原来那天，并在之后每天的“逾期未完成”里提醒。"}</p></div>
+          {draft.timeType !== "weeklyTimes" && <div><p className={label}>没做完时</p><div className="mt-1.5 grid grid-cols-3 gap-1.5">{ROLLOVER_CHOICES.map(([value, text]) => <button key={value} type="button" onClick={() => { set("rolloverMode", value); set("allowRollover", value === "autoNextDay"); }} className={segment(draft.rolloverMode === value)}>{text}</button>)}</div><p className="mt-1.5 text-[13px] text-muted">{draft.rolloverMode === "autoNextDay" ? "没打勾就自动出现在第二天，直到做完。" : draft.rolloverMode === "skipIfMissed" ? "过了这天就不再出现，也不算逾期。" : "留在原来那天，并在之后每天的“逾期未完成”里提醒。"}</p></div>}
 
           {!showTimeInline && <div><p className={label}>时间（可选）</p><div className="mt-1.5">{timeFields}</div></div>}
 
@@ -515,4 +524,29 @@ function DayNotesHistory({ notes }: { notes: Record<string, string> }) {
     </ul>
     {entries.length > 5 && <button type="button" onClick={() => setShowAll((value) => !value)} className="min-h-9 text-[13px] font-medium text-primary">{showAll ? "收起" : `查看全部 ${entries.length} 天`}</button>}
   </section>;
+}
+
+/** 每周几次：一周（周一到周日）做够几次 + 单位，从哪天开始，可选结束日 */
+function WeeklyTimesFields({ draft, set, input, label, chip }: { draft: TaskDraft; set: <K extends keyof TaskDraft>(key: K, value: TaskDraft[K]) => void; input: string; label: string; chip: (active: boolean) => string }) {
+  const quota = draft.weeklyQuota ?? WEEKLY_TIMES_DEFAULT;
+  const update = (changes: Partial<WeeklyQuota>) => set("weeklyQuota", { ...WEEKLY_TIMES_DEFAULT, ...quota, ...changes });
+  const count = quota.targetCount;
+  return <div className="space-y-3">
+    <div>
+      <p className={label}>每周做几次</p>
+      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+        <div className="inline-flex items-center rounded-lg ring-1 ring-inset ring-ink/10">
+          <button type="button" aria-label="少一次" disabled={count <= 1} onClick={() => update({ targetCount: Math.max(1, count - 1) })} className="flex h-10 w-10 items-center justify-center text-lg font-semibold text-muted disabled:opacity-30">−</button>
+          <span className="w-8 text-center text-base font-bold tabular-nums text-ink" aria-live="polite">{count}</span>
+          <button type="button" aria-label="多一次" disabled={count >= 14} onClick={() => update({ targetCount: Math.min(14, count + 1) })} className="flex h-10 w-10 items-center justify-center text-lg font-semibold text-muted disabled:opacity-30">+</button>
+        </div>
+        <div className="flex flex-wrap gap-1.5">{WEEKLY_UNITS.map((unit) => <button key={unit} type="button" onClick={() => update({ unit })} className={chip(quota.unit === unit)}>{unit}</button>)}</div>
+      </div>
+    </div>
+    <div className="grid grid-cols-2 gap-2">
+      <label className={label}>从哪天开始<input type="date" required value={draft.startDate ?? ""} onChange={(e) => set("startDate", e.target.value || undefined)} className={input} /></label>
+      <label className={label}>到哪天结束（可不填）<input type="date" value={draft.endDate ?? ""} min={draft.startDate} onChange={(e) => set("endDate", e.target.value || undefined)} className={input} /></label>
+    </div>
+    <p className="text-[13px] text-muted">一周（周一到周日）做够 {count} {quota.unit}就行，不用排到哪一天；哪天做了，在今日页“本周计划”里点“今天做了一次”。没做够不累计到下周。</p>
+  </div>;
 }

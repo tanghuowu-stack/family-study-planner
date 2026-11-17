@@ -90,6 +90,7 @@ export const canExtendRecurring = (
  * - specificDates：排期只命中列表里的日期，终点是列表最大值。
  */
 function scheduleEndBound(task: { timeType: TaskTimeType; schedulePattern?: SchedulePattern; recurrence?: { endDate?: string }; endDate?: string; specificDates?: string[] }): string | undefined {
+  if (task.timeType === "weeklyTimes") return task.endDate; // 每周几次设了结束日：过了就归到"已结束"
   if (task.timeType !== "recurring") return undefined;
   switch (task.schedulePattern) {
     case "dailyRecurring":
@@ -197,7 +198,7 @@ export const STATUS_META: Record<TaskStatus, { label: string; className: string 
 
 export const TIME_TYPE_META: Record<TaskTimeType, string> = {
   singleDate: "指定一天", dateRange: "日期范围", weekGoal: "每周任务池",
-  monthGoal: "每月计划", assignmentWindow: "课后作业周期", recurring: "固定重复",
+  monthGoal: "每月计划", assignmentWindow: "课后作业周期", recurring: "固定重复", weeklyTimes: "每周几次",
 };
 
 export const ROLLOVER_META: Record<RolloverMode, string> = {

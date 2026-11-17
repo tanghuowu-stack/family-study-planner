@@ -425,7 +425,9 @@ export const taskRepository = {
   /** 今日页"本周计划"里的每周几次：这一周在有效期内、没取消、在今日清单显示的 */
   async getWeeklyTimes(date: string): Promise<TaskDisplay[]> {
     const tasks = (await db.tasks.toArray()).filter(isActiveTask);
-    return tasks.filter((task) => isWeeklyTimes(task) && task.mainCategory !== "readingPlan" && task.childVisible && task.status !== "cancelled" && weeklyTimesActiveIn(task, date))
+    // 这一天之前就结束了的不取（改成别的类型后被停掉的那条，同一周里后几天不再出现；按周一取时仍在，本周条照算它的记录）
+    return tasks.filter((task) => isWeeklyTimes(task) && task.mainCategory !== "readingPlan" && task.childVisible && task.status !== "cancelled" && weeklyTimesActiveIn(task, date)
+      && (!task.endDate || task.endDate >= date))
       .sort(taskSort);
   },
 
@@ -583,6 +585,28 @@ export const taskRepository = {
       enableStreak: old.enableStreak === true ? true : undefined,
       streakStartDate: old.enableStreak === true ? today : undefined,
       status: "todo", completedAt: undefined,
+    });
+    return { task, ended, synced: true };
+  },
+
+  /**
+   * 反方向：每周几次改成别的类型（2026-11-17）。原地改类型的话以前记的次数（weeklyLog）就读不到了，
+   * 本周条和打卡里的历史跟着消失。有记录时：原任务结束日记到昨天（记录全部保留，本周条和打卡照算），
+   * 另建一条新类型的任务；打过卡的接上同一个打卡项目。重复类的新任务从今天开始。没有任何记录时直接原地改。
+   */
+  async convertFromWeeklyTimes(id: string, draft: TaskDraft, today: string = todayKey()): Promise<TaskWriteResult & { ended?: Task }> {
+    const old = await db.tasks.get(id);
+    if (!old || !isWeeklyTimes(old) || draft.timeType === "weeklyTimes" || !old.weeklyLog || Object.keys(old.weeklyLog).length === 0) return this.update(id, draft);
+    const yesterday = toDateKey(addDays(parseISO(today), -1));
+    const { task: ended } = await this.update(id, { endDate: old.endDate && old.endDate < yesterday ? old.endDate : yesterday });
+    const tracked = old.enableStreak === true || !!old.streakStartDate;
+    const { task } = await this.create({
+      ...draft,
+      weeklyQuota: undefined, weeklyLog: undefined,
+      recurrence: draft.recurrence ? { ...draft.recurrence, startDate: draft.recurrence.startDate > today ? draft.recurrence.startDate : today } : draft.recurrence,
+      habitKey: tracked ? old.habitKey ?? old.id : undefined,
+      enableStreak: old.enableStreak === true ? true : undefined,
+      streakStartDate: old.enableStreak === true ? today : undefined,
     });
     return { task, ended, synced: true };
   },

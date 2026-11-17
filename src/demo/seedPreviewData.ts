@@ -7,7 +7,8 @@ const day = (offset: number) => toDateKey(addDays(fromDateKey(todayKey()), offse
 
 export async function seedPreviewData() {
   try {
-    if (await db.tasks.where("id").startsWith("preview-").count()) return;
+    // 2026-11-17 起示例里有"本周计划"（几天内做完的作业）；旧浏览器里缺这几条时整体重灌一次
+    if (await db.tasks.get("preview-week-dazeng")) return;
 
     const today = todayKey();
     const now = new Date().toISOString();
@@ -153,6 +154,62 @@ export async function seedPreviewData() {
         endDate: day(4),
         note: "提前预约停车",
         sortOrder: 100,
+      },
+      // 本周计划：几天内做完的作业，截止日之前放今日页"本周计划"区
+      {
+        ...base,
+        id: "preview-week-dazeng",
+        title: "大增语文课后作业",
+        mainCategory: "extraHomework",
+        subCategory: "chinese",
+        extraContentType: "homework",
+        timeType: "dateRange",
+        startDate: day(-2),
+        endDate: day(4),
+        checklistItems: [
+          { id: "preview-week-dazeng-1", title: "阅读理解 2 篇", done: true, completedDate: day(-1), sortOrder: 0 },
+          { id: "preview-week-dazeng-2", title: "古诗默写", done: false, sortOrder: 1 },
+          { id: "preview-week-dazeng-3", title: "作文提纲", done: false, sortOrder: 2 },
+        ],
+        sortOrder: 20,
+      },
+      {
+        ...base,
+        id: "preview-week-aoshu",
+        title: "奥数班作业",
+        mainCategory: "extraHomework",
+        subCategory: "math",
+        extraContentType: "homework",
+        timeType: "dateRange",
+        startDate: day(-1),
+        endDate: day(5),
+        sortOrder: 30,
+      },
+      {
+        ...base,
+        id: "preview-week-fce",
+        title: "FCE 写作一篇",
+        mainCategory: "extraHomework",
+        subCategory: "english",
+        extraContentType: "homework",
+        timeType: "dateRange",
+        startDate: day(-3),
+        endDate: day(2),
+        status: "done",
+        completedAt: addDays(new Date(), -1).toISOString(),
+        sortOrder: 40,
+      },
+      {
+        ...base,
+        id: "preview-week-due-today",
+        title: "剑桥英语阅读 3 篇",
+        mainCategory: "extraHomework",
+        subCategory: "english",
+        extraContentType: "homework",
+        timeType: "dateRange",
+        startDate: day(-4),
+        endDate: day(0),
+        sortOrder: 50,
       },
     ];
 

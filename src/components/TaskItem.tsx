@@ -9,6 +9,8 @@ interface Props {
   compact?: boolean;
   /** 今日页正在看的日期：在这一天之前就做完的小项收成一行"已完成 N 项" */
   viewDate?: string;
+  /** 截止说明（今日页"本周计划"里的"周五截止"、截止日当天的"今天截止"），urgent 时用醒目色 */
+  dueLabel?: { text: string; urgent?: boolean };
   /** 拖拽手柄（今日页可排序的任务才有），放在"…"左边，不挤占勾选框的位置 */
   dragHandle?: ReactNode;
   unsynced?: boolean; // 任务自身完成状态未同步到云端
@@ -79,7 +81,7 @@ function ChecklistRing({ completed, total, done }: { completed: number; total: n
   );
 }
 
-export function TaskItem({ task, compact = false, viewDate, dragHandle, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onExtend, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onDayNoteSave, onRetrySync, onRetryItemSync, onCopy }: Props) {
+export function TaskItem({ task, compact = false, viewDate, dueLabel, dragHandle, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onExtend, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onDayNoteSave, onRetrySync, onRetryItemSync, onCopy }: Props) {
   const [menu, setMenu] = useState(false);
   const [showEarlier, setShowEarlier] = useState(false);
   // 菜单离屏幕底部（含底部导航栏）太近时向上展开，避免被遮住
@@ -223,6 +225,7 @@ export function TaskItem({ task, compact = false, viewDate, dragHandle, unsynced
           {unsynced && <UnsyncedBadge onRetry={onRetrySync} />}
         </div>
 
+        {dueLabel && !task.rolledFromDate && <div className={`text-[13px] ${dueLabel.urgent && !done ? "font-semibold text-amber-700" : "text-muted"}`}>{dueLabel.text}</div>}
         {task.note && !task.overrideNote && <div className="min-w-0 truncate text-[13px] text-muted">{task.note}</div>}
 
         {canNote && noteEditing && (

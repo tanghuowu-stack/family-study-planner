@@ -9,7 +9,7 @@ import { getRepository } from "../data/repositoryProvider";
 import { taskRepository } from "../data/taskRepository";
 import type { PlanOverviewItem, TaskDisplay, TaskStatus } from "../types/task";
 import { formatCompactDate, formatFullDate, fromDateKey, relativeDayLabel, toDateKey, todayKey } from "../utils/date";
-import { TASK_SUBJECT_GROUPS, dayTaskKey, findJustCompleted, groupDayTasks, normalizeSubjectOrder, type DayTaskPlacement, type TaskSubjectGroup } from "../utils/taskGrouping";
+import { TASK_SUBJECT_GROUPS, dayTaskKey, findJustCompleted, groupDayTasks, isWeekPlanTask, normalizeSubjectOrder, weekPlanDueLabel, type DayTaskPlacement, type TaskSubjectGroup } from "../utils/taskGrouping";
 import { useGroupOrder } from "../hooks/useGroupOrder";
 import { useSortableList } from "../hooks/useSortableList";
 import { itemSyncKey, taskSyncKey } from "../utils/taskMeta";
@@ -43,7 +43,9 @@ interface Props {
 export function DayPage(props: Props) {
   const [tasks, setTasks] = useState<TaskDisplay[]>([]);
   const [overdue, setOverdue] = useState<TaskDisplay[]>([]);
+  const [weekPlanDone, setWeekPlanDone] = useState<TaskDisplay[]>([]);
   const [showDone, setShowDone] = useState(true);
+  const [showWeekDone, setShowWeekDone] = useState(false);
   const { order, updateOrder } = useGroupOrder();
   // 刚完成的任务先在原位停留片刻（划线变灰、勾选动画播完），再收进"已完成"，
   // 否则一勾上整行立刻跳走，孩子看不到反馈。held 记录每条停留中的任务原本在哪个区。
@@ -53,7 +55,7 @@ export function DayPage(props: Props) {
   const reload = () => {
     const date = props.date;
     // 未来的日子不显示逾期区：今天还没做完的事挂在明天页面上叫"逾期"，排明天作业时容易误会
-    return Promise.all([taskRepository.getTasksForDate(date), date > todayKey() ? Promise.resolve([] as TaskDisplay[]) : taskRepository.getOverdueTasks(date)]).then(([items, late]) => {
+    return Promise.all([taskRepository.getTasksForDate(date), date > todayKey() ? Promise.resolve([] as TaskDisplay[]) : taskRepository.getOverdueTasks(date), taskRepository.getWeekPlanDone(date)]).then(([items, late, weekDone]) => {
       const { placement, justCompleted } = findJustCompleted(placementRef.current?.date === date ? placementRef.current.placement : null, items, late);
       placementRef.current = { date, placement };
       if (justCompleted.size > 0) {
@@ -66,6 +68,7 @@ export function DayPage(props: Props) {
       }
       setTasks(items);
       setOverdue(late);
+      setWeekPlanDone(weekDone);
     });
   };
   useEffect(() => { reload(); }, [props.date, props.refreshKey]);
@@ -74,23 +77,25 @@ export function DayPage(props: Props) {
   useEffect(() => () => { holdTimers.current.forEach((timer) => clearTimeout(timer)); }, []);
   const reorderTasks = async (ids: string[]) => { await getRepository().reorderTasks(ids); await reload(); };
   const isSettled = (task: TaskDisplay) => ["done", "cancelled"].includes(task.status);
-  const pending = tasks.filter((task) => !isSettled(task) || held.get(dayTaskKey(task)) === "pending");
-  const done = tasks.filter((task) => isSettled(task) && !held.has(dayTaskKey(task)));
-  const overdueShown = [...overdue, ...tasks.filter((task) => isSettled(task) && held.get(dayTaskKey(task)) === "overdue")];
-  // 有小项时只统计小项；没有小项时，大项自身计为一项。
-  // 使用当前查看日的展示状态，历史日期的小项完成情况由数据层提供。
-  const progress = tasks.reduce((result, task) => {
-    if (task.checklistItems?.length) {
-      result.total += task.checklistItems.length;
-      result.completed += task.checklistItems.filter((item) => item.done).length;
-    } else {
-      result.total += 1;
-      if (["done", "cancelled"].includes(task.status)) result.completed += 1;
-    }
-    return result;
-  }, { completed: 0, total: 0 });
+  // 每日计划 / 本周计划（2026-11-17）：几天内做完的作业不到截止日不算"今天必须完成"，放到"本周计划"区（规则见 isWeekPlanTask）
+  const daily = tasks.filter((task) => !isWeekPlanTask(task, props.date));
+  const weekly = tasks.filter((task) => isWeekPlanTask(task, props.date));
+  const pending = daily.filter((task) => !isSettled(task) || held.get(dayTaskKey(task)) === "pending");
+  const done = daily.filter((task) => isSettled(task) && !held.has(dayTaskKey(task)));
+  const overdueShown = [...overdue, ...daily.filter((task) => isSettled(task) && held.get(dayTaskKey(task)) === "overdue")];
+  const weekPending = weekly.filter((task) => !isSettled(task) || held.get(dayTaskKey(task)) === "pending")
+    .sort((a, b) => (a.endDate ?? "").localeCompare(b.endDate ?? ""));
+  const weekDone = [...weekly.filter((task) => isSettled(task) && !held.has(dayTaskKey(task))), ...weekPlanDone];
+  const hasWeekPlan = weekPending.length + weekDone.length > 0;
+  const progress = countProgress(daily);
   // 「还剩 N 项」与进度条同一口径（有小项按小项、没有小项按任务），避免两个数字对不上
   const remaining = progress.total - progress.completed;
+  const weekProgress = countProgress([...weekly, ...weekPlanDone]);
+  const weekRemaining = weekProgress.total - weekProgress.completed;
+  const dueLabelFor = (task: TaskDisplay) =>
+    task.timeType === "dateRange" && task.mainCategory !== "temporary" && task.endDate && !task.rolledFromDate && task.endDate >= props.date
+      ? { text: weekPlanDueLabel(task.endDate, props.date), urgent: task.endDate === props.date }
+      : undefined;
   const move = (days: number) => props.onDateChange(toDateKey(addDays(fromDateKey(props.date), days)));
   const swipeRef = useSwipe<HTMLDivElement>(
     () => move(1),   // left swipe → next day
@@ -106,6 +111,7 @@ export function DayPage(props: Props) {
   const renderTask = (task: TaskDisplay, dragHandle?: ReactNode) => <TaskItem
     key={dayTaskKey(task)}
     dragHandle={dragHandle}
+    dueLabel={dueLabelFor(task)}
     task={task}
     unsynced={props.unsyncedTasks?.has(taskSyncKey(task))}
     unsyncedItemIds={props.unsyncedItems && task.checklistItems ? new Set(task.checklistItems.filter((item) => props.unsyncedItems!.has(itemSyncKey(task.id, item.id))).map((item) => item.id)) : undefined}
@@ -123,10 +129,20 @@ export function DayPage(props: Props) {
     </header>
     {!isToday && <div role="status" className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-sun/60 bg-sun/20 px-3 py-2 sm:px-4"><p className="min-w-0 text-sm font-semibold text-ink">正在看 {formatCompactDate(props.date)}（{relativeDayLabel(props.date)}），不是今天</p><button onClick={() => props.onDateChange(todayKey())} className="h-9 shrink-0 rounded-lg bg-primary px-3 text-sm font-bold text-white [@media(pointer:coarse)]:h-11">回到今天</button></div>}
     <SidebarMemo value={props.memo} variant="narrow" editorOpen={props.memoEditorOpen} focusRequest={props.memoFocusRequest} busy={props.memoBusy} onFocus={props.onMemoFocus} onChange={props.onMemoChange} onBlur={props.onMemoBlur} onComplete={props.onMemoComplete} />
-    <div ref={swipeRef} className="space-y-4">
-      {overdueShown.length > 0 && <section className="surface overflow-visible border-alert/35"><div className="flex items-center justify-between border-b border-alert/20 bg-alert/[0.06] px-3 py-2.5 sm:px-4"><h2 className="text-base font-bold text-alert">逾期未完成</h2><span className="text-[13px] font-semibold tabular-nums text-alert">{overdue.length}</span></div>{overdueShown.map((task) => renderTask(task))}</section>}
-      <section className="surface overflow-visible"><div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">{isToday ? "今日清单" : "当日清单"}</h2><ProgressMeter completed={progress.completed} total={progress.total} />{progress.total > 0 && <span className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${remaining === 0 ? "text-primary" : "text-ink"}`}>{remaining === 0 ? "全部完成" : `还剩 ${remaining} 项`}</span>}</div>{pending.length ? <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} onTaskReorder={reorderTasks} /> : isToday && done.length > 0 && overdueShown.length === 0 ? <AllDoneCelebration count={done.length} /> : done.length > 0 ? <p className="px-4 py-4 text-[15px] font-semibold text-primary">这一天的事都做完了</p> : <div className="p-3"><EmptyState compact /></div>}</section>
-      {done.length > 0 && <section className="surface overflow-visible"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-3 py-2.5 text-left sm:px-4"><span className="flex items-center gap-2 text-base font-bold text-ink"><CheckCircle2 className="h-4 w-4 text-primary" />已完成 <span className="text-[13px] font-medium text-muted">{done.length}</span></span><ChevronDown className={`h-4 w-4 text-muted transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <div className="border-t border-ink/10">{done.map((task) => renderTask(task))}</div>}</section>}
+    {/* Mac / iPad 横屏：左边"今天必须完成"（逾期 / 当天清单 / 已完成），右边"本周计划"；窄屏依次排下来，本周计划在当天已完成之前 */}
+    <div ref={swipeRef} className={`grid grid-cols-1 gap-4 ${hasWeekPlan ? "lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:grid-rows-[auto_auto_1fr] lg:items-start" : ""}`}>
+      {overdueShown.length > 0 && <section className="surface overflow-visible border-alert/35 lg:col-start-1"><div className="flex items-center justify-between border-b border-alert/20 bg-alert/[0.06] px-3 py-2.5 sm:px-4"><h2 className="text-base font-bold text-alert">逾期未完成</h2><span className="text-[13px] font-semibold tabular-nums text-alert">{overdue.length}</span></div>{overdueShown.map((task) => renderTask(task))}</section>}
+      <section className="surface overflow-visible lg:col-start-1"><div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">{isToday ? "今天必须完成" : "当天必须完成"}</h2><ProgressMeter completed={progress.completed} total={progress.total} />{progress.total > 0 && <span className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${remaining === 0 ? "text-primary" : "text-ink"}`}>{remaining === 0 ? "全部完成" : `还剩 ${remaining} 项`}</span>}</div>{pending.length ? <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} onTaskReorder={reorderTasks} /> : isToday && done.length > 0 && overdueShown.length === 0 ? <AllDoneCelebration count={done.length} /> : done.length > 0 ? <p className="px-4 py-4 text-[15px] font-semibold text-primary">这一天的事都做完了</p> : <div className="p-3"><EmptyState compact /></div>}</section>
+      {hasWeekPlan && <section aria-label="本周计划" className="surface overflow-visible lg:col-start-2 lg:row-span-3 lg:row-start-1">
+        <div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">本周计划</h2><ProgressMeter completed={weekProgress.completed} total={weekProgress.total} />{weekProgress.total > 0 && <span className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${weekRemaining === 0 ? "text-primary" : "text-ink"}`}>{weekRemaining === 0 ? "全部完成" : `还剩 ${weekRemaining} 项`}</span>}</div>
+        <p className="border-b border-ink/[0.07] px-3 py-2 text-[13px] text-muted sm:px-4">截止前哪天做都行，到截止那天会出现在“{isToday ? "今天" : "当天"}必须完成”里。</p>
+        {weekPending.length > 0 ? weekPending.map((task) => renderTask(task)) : <p className="px-4 py-3 text-[15px] font-semibold text-primary">本周计划都做完了</p>}
+        {weekDone.length > 0 && <>
+          <button onClick={() => setShowWeekDone(!showWeekDone)} aria-expanded={showWeekDone} className="flex min-h-11 w-full items-center justify-between border-t border-ink/[0.07] px-3 text-left text-[13px] font-semibold text-muted sm:px-4"><span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-primary" />已完成 {weekDone.length}</span><ChevronDown className={`h-4 w-4 transition ${showWeekDone ? "rotate-180" : ""}`} /></button>
+          {showWeekDone && <div className="border-t border-ink/[0.07]">{weekDone.map((task) => renderTask(task))}</div>}
+        </>}
+      </section>}
+      {done.length > 0 && <section className="surface overflow-visible lg:col-start-1"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-3 py-2.5 text-left sm:px-4"><span className="flex items-center gap-2 text-base font-bold text-ink"><CheckCircle2 className="h-4 w-4 text-primary" />已完成 <span className="text-[13px] font-medium text-muted">{done.length}</span></span><ChevronDown className={`h-4 w-4 text-muted transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <div className="border-t border-ink/10">{done.map((task) => renderTask(task))}</div>}</section>}
     </div>
   </main>;
 }
@@ -224,4 +240,18 @@ function SortableTaskList({
 function PlanSummary({ title, items, onClick }: { title: string; items: PlanOverviewItem[]; onClick: () => void }) {
   const [expanded, setExpanded] = useState(true);
   return <section className="rounded-2xl border border-stone-100 bg-white px-4 py-4 text-left shadow-sm"><div className="flex items-center justify-between"><button onClick={() => setExpanded(!expanded)} className="flex flex-1 items-center justify-between font-bold text-ink"><span>{title}</span><ChevronDown className={`h-4 w-4 text-stone-400 ${expanded ? "rotate-180" : ""}`} /></button><button onClick={onClick} className="ml-3 text-xs text-primary">查看</button></div>{expanded && <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">{TASK_SUBJECT_GROUPS.map((group) => { const groupItems = items.filter((item) => item.group === group.key).sort((a, b) => { const aDone = a.done >= a.total; const bDone = b.done >= b.total; if (aDone && !bDone) return 1; if (!aDone && bDone) return -1; return 0; }); return <section key={group.key} className="rounded-xl bg-mint/40 p-3"><h3 className="text-xs font-semibold text-ink">{group.label}</h3><div className="mt-2 space-y-2">{groupItems.length ? groupItems.map((item) => { const unfinished = item.done < item.total; return <div key={item.id} className={`flex items-center gap-2 rounded-md border-l-2 px-2 py-1.5 text-[11px] ${unfinished ? "border-amber-400 bg-amber-50/80 font-medium text-stone-700" : "border-stone-200 text-stone-400"}`}><span className="min-w-0 flex-1 truncate">{item.label}</span>{item.isCourse && <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold ${unfinished ? "bg-mint text-primary" : "bg-stone-200 text-stone-400"}`}>上课</span>}<span className="shrink-0 tabular-nums">{item.done} / {item.total} {item.unit}</span></div>; }) : <p className="text-[11px] text-stone-300">暂无</p>}</div></section>; })}</div>}</section>;
+}
+
+/** 有小项时只统计小项；没有小项时，大项自身计为一项。使用当前查看日的展示状态，历史日期的小项完成情况由数据层提供 */
+function countProgress(tasks: TaskDisplay[]) {
+  return tasks.reduce((result, task) => {
+    if (task.checklistItems?.length) {
+      result.total += task.checklistItems.length;
+      result.completed += task.checklistItems.filter((item) => item.done).length;
+    } else {
+      result.total += 1;
+      if (["done", "cancelled"].includes(task.status)) result.completed += 1;
+    }
+    return result;
+  }, { completed: 0, total: 0 });
 }

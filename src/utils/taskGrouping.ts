@@ -73,6 +73,34 @@ export function groupDayTasks<T extends DayGroupable>(tasks: T[], subjectOrder: 
   return { classes, homework };
 }
 
+// ── 今日页：每日计划 / 本周计划（2026-11-17）──────────────────────────────
+
+/**
+ * 某一天里，这条任务是否放在"本周计划"区，而不是"今天必须完成"：
+ * 几天内做完（dateRange）的作业，在最后一天（截止日）之前都不是当天必须做完的事。
+ * - 截止日当天回到"今天必须完成"（与本周回看"只算在截止日"同一口径）；
+ * - 过了截止日还没做完的由逾期区负责（不在当天清单里）；
+ * - "其他安排"（旅游、休闲、考试比赛等）是一段时间的安排、不是要做完的作业，留在当天清单。
+ * 只决定显示位置，不改任何数据。
+ */
+export function isWeekPlanTask(task: Pick<Task, "timeType" | "mainCategory" | "endDate">, date: string): boolean {
+  return task.timeType === "dateRange" && task.mainCategory !== "temporary" && !!task.endDate && task.endDate > date;
+}
+
+const WEEKDAY = ["日", "一", "二", "三", "四", "五", "六"];
+
+/** 本周计划里的截止说明：明天截止 / 周五截止（同一周内）/ 11月24日截止 */
+export function weekPlanDueLabel(endDate: string, date: string): string {
+  const day = (key: string) => new Date(`${key}T00:00:00`);
+  const diff = Math.round((day(endDate).getTime() - day(date).getTime()) / 86400000);
+  if (diff <= 0) return "今天截止";
+  if (diff === 1) return "明天截止";
+  const weekdayOf = (key: string) => (day(key).getDay() + 6) % 7; // 周一=0
+  if (diff < 7 && weekdayOf(endDate) > weekdayOf(date)) return `周${WEEKDAY[day(endDate).getDay()]}截止`;
+  const [, month, dd] = endDate.split("-");
+  return `${Number(month)}月${Number(dd)}日截止`;
+}
+
 // ── 今日页：刚完成的任务原位停留 ─────────────────────────────────────────────
 
 /** 今日页一条任务所在的区：今日清单 / 逾期未完成 / 已完成 */

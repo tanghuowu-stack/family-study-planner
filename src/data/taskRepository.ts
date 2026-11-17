@@ -406,6 +406,19 @@ export const taskRepository = {
     return [...unique.values()].filter((task) => task.status === "done" || !paused(task, date)).sort(taskSort);
   },
 
+  /**
+   * 今日页"本周计划"区里已经做完的（2026-11-17）：几天内做完的作业在这一天之前就做完了、这一天仍在它的日期范围内。
+   * getTasksForDate 只在完成那天显示已完成，之后几天不再出现；本周计划要让孩子看到"这周的作业哪些已经做完"。
+   * 完成当天的那条仍由 getTasksForDate 给出，这里不重复。规则与 isWeekPlanTask 一致（不含"其他安排"）。
+   */
+  async getWeekPlanDone(date: string): Promise<TaskDisplay[]> {
+    const tasks = (await db.tasks.toArray()).filter(isActiveTask);
+    return tasks.filter((task) => task.mainCategory !== "readingPlan" && task.mainCategory !== "temporary" && task.childVisible
+      && task.timeType === "dateRange" && task.status === "done" && !!task.completedAt && !!task.startDate && !!task.endDate
+      && task.startDate <= date && date <= task.endDate && toLocalDateKey(task.completedAt) < date)
+      .sort(taskSort);
+  },
+
   async getOverdueTasks(date: string): Promise<TaskDisplay[]> {
     const allTasks = await db.tasks.toArray();
     const tasks = allTasks.filter(isActiveTask);

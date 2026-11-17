@@ -523,6 +523,10 @@ export const cloudRepository = {
     return taskRepository.getOverdueTasks(date);
   },
 
+  async getWeekPlanDone(date: string) {
+    return taskRepository.getWeekPlanDone(date);
+  },
+
   async getWeekPools(date: string) {
     return taskRepository.getWeekPools(date);
   },

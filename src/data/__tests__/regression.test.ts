@@ -147,32 +147,6 @@ describe("R5 云同步不回滚新数据（LWW）", () => {
   });
 });
 
-describe("R5 allocateTask 重排", () => {
-  it("10. 旧的未完成子任务软删不硬删，已完成子任务保留", async () => {
-    const { task: parent } = await taskRepository.create(baseDraft({
-      title: "作业周期",
-      timeType: "assignmentWindow",
-      date: undefined,
-      assignmentWindow: { startDate: today, endDate: dayOffset(6) },
-      totalAmount: 2,
-      splitCount: 2,
-    }));
-    await taskRepository.allocateTask(parent.id);
-    const firstChildren = (await db.tasks.where("parentTaskId").equals(parent.id).toArray());
-    expect(firstChildren).toHaveLength(2);
-    await db.tasks.update(firstChildren[0].id, { status: "done", completedAt: new Date().toISOString() });
-
-    await taskRepository.allocateTask(parent.id);
-    const doneChild = await db.tasks.get(firstChildren[0].id);
-    const staleChild = await db.tasks.get(firstChildren[1].id);
-    expect(doneChild?.deletedAt).toBeUndefined();
-    expect(staleChild?.deletedAt).toBeTruthy();
-    const all = await db.tasks.where("parentTaskId").equals(parent.id).toArray();
-    expect(all).toHaveLength(3);
-    expect(all.filter((t) => !t.deletedAt)).toHaveLength(2);
-  });
-});
-
 describe("R6 dateRange 整体任务语义", () => {
   it("11. dateRange 任务整体完成走本体，不产生 occurrence", async () => {
     const { task } = await taskRepository.create(baseDraft({

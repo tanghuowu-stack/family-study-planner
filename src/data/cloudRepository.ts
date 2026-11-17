@@ -24,8 +24,6 @@ import type {
   ActivityLog,
 } from "../types/task";
 import { taskRepository, setActivityLogHook } from "./taskRepository";
-import { getWeekStartKey, getWeekEndKey, getMonthKey, getMonthBounds, todayKey, toDateKey } from "../utils/date";
-import { addDays, eachDayOfInterval, parseISO } from "date-fns";
 
 // ─── 云端同步失败回调（由 App.tsx 注册，写失败时提示用户） ──────────────────────
 
@@ -528,26 +526,6 @@ export const cloudRepository = {
     return taskRepository.getWeekPlanDone(date);
   },
 
-  async getWeekPools(date: string) {
-    return taskRepository.getWeekPools(date);
-  },
-
-  async getChildren(parentId: string, weekStart?: string) {
-    return taskRepository.getChildren(parentId, weekStart);
-  },
-
-  async getPlanSummary(date: string, period: "week" | "month") {
-    return taskRepository.getPlanSummary(date, period);
-  },
-
-  async getWeekOverview(date: string) {
-    return taskRepository.getWeekOverview(date);
-  },
-
-  async getMonthOverview(date: string) {
-    return taskRepository.getMonthOverview(date);
-  },
-
   async getCourseStatistics(startDate: string, endDate: string) {
     return taskRepository.getCourseStatistics(startDate, endDate);
   },
@@ -744,23 +722,6 @@ export const cloudRepository = {
       );
     }
     return copy;
-  },
-
-  async allocateTask(parentId: string, weekDate?: string) {
-    const count = await taskRepository.allocateTask(parentId, weekDate);
-    if (_familyId) {
-      // Re-upload all children of this parent
-      const children = await db.tasks
-        .where("parentTaskId")
-        .equals(parentId)
-        .toArray();
-      for (const child of children) {
-        await upsertTask(child, _familyId).catch((e) =>
-          notifySyncError("任务云端同步失败", e)
-        );
-      }
-    }
-    return count;
   },
 
   /**
@@ -965,18 +926,6 @@ export const cloudRepository = {
   },
 
   // ── Reading logs (delegate to local only for now) ─────────────────────────
-
-  async listReadingLogs(taskId: string, weekDate: string) {
-    return taskRepository.listReadingLogs(taskId, weekDate);
-  },
-
-  async addReadingLog(input: { taskId: string; date: string; amount: number; title?: string; note?: string }) {
-    return taskRepository.addReadingLog(input);
-  },
-
-  async undoLatestReadingLog(taskId: string, weekDate: string) {
-    return taskRepository.undoLatestReadingLog(taskId, weekDate);
-  },
 
   // ── Backup (delegate to local for now) ───────────────────────────────────
 

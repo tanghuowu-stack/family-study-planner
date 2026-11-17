@@ -21,7 +21,7 @@ export function AllDoneCelebration({ count }: { count: number }) {
       <div className="min-w-0">
         <p className="text-lg font-bold text-ink">今天的 {count} 件事都做完了！</p>
         {streaks.length > 0
-          ? <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[15px] text-muted">{streaks.map((cal) => <span key={cal.taskId} className="whitespace-nowrap">{cal.title} <span className="font-semibold text-ink">🔥{cal.currentStreak} 天</span></span>)}</p>
+          ? <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[15px] text-muted">{streaks.map((cal) => <span key={cal.taskId} className="whitespace-nowrap">{cal.title} <span className="font-semibold text-ink">🔥{cal.currentStreak} {cal.streakUnit}</span></span>)}</p>
           : <p className="mt-1 text-[15px] text-muted">认真做完每一件，明天继续加油。</p>}
       </div>
     </div>

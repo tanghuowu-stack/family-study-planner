@@ -155,15 +155,6 @@ describe("数据层消费方（fake-indexeddb 端到端）", () => {
     expect(stats.total).toBe(3);
   });
 
-  it("周汇总：跳绳课作为上课项计入（isCourse=true），画画练习/钢琴练习不进周汇总", async () => {
-    await seed();
-    const overview = await taskRepository.getWeekOverview(today);
-    const byLabel = new Map(overview.map((i) => [i.label, i]));
-    expect(byLabel.get("跳绳课")?.isCourse).toBe(true);
-    expect(byLabel.get("钢琴课")?.isCourse).toBe(true);
-    expect(byLabel.has("画画练习")).toBe(false);
-    expect(byLabel.has("钢琴练习")).toBe(false);
-  });
 });
 
 describe("课程表单 / 新建任务表单辅助", () => {

@@ -62,6 +62,24 @@ export function WeekReviewStrip({ refreshKey, onOpenDay }: { refreshKey: number;
         })}
       </div>
 
+      {review.weeklyTimes.length > 0 && (
+        // 每周几次不排到哪一天：单独一行，看这一周做了几次（过去的周没做够标出来）
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-ink/10 px-3 py-2.5 sm:px-4" aria-label="每周几次">
+          <span className="text-[13px] font-semibold text-muted">每周几次</span>
+          {review.weeklyTimes.map((item) => {
+            const missed = !item.reached && review.weekEnd < today;
+            return (
+              <span key={item.taskId} title={`${item.title}：这一周做了 ${item.done}/${item.target} ${item.unit}`}
+                className={`inline-flex min-h-7 items-center gap-1.5 rounded-full px-2.5 text-[13px] ring-1 ring-inset ${item.reached ? "bg-mint/60 ring-primary/20" : missed ? "bg-rose-50 ring-rose-200" : "bg-white ring-ink/10"}`}>
+                <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: SUBJECT_DOT[item.subject] }} />
+                <span className="max-w-[7rem] truncate text-ink">{item.title}</span>
+                <span className={`font-semibold tabular-nums ${item.reached ? "text-primary" : missed ? "text-rose-700" : "text-ink"}`}>{item.reached ? `✓ ${item.done}/${item.target}` : `${item.done}/${item.target}`}</span>
+              </span>
+            );
+          })}
+        </div>
+      )}
+
       {openDay && (
         <div className="border-t border-ink/10 px-3 pb-2 pt-3 sm:px-4">
           <div className="flex items-center gap-2">

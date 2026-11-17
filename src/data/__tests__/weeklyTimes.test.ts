@@ -5,6 +5,14 @@
  */
 declare const process: { env: Record<string, string | undefined> };
 process.env.TZ = "Asia/Shanghai";
+// 打卡读休息日走 app_settings（本地模式只用 localStorage）：内存 shim
+const memStore = new Map<string, string>();
+(globalThis as { localStorage?: unknown }).localStorage = {
+  getItem: (k: string) => memStore.get(k) ?? null,
+  setItem: (k: string, v: string) => void memStore.set(k, String(v)),
+  removeItem: (k: string) => void memStore.delete(k),
+  clear: () => memStore.clear(),
+};
 import "fake-indexeddb/auto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -37,6 +45,8 @@ import { cloudRepository } from "../cloudRepository";
 import type { Task, TaskDraft } from "../../types/task";
 import { applyWeeklyLog, weeklyTimesActiveIn, weeklyTimesProgress } from "../../utils/weeklyTimes";
 import { isEndedRecurring } from "../../utils/taskMeta";
+import { getWeekReview } from "../weekReview";
+import { computeWeeklyStreak, getHabitCalendars, getHabitCandidates } from "../statsRepository";
 
 const TODAY = "2026-11-19"; // 周四；本周 11-16（一）~ 11-22（日）
 const piano = (overrides: Partial<Task> = {}): TaskDraft => ({
@@ -132,5 +142,62 @@ describe("云端模式", () => {
     await cloudRepository.logWeeklyTime(task.id, "2026-11-17", -1);
     await cloudRepository.logWeeklyTime(task.id, "2026-11-21", 1);
     expect(captured.upserts.tasks).toHaveLength(1);
+  });
+});
+
+describe("第 3 步：本周条与打卡", () => {
+  it("8. 月视图本周条：每周几次不进 7 天件数，单独给出这一周做了几次；过去的周按那一周的记录算", async () => {
+    const { task } = await taskRepository.create(piano({ weeklyLog: { "2026-11-10": 3, "2026-11-17": 1, "2026-11-19": 1 } }));
+    const review = await getWeekReview(TODAY, TODAY);
+    expect(review.days.reduce((sum, day) => sum + day.total, 0)).toBe(0);
+    expect(review.weeklyTimes).toEqual([{ taskId: task.id, title: "钢琴练习", done: 2, target: 3, unit: "次", reached: false, subject: "other" }]);
+    const lastWeek = await getWeekReview("2026-11-10", TODAY);
+    expect(lastWeek.weeklyTimes[0]).toMatchObject({ done: 3, reached: true });
+    // 开始之前的周不列
+    expect((await getWeekReview("2026-10-20", TODAY)).weeklyTimes).toEqual([]);
+  });
+
+  it("9. 连续周数：本周没做够不算断；过去哪周没做够就断；停 2 周以内接着算，再长从头算", () => {
+    const t = (log: Record<string, number>, extra: Partial<Task> = {}) => ({ ...piano(), id: "p", createdAt: "", updatedAt: "", weeklyLog: log, ...extra } as Task);
+    // 11-02、11-09 两周都做够 3 次，本周（11-16）只做 1 次
+    const log = { "2026-11-03": 3, "2026-11-10": 2, "2026-11-12": 1, "2026-11-17": 1 };
+    expect(computeWeeklyStreak([t(log)], TODAY)).toBe(2);
+    expect(computeWeeklyStreak([t({ ...log, "2026-11-18": 2 })], TODAY)).toBe(3);
+    expect(computeWeeklyStreak([t({ ...log, "2026-11-10": 1 })], TODAY)).toBe(0); // 上周没做够
+    // 打卡起点之前的周不算
+    expect(computeWeeklyStreak([t(log)], TODAY, "2026-11-09")).toBe(1);
+    // 接上的两段：中间停了 2 周接着算，停 3 周从头算
+    const old = t({ "2026-10-20": 3 }, { id: "old", startDate: "2026-10-01", endDate: "2026-10-25" });
+    const now2 = t({ "2026-11-10": 3 }, { id: "new", startDate: "2026-11-09" });
+    expect(computeWeeklyStreak([old, now2], TODAY)).toBe(2);
+    const now3 = t({ "2026-11-17": 3 }, { id: "new", startDate: "2026-11-16" });
+    expect(computeWeeklyStreak([old, now3], TODAY)).toBe(1);
+  });
+
+  it("10. 打卡页：每周几次可以勾进打卡；记了的那天算完成，没记的日子不算漏卡；连续按周", async () => {
+    const { task } = await taskRepository.create(piano({ title: "课外读书", mainCategory: "extraHomework", subCategory: "chinese", weeklyQuota: { enabled: true, targetCount: 2, unit: "本", isWeeklyRecurring: true, allowAutoDistribute: false, allowRollover: false }, weeklyLog: { "2026-11-11": 2, "2026-11-17": 1 } }));
+    expect((await getHabitCandidates()).map((c) => [c.taskId, c.scheduleText])).toEqual([[task.id, "每周 2 本"]]);
+    await db.tasks.update(task.id, { enableStreak: true, streakStartDate: "2026-11-02" });
+    const [cal] = await getHabitCalendars("2026-11", TODAY);
+    expect(cal.streakUnit).toBe("周");
+    expect(cal.currentStreak).toBe(1);
+    expect(cal.monthCompletedDays).toBe(2);
+    expect(cal.days.filter((d) => d.status === "missed")).toEqual([]);
+    expect(cal.days.find((d) => d.date === "2026-11-17")!.status).toBe("done");
+    expect(cal.hasScheduleInMonth).toBe(true);
+  });
+
+  it("11. 钢琴固定分组：改成每周几次后，记了的那天也算进“钢琴”这一行（和以前的钢琴任务合在一起）", async () => {
+    const OLD = "2026-01-01T00:00:00.000Z";
+    await db.tasks.add({ id: "old-piano", title: "钢琴练习", mainCategory: "interestClass", subCategory: "pianoPractice", timeType: "recurring", schedulePattern: "dailyRecurring",
+      recurrence: { frequency: "daily", startDate: "2026-11-01", endDate: "2026-11-08" }, status: "todo", rolloverMode: "skipIfMissed", allowRollover: false, childVisible: true,
+      enableStreak: true, streakStartDate: "2026-11-01", createdAt: OLD, updatedAt: OLD } as Task);
+    await taskRepository.create(piano({ startDate: "2026-11-09", weeklyLog: { "2026-11-18": 1 } }));
+    const cals = await getHabitCalendars("2026-11", TODAY);
+    expect(cals).toHaveLength(1);
+    expect(cals[0].title).toBe("钢琴");
+    expect(cals[0].streakUnit).toBe("天");
+    expect(cals[0].days.find((d) => d.date === "2026-11-18")!.status).toBe("done");
+    expect(cals[0].days.find((d) => d.date === "2026-11-17")!.status).toBe("off");
   });
 });

@@ -9,13 +9,17 @@
  * - 非 occurrence 类：只看本体 status + completedAt；
  * - join 前先过 isActiveTask（软删任务及其 occurrence 残留一律不计）；
  * - timestamp → 日期一律 toLocalDateKey，不做 UTC 截断。
+ *
+ * 每周几次（weeklyTimes，2026-11-17）：没有固定的应做日——记了的那天算完成，没记的日子不算漏卡；
+ * 整个项目都是每周几次时，连续按"连续几周做够"算（本周还没做够不算断）。
  */
 import { addDays, endOfMonth, parseISO, startOfMonth } from "date-fns";
 import { db } from "./db";
 import { scheduleOccursOn } from "./taskRepository";
 import { getRepository } from "./repositoryProvider";
 import { isCourseTask, isEndedRecurring, isOccurrenceSchedule, subCategoryLabel, taskShortName, MAIN_CATEGORY_META, WEEKDAY_LABELS } from "../utils/taskMeta";
-import { todayKey, toDateKey, toLocalDateKey } from "../utils/date";
+import { getWeekStartKey, todayKey, toDateKey, toLocalDateKey } from "../utils/date";
+import { isWeeklyTimes, weeklyTimesActiveIn, weeklyTimesProgress } from "../utils/weeklyTimes";
 import { createTravelPauseCheck } from "../utils/travelPause";
 import { loadRestDays, saveRestDays, loadHiddenHabitCandidates, saveHiddenHabitCandidates } from "./appSettingsRepository";
 import type { Task, TaskOccurrenceStatus } from "../types/task";
@@ -47,6 +51,7 @@ type TravelPauseCheck = ReturnType<typeof createTravelPauseCheck>;
  * - 非 occurrence 类：本体 done 且 completedAt 归因的本地完成日 ≤ 当天。
  */
 function itemSatisfied(task: Task, date: string, occByKey: OccMap): boolean {
+  if (isWeeklyTimes(task)) return (task.weeklyLog?.[date] ?? 0) > 0;
   if (isOccurrenceSchedule(task)) return occByKey.get(`${task.id}:${date}`)?.status === "done";
   return task.status === "done" && !!task.completedAt && toLocalDateKey(task.completedAt) <= date;
 }
@@ -58,6 +63,8 @@ function itemSatisfied(task: Task, date: string, occByKey: OccMap): boolean {
 function isApplicable(task: Task, date: string, occByKey: OccMap, startOverride?: string, paused?: TravelPauseCheck): boolean {
   const start = startOverride ?? task.streakStartDate;
   if (start ? date < start : beforeStreakStart(task, date)) return false;
+  // 每周几次：只有记了的那天算"应做且完成"，其余日子不应做（不算漏卡）
+  if (isWeeklyTimes(task)) return weeklyTimesActiveIn(task, date) && itemSatisfied(task, date, occByKey);
   if (!scheduleOccursOn(task, date)) return false;
   if (paused?.(task, date) && !itemSatisfied(task, date, occByKey)) return false;
   if (isOccurrenceSchedule(task) && occByKey.get(`${task.id}:${date}`)?.status === "cancelled") return false;
@@ -99,6 +106,30 @@ export function computeGroupStreak(tasks: Task[], today: string, occByKey: OccMa
   return streak;
 }
 
+/**
+ * 每周几次的连续周数：从本周往回，这一周（项目里有效的成员）做够目标 +1；本周还没做够不算断（这周没过完）；
+ * 过去哪一周没做够就断。中间停了（那几周没有有效成员）不超过 2 周穿过，超过就从头算（同 STREAK_BREAK_GAP_DAYS）。
+ * 接上的项目：一周的次数把所有成员的记录加起来，目标取那一周有效成员里最大的。
+ */
+export function computeWeeklyStreak(tasks: Task[], today: string, start?: string): number {
+  const startWeek = start ? getWeekStartKey(start) : undefined;
+  let week = getWeekStartKey(today);
+  let streak = 0;
+  let gapWeeks = 0;
+  for (let i = 0; i < 60; i++, week = toDateKey(addDays(parseISO(week), -7))) {
+    if (startWeek && week < startWeek) break;
+    const active = tasks.filter((t) => weeklyTimesActiveIn(t, week));
+    if (!active.length) { if (++gapWeeks * 7 > STREAK_BREAK_GAP_DAYS) break; continue; }
+    gapWeeks = 0;
+    const target = Math.max(...active.map((t) => weeklyTimesProgress(t, week).target));
+    const done = tasks.reduce((sum, t) => sum + weeklyTimesProgress(t, week).done, 0);
+    if (done >= target) { streak++; continue; }
+    if (i === 0) continue; // 本周还没过完
+    break;
+  }
+  return streak;
+}
+
 /** 中间连续超过这么多天没有安排，连续天数从头算 */
 export const STREAK_BREAK_GAP_DAYS = 14;
 
@@ -127,7 +158,7 @@ export const habitProjectKey = (task: Pick<Task, "id" | "subCategory" | "habitKe
   HABIT_GROUPS[task.subCategory]?.groupKey ?? task.habitKey ?? task.id;
 /** 能计入某个打卡项目的任务：固定分组不限排期类型（每次单独建的钢琴课），其余只认重复类 */
 // 每周几次（weeklyTimes）暂不进打卡（没有固定的应做日，口径在第 3 步再定）
-const isHabitMember = (task: Task) => task.timeType !== "weeklyTimes" && (!!HABIT_GROUPS[task.subCategory] || isOccurrenceSchedule(task));
+const isHabitMember = (task: Task) => !!HABIT_GROUPS[task.subCategory] || isOccurrenceSchedule(task) || isWeeklyTimes(task);
 /** 项目显示名：固定分组用分组名，其余用最近那个任务的名字 */
 const latestFirst = (a: Task, b: Task) => (b.recurrence?.startDate ?? b.startDate ?? b.createdAt).localeCompare(a.recurrence?.startDate ?? a.startDate ?? a.createdAt);
 const projectTitle = (members: Task[]) => HABIT_GROUPS[members[0].subCategory]?.label ?? taskShortName([...members].sort(latestFirst)[0]);
@@ -167,6 +198,7 @@ export interface HabitCandidate {
 const shortDate = (date?: string) => (date ? `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}` : "");
 const categoryTextOf = (t: Task) => `${MAIN_CATEGORY_META[t.mainCategory]?.label ?? ""}·${subCategoryLabel(t.mainCategory, t.subCategory)}`;
 const scheduleTextOf = (t: Task) => {
+  if (isWeeklyTimes(t)) return `每周 ${t.weeklyQuota?.targetCount ?? 1} ${t.weeklyQuota?.unit ?? "次"}`;
   if (t.schedulePattern === "dailyRecurring" || t.schedulePattern === "dateRangeDaily") return "每天";
   const days = t.schedulePattern === "dateRangeWeekdays" ? t.rangeWeekdays : t.recurrence?.weekdays;
   if (days?.length) return `每周${[1, 2, 3, 4, 5, 6, 0].filter((d) => days.includes(d)).map((d) => WEEKDAY_LABELS[d].replace("周", "")).join("")}`;
@@ -174,6 +206,7 @@ const scheduleTextOf = (t: Task) => {
   return "重复";
 };
 const rangeOf = (t: Task): [string | undefined, string | undefined] => {
+  if (isWeeklyTimes(t)) return [t.startDate, t.endDate];
   if (t.schedulePattern === "specificDates") { const sorted = [...(t.specificDates ?? [])].sort(); return [sorted[0], sorted.at(-1)]; }
   if (t.schedulePattern === "dateRangeDaily" || t.schedulePattern === "dateRangeWeekdays") return [t.startDate, t.endDate];
   return [t.recurrence?.startDate ?? t.startDate, t.recurrence?.endDate];
@@ -185,7 +218,7 @@ export async function getHabitCandidates(): Promise<HabitCandidate[]> {
   const [tasks, hidden] = await Promise.all([db.tasks.toArray(), loadHiddenHabitCandidates()]);
   const hiddenSet = new Set(hidden);
   return tasks
-    .filter((t) => statsEligible(t) && isOccurrenceSchedule(t) && t.status !== "cancelled")
+    .filter((t) => statsEligible(t) && (isOccurrenceSchedule(t) || isWeeklyTimes(t)) && t.status !== "cancelled")
     .filter((t) => !hiddenSet.has(t.id) || t.enableStreak === true) // 已勾选的即使在隐藏名单里也要露出，避免"关不掉"
     .sort(sortTasks)
     .map((t) => ({
@@ -385,8 +418,10 @@ export interface HabitCalendar {
   /** 单任务时是真实 taskId；命中 HABIT_GROUPS 分组时是合成的组 key（如 "piano"） */
   taskId: string;
   title: string;
-  /** 该项目自身的当前连续天数（与展示月份无关，恒从今天往回算） */
+  /** 该项目自身的当前连续天数（与展示月份无关，恒从今天往回算）；streakUnit 为"周"时是连续做够的周数 */
   currentStreak: number;
+  /** 连续的单位：整个项目都是每周几次时按周算，其余按天 */
+  streakUnit: "天" | "周";
   /** Completion days in the displayed month, counted once per calendar day. */
   monthCompletedDays: number;
   /** 这个月有没有任何一天排了它（停掉的月份为 false，打卡矩阵不显示这一行） */
@@ -455,12 +490,14 @@ export async function getHabitCalendars(month: string, today: string = todayKey(
       else status = "missed";
       return { date, status };
     });
+    const weekly = groupTasks.every(isWeeklyTimes);
     return {
       taskId: key,
       title: projectTitle(groupTasks),
-      currentStreak: computeGroupStreak(groupTasks, today, occByKey, rests, start, paused),
+      currentStreak: weekly ? computeWeeklyStreak(groupTasks, today, start) : computeGroupStreak(groupTasks, today, occByKey, rests, start, paused),
+      streakUnit: weekly ? "周" : "天",
       monthCompletedDays: days.filter((day) => day.status === "done").length,
-      hasScheduleInMonth: monthDays.some((date) => groupTasks.some((t) => scheduleOccursOn(t, date))),
+      hasScheduleInMonth: monthDays.some((date) => groupTasks.some((t) => (isWeeklyTimes(t) ? weeklyTimesActiveIn(t, date) : scheduleOccursOn(t, date)))),
       days,
     };
   });

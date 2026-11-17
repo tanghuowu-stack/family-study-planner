@@ -7,9 +7,9 @@ import { TaskItem } from "../components/TaskItem";
 import { getCalendarAnnotation } from "../data/calendarAnnotations";
 import { getRepository } from "../data/repositoryProvider";
 import { taskRepository } from "../data/taskRepository";
-import type { PlanOverviewItem, TaskDisplay, TaskStatus } from "../types/task";
+import type { TaskDisplay, TaskStatus } from "../types/task";
 import { formatCompactDate, formatFullDate, fromDateKey, relativeDayLabel, toDateKey, todayKey } from "../utils/date";
-import { TASK_SUBJECT_GROUPS, dayTaskKey, findJustCompleted, groupDayTasks, isWeekPlanTask, normalizeSubjectOrder, weekPlanDueLabel, type DayTaskPlacement, type TaskSubjectGroup } from "../utils/taskGrouping";
+import { dayTaskKey, findJustCompleted, groupDayTasks, isWeekPlanTask, normalizeSubjectOrder, weekPlanDueLabel, type DayTaskPlacement, type TaskSubjectGroup } from "../utils/taskGrouping";
 import { useGroupOrder } from "../hooks/useGroupOrder";
 import { useSortableList } from "../hooks/useSortableList";
 import { itemSyncKey, taskSyncKey } from "../utils/taskMeta";
@@ -272,11 +272,6 @@ function SortableTaskList({
       })}
     </>
   );
-}
-
-function PlanSummary({ title, items, onClick }: { title: string; items: PlanOverviewItem[]; onClick: () => void }) {
-  const [expanded, setExpanded] = useState(true);
-  return <section className="rounded-2xl border border-stone-100 bg-white px-4 py-4 text-left shadow-sm"><div className="flex items-center justify-between"><button onClick={() => setExpanded(!expanded)} className="flex flex-1 items-center justify-between font-bold text-ink"><span>{title}</span><ChevronDown className={`h-4 w-4 text-stone-400 ${expanded ? "rotate-180" : ""}`} /></button><button onClick={onClick} className="ml-3 text-xs text-primary">查看</button></div>{expanded && <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">{TASK_SUBJECT_GROUPS.map((group) => { const groupItems = items.filter((item) => item.group === group.key).sort((a, b) => { const aDone = a.done >= a.total; const bDone = b.done >= b.total; if (aDone && !bDone) return 1; if (!aDone && bDone) return -1; return 0; }); return <section key={group.key} className="rounded-xl bg-mint/40 p-3"><h3 className="text-xs font-semibold text-ink">{group.label}</h3><div className="mt-2 space-y-2">{groupItems.length ? groupItems.map((item) => { const unfinished = item.done < item.total; return <div key={item.id} className={`flex items-center gap-2 rounded-md border-l-2 px-2 py-1.5 text-[11px] ${unfinished ? "border-amber-400 bg-amber-50/80 font-medium text-stone-700" : "border-stone-200 text-stone-400"}`}><span className="min-w-0 flex-1 truncate">{item.label}</span>{item.isCourse && <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold ${unfinished ? "bg-mint text-primary" : "bg-stone-200 text-stone-400"}`}>上课</span>}<span className="shrink-0 tabular-nums">{item.done} / {item.total} {item.unit}</span></div>; }) : <p className="text-[11px] text-stone-300">暂无</p>}</div></section>; })}</div>}</section>;
 }
 
 /** 有小项时只统计小项；没有小项时，大项自身计为一项。使用当前查看日的展示状态，历史日期的小项完成情况由数据层提供 */

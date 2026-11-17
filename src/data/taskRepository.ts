@@ -1,10 +1,10 @@
-import { addDays, eachDayOfInterval, getDay, parseISO } from "date-fns";
+import { addDays, eachDayOfInterval, parseISO } from "date-fns";
 import { db } from "./db";
 import type {
-  ActivityActionType, ActivityLog, BackupData, ChecklistItem, Course, MainCategory, OccurrenceStatus, PlanOverviewItem, PlanPeriod, PlanPeriodType, ReadingLog, RolloverMode, SyncResult, Task, TaskDisplay,
+  ActivityActionType, ActivityLog, BackupData, ChecklistItem, Course, MainCategory, OccurrenceStatus, PlanPeriod, ReadingLog, RolloverMode, SyncResult, Task, TaskDisplay,
   TaskDraft, TaskOccurrenceStatus, TaskStatus, TaskWriteResult,
 } from "../types/task";
-import { getMonthBounds, getMonthKey, getWeekEndKey, getWeekStartKey, isDateInRange, todayKey, toDateKey, toLocalDateKey } from "../utils/date";
+import { getWeekEndKey, todayKey, toDateKey, toLocalDateKey } from "../utils/date";
 import { scheduleOccursOn } from "../utils/recurrence";
 import { createTravelPauseCheck } from "../utils/travelPause";
 export { scheduleOccursOn } from "../utils/recurrence";
@@ -31,7 +31,6 @@ const taskSort = (a: Task, b: Task) => {
     || (a.sortOrder ?? 999) - (b.sortOrder ?? 999)
     || a.createdAt.localeCompare(b.createdAt);
 };
-const overlaps = (aStart: string, aEnd: string, bStart: string, bEnd: string) => aStart <= bEnd && aEnd >= bStart;
 
 const deviceInfo = () => {
   const userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent;
@@ -156,8 +155,6 @@ const isCalendarPlanTask = (task: Task) =>
   (task.mainCategory === "extraHomework" && task.extraContentType === "class")
   || (task.mainCategory === "interestClass" && (task.subCategory === "otherInterest" ? isCourseTask(task) : task.subCategory !== "pianoPractice"))
   || task.mainCategory === "temporary";
-
-const isRangeSchedule = (task: Task) => task.timeType === "dateRange" || (task.timeType === "recurring" && ["dateRangeDaily", "dateRangeWeekdays"].includes(task.schedulePattern ?? ""));
 
 // R1/R3 写入口防线（PROJECT_GUIDE 6.5）：剔除 TaskDisplay 的运行时展示字段；
 // occurrence 类任务本体 status 只允许 todo/cancelled，completedAt 恒为空。
@@ -451,174 +448,6 @@ export const taskRepository = {
       .sort(taskSort);
   },
 
-  async getWeekPools(date: string): Promise<Task[]> {
-    const start = getWeekStartKey(date);
-    const end = getWeekEndKey(date);
-    const allTasks = await db.tasks.toArray();
-    const tasks = allTasks.filter(isActiveTask);
-    return tasks.filter((task) => {
-      if (task.mainCategory === "readingPlan" || !task.childVisible) return false;
-      if (task.timeType === "weekGoal") return task.weeklyQuota?.isWeeklyRecurring ? (!task.weekStart || task.weekStart <= end) : task.weekStart === start;
-      return task.timeType === "assignmentWindow" && !!task.assignmentWindow && overlaps(task.assignmentWindow.startDate, task.assignmentWindow.endDate, start, end);
-    }).sort(taskSort);
-  },
-
-  async getChildren(parentId: string, weekStart?: string) {
-    const children = (await db.tasks.where("parentTaskId").equals(parentId).toArray()).filter(isActiveTask);
-    return weekStart ? children.filter((task) => task.allocationWeekStart === weekStart || (!task.allocationWeekStart && task.date && getWeekStartKey(task.date) === weekStart)) : children;
-  },
-
-  async getPlanSummary(date: string, period: "week" | "month") {
-    const [allTasks, readingLogs] = await Promise.all([db.tasks.toArray(), db.readingLogs.toArray()]);
-    const tasks = allTasks.filter(isActiveTask);
-    const plans = period === "week"
-      ? tasks.filter((task) => task.mainCategory !== "readingPlan" && task.childVisible && task.timeType === "weekGoal" && (task.weeklyQuota?.isWeeklyRecurring ? (!task.weekStart || task.weekStart <= getWeekEndKey(date)) : task.weekStart === getWeekStartKey(date)))
-      : tasks.filter((task) => task.childVisible && task.timeType === "monthGoal" && task.month === getMonthKey(date));
-    return plans.map((plan) => {
-      const children = tasks.filter((task) => task.parentTaskId === plan.id && (period !== "week" || task.allocationWeekStart === getWeekStartKey(date)));
-      const completed = children.filter((task) => task.status === "done").length;
-      const unit = plan.weeklyQuota?.unit ?? plan.readingTargetUnit ?? plan.amountUnit ?? "次";
-      const target = plan.weeklyQuota?.targetCount ?? plan.readingTargetCount ?? plan.totalAmount ?? plan.splitCount ?? 1;
-      const completedAmount = children.filter((task) => task.status === "done").reduce((sum, task) => sum + (task.amountPerSession ?? 1), 0);
-      const readingDone = readingLogs.filter((log) => log.taskId === plan.id && log.weekStart === getWeekStartKey(date)).reduce((sum, log) => sum + log.amount, 0);
-      const done = plan.mainCategory === "readingPlan" ? readingDone : children.length ? Math.min(target, completedAmount) : plan.status === "done" ? target : 0;
-      const label = plan.mainCategory === "readingPlan" ? subCategoryLabel("readingPlan", plan.subCategory) : plan.subCategory === "pianoPractice" ? "钢琴练习" : plan.title;
-      return { id: plan.id, label, done, target, unit, isReading: false, group: taskSubjectGroup(plan), isCourse: isCourseTask(plan) };
-    });
-  },
-
-  async getWeekOverview(date: string) {
-    const start = getWeekStartKey(date);
-    const end = getWeekEndKey(date);
-    const quotaLines = await this.getPlanSummary(date, "week");
-    const days = eachDayOfInterval({ start: parseISO(start), end: parseISO(end) }).map(toDateKey);
-    const daily = await Promise.all(days.map((day) => this.getTasksForDate(day)));
-    const grouped = new Map<string, PlanOverviewItem>();
-    const travelDays = new Set<string>();
-    const completedTravelDays = new Set<string>();
-    // 判断任务是否应出现在本周汇总：阅读类 OR 上课类 OR 事项 OR 多日/日期范围大作业（排除钢琴练习、单日普通作业）
-    const shouldIncludeInWeekSummary = (task: TaskDisplay) => {
-      if (task.extraContentType === "reading") return true;   // 课外·其他｜阅读显示
-      if (isCourseTask(task)) return true;
-      if (task.mainCategory === "temporary") return true;     // 事项类（旅游已在调用处单独处理）
-      if (task.mainCategory === "interestClass") return false; // 钢琴练习等非上课兴趣班不显示
-      // 只保留日期范围或重复类型的作业（多日大作业）
-      return isRangeSchedule(task) || task.timeType === "recurring";
-    };
-    daily.forEach((tasks, index) => tasks.filter((task) => !task.parentTaskId).forEach((task) => {
-      if (task.mainCategory === "temporary" && task.subCategory === "travel") {
-        travelDays.add(days[index]);
-        if (task.status === "done") completedTravelDays.add(days[index]);
-        return;
-      }
-      if (!shouldIncludeInWeekSummary(task)) return;
-      const isReading = task.mainCategory === "extraHomework" && task.extraContentType === "reading";
-      const current = grouped.get(task.id) ?? {
-        id: task.id,
-        label: task.title || (isReading ? "阅读" : subCategoryLabel(task.mainCategory, task.subCategory)),
-        done: 0,
-        total: 0,
-        unit: "次",
-        group: isReading ? "other" : taskSubjectGroup(task),
-        isCourse: isCourseTask(task)
-      };
-      if (isRangeSchedule(task) && !isCourseTask(task)) {
-        current.total = 1;
-        if (task.status === "done") current.done = 1;
-      } else {
-        current.total += 1;
-        if (task.status === "done") current.done += 1;
-      }
-      grouped.set(task.id, current);
-    }));
-    if (travelDays.size) grouped.set("temporary:travel", { id: "temporary:travel", label: "旅游", done: completedTravelDays.size, total: travelDays.size, unit: "天", group: "other", isCourse: false });
-    return [
-      ...quotaLines.map((item): PlanOverviewItem => ({ id: item.id, label: item.label, done: item.done, total: item.target, unit: item.unit, isReading: false, group: item.group, isCourse: item.isCourse })),
-      ...grouped.values(),
-    ];
-  },
-
-  async getMonthOverview(date: string) {
-    const bounds = getMonthBounds(date);
-    const start = bounds.start;
-    const end = bounds.end;
-    const [allTasks, occurrences] = await Promise.all([db.tasks.toArray(), db.taskOccurrenceStatuses.toArray()]);
-    const tasks = allTasks.filter((task) => isActiveTask(task) && task.childVisible);
-    const monthDays = eachDayOfInterval({ start: parseISO(start), end: parseISO(end) }).map(toDateKey);
-    const overview: PlanOverviewItem[] = [];
-    // 课程类任务（extraHomework class / interestClass）在下面的 interestGroups 里按自然月逐日统计，不再走 weeklyQuota 路径
-    const otherQuotas = tasks.filter((task) => task.mainCategory !== "readingPlan" && task.calendarVisibility !== "hide" && task.weeklyQuota?.enabled && !isCourseTask(task));
-    // 本月有多少个不同的周起始日（用于 isWeeklyRecurring 计划目标计算）
-    const monthWeekCount = new Set(monthDays.map(getWeekStartKey)).size;
-    otherQuotas.forEach((plan) => {
-      const target = plan.weeklyQuota!.targetCount * (plan.weeklyQuota!.isWeeklyRecurring ? monthWeekCount : 1);
-      const done = tasks.filter((task) => task.parentTaskId === plan.id && task.date && task.date >= start && task.date <= end && task.status === "done").reduce((sum, task) => sum + (task.amountPerSession ?? 1), 0);
-      overview.push({ id: plan.id, label: plan.subCategory === "pianoPractice" ? "钢琴练习" : plan.title, done, total: target, unit: plan.weeklyQuota!.unit, group: taskSubjectGroup(plan), isCourse: isCourseTask(plan) });
-    });
-    tasks.filter((task) => task.timeType === "monthGoal" && task.calendarVisibility !== "hide" && task.month === getMonthKey(date)).forEach((plan) => {
-      const target = plan.totalAmount ?? 1;
-      overview.push({ id: plan.id, label: plan.title, done: plan.status === "done" ? target : 0, total: target, unit: plan.amountUnit ?? "次", group: taskSubjectGroup(plan), isCourse: isCourseTask(plan) });
-    });
-    tasks.filter((task) => task.mainCategory !== "readingPlan" && task.mainCategory !== "interestClass" && task.mainCategory !== "temporary" && !isCourseTask(task) && isRangeSchedule(task) && !!task.startDate && !!task.endDate && overlaps(task.startDate, task.endDate, start, end)).forEach((task) => {
-      if (!overview.some((item) => item.id === task.id)) overview.push({ id: task.id, label: task.title || subCategoryLabel(task.mainCategory, task.subCategory), done: task.status === "done" ? 1 : 0, total: 1, unit: "次", group: taskSubjectGroup(task), isCourse: false });
-    });
-    const interestGroups = new Map<string, { done: number; total: number; group: PlanOverviewItem["group"]; isCourse: boolean }>();
-    const countTasks = tasks.filter((item) => {
-      if (item.mainCategory === "interestClass") return item.calendarVisibility !== "hide";
-      if (item.mainCategory === "extraHomework") {
-        if (item.extraContentType === "class") return item.calendarVisibility !== "hide";
-        if (item.extraContentType === "reading") return true;
-        if (item.extraContentType === "dictation") return true;
-      }
-      return false;
-    });
-    for (const task of countTasks) {
-      for (const day of monthDays) {
-        if (!scheduleOccursOn(task, day)) continue;
-        const status = isOccurrenceSchedule(task) ? occurrences.find((item) => item.taskId === task.id && item.occurrenceDate === day)?.status ?? "todo" : task.status;
-        if (status === "cancelled" || status === "postponed") continue;
-        const isReading = task.mainCategory === "extraHomework" && task.extraContentType === "reading";
-        const key = task.title
-          ? (isReading ? `阅读 - ${task.title}` : task.title)
-          : (isReading ? "阅读" : subCategoryLabel(task.mainCategory, task.subCategory));
-        const group = interestGroups.get(key) ?? {
-          done: 0,
-          total: 0,
-          group: isReading ? "other" : taskSubjectGroup(task),
-          isCourse: isCourseTask(task)
-        };
-        group.total += 1; if (status === "done") group.done += 1;
-        interestGroups.set(key, group);
-      }
-    }
-    interestGroups.forEach((value, key) => overview.push({ id: `interest:${key}`, label: key, done: value.done, total: value.total, unit: "次", group: value.group, isCourse: value.isCourse }));
-    tasks.filter((task) => task.mainCategory === "temporary" && task.subCategory !== "travel").forEach((task) => {
-      const matched: { day: string; status: TaskStatus | OccurrenceStatus }[] = [];
-      monthDays.forEach((day) => {
-        if (!scheduleOccursOn(task, day)) return;
-        const status = isOccurrenceSchedule(task) ? occurrences.find((item) => item.taskId === task.id && item.occurrenceDate === day)?.status ?? "todo" : task.status;
-        if (status === "cancelled" || status === "postponed") return;
-        matched.push({ day, status });
-      });
-      if (!matched.length) return;
-      const countByDay = task.subCategory === "leisure" && isRangeSchedule(task);
-      const total = countByDay ? new Set(matched.map((item) => item.day)).size : isRangeSchedule(task) ? 1 : matched.length;
-      const done = countByDay ? new Set(matched.filter((item) => item.status === "done").map((item) => item.day)).size : isRangeSchedule(task) ? (task.status === "done" ? 1 : 0) : matched.filter((item) => item.status === "done").length;
-      overview.push({ id: `temporary:${task.id}`, label: task.title || subCategoryLabel(task.mainCategory, task.subCategory), done, total, unit: countByDay ? "天" : "次", group: "other", isCourse: false });
-    });
-    const travelDays = new Set<string>();
-    const completedTravelDays = new Set<string>();
-    tasks.filter((task) => task.mainCategory === "temporary" && task.subCategory === "travel").forEach((task) => monthDays.forEach((day) => {
-      if (!scheduleOccursOn(task, day)) return;
-      const status = isOccurrenceSchedule(task) ? occurrences.find((item) => item.taskId === task.id && item.occurrenceDate === day)?.status ?? "todo" : task.status;
-      if (status === "cancelled" || status === "postponed") return;
-      travelDays.add(day);
-      if (status === "done") completedTravelDays.add(day);
-    }));
-    if (travelDays.size) overview.push({ id: "temporary:travel", label: "旅游", done: completedTravelDays.size, total: travelDays.size, unit: "天", group: "other", isCourse: false });
-    return overview;
-  },
-
   async getCourseStatistics(startDate: string, endDate: string) {
     const [allTasks, occurrences] = await Promise.all([db.tasks.toArray(), db.taskOccurrenceStatuses.toArray()]);
     const tasks = allTasks.filter((task) => isActiveTask(task) && isCourseTask(task) && task.status !== "cancelled");
@@ -646,53 +475,6 @@ export const taskRepository = {
     const groupOrder = ["语文", "数学", "英语", "兴趣班", "其他"];
     const items = [...counts.values()].sort((a, b) => groupOrder.indexOf(a.group) - groupOrder.indexOf(b.group) || a.label.localeCompare(b.label, "zh-CN"));
     return { startDate, endDate, items, total: items.reduce((sum, item) => sum + item.count, 0) };
-  },
-
-  async allocateTask(parentId: string, weekDate?: string): Promise<number> {
-    const parent = await db.tasks.get(parentId);
-    if (!parent || parent.deletedAt || !["weekGoal", "assignmentWindow"].includes(parent.timeType)) throw new Error("这项任务不能自动分配");
-    const recurringQuota = !!parent.weeklyQuota?.isWeeklyRecurring;
-    const allocationWeekStart = recurringQuota ? getWeekStartKey(weekDate ?? todayKey()) : parent.weekStart;
-    const start = parent.assignmentWindow?.startDate ?? allocationWeekStart;
-    const end = parent.assignmentWindow?.endDate ?? (start ? getWeekEndKey(start) : undefined);
-    if (!start || !end) throw new Error("请先设置任务周期");
-    const targetAmount = parent.weeklyQuota?.targetCount ?? parent.totalAmount ?? 1;
-    const desired = Math.max(1, parent.splitCount ?? (parent.weeklyQuota ? Math.min(targetAmount, 7) : parent.totalAmount ?? 1));
-    const allExisting = (await db.tasks.where("parentTaskId").equals(parentId).toArray()).filter(isActiveTask);
-    const existing = recurringQuota ? allExisting.filter((task) => task.allocationWeekStart === allocationWeekStart) : allExisting;
-    const completed = existing.filter((task) => task.status === "done");
-    const remaining = Math.max(0, desired - completed.length);
-    const usedDates = new Set(completed.map((task) => task.date));
-    const allowed = parent.allowedWeekdays?.length ? parent.allowedWeekdays : [0, 1, 2, 3, 4, 5, 6];
-    const effectiveStart = start < todayKey() && todayKey() <= end ? todayKey() : start;
-    const candidates = eachDayOfInterval({ start: parseISO(effectiveStart), end: parseISO(end) })
-      .map(toDateKey).filter((key) => allowed.includes(getDay(parseISO(key))) && !usedDates.has(key));
-    if (candidates.length < remaining) throw new Error("可安排日期不足，请增加可选星期或减少完成次数");
-    const chosen = Array.from({ length: remaining }, (_, index) => candidates[Math.min(Math.floor(index * candidates.length / remaining), candidates.length - 1)]);
-    const now = new Date().toISOString();
-    const perSession = parent.amountPerSession ?? (parent.weeklyQuota ? Math.ceil(targetAmount / desired) : undefined);
-    const amount = perSession ? `${perSession}${parent.weeklyQuota?.unit ?? parent.amountUnit ?? ""}` : "";
-
-    await db.transaction("rw", db.tasks, async () => {
-      // R5：软删除而非物理删除，否则云端不知道这些子任务已作废，
-      // 下次全量拉取会把它们从云端 bulkPut 回本地（"重排后旧子任务复活"）。
-      const staleNow = new Date().toISOString();
-      const staleInfo = deviceInfo();
-      await Promise.all(existing.filter((task) => task.status !== "done").map((task) =>
-        db.tasks.update(task.id, { deletedAt: staleNow, deletedByDevice: staleInfo.deviceLabel, deletedByActor: staleInfo.actorName, updatedAt: staleNow })
-      ));
-      await db.tasks.bulkAdd(chosen.map((date, index): Task => ({
-        id: makeId(), title: amount ? `${parent.title}（${amount}）` : parent.title,
-        mainCategory: parent.mainCategory, subCategory: parent.subCategory, timeType: "singleDate",
-        date, status: "todo", rolloverMode: parent.rolloverMode, allowRollover: parent.allowRollover,
-        sortOrder: parent.sortOrder, childVisible: parent.childVisible, note: parent.note,
-        amountPerSession: perSession, amountUnit: parent.weeklyQuota?.unit ?? parent.amountUnit,
-        checklistItems: parent.checklistItems?.map((item, itemIndex) => ({ ...item, id: makeId(), done: false, completedDate: undefined, sortOrder: itemIndex })),
-        parentTaskId: parent.id, allocationWeekStart, sessionIndex: completed.length + index + 1, planPeriodId: parent.planPeriodId, applicablePeriodType: parent.applicablePeriodType,
-        startTime: parent.startTime, endTime: parent.endTime, estimatedMinutes: parent.estimatedMinutes, createdAt: now, updatedAt: now,
-      })));
-    });
-    return remaining;
   },
 
   async create(draft: TaskDraft): Promise<TaskWriteResult> {
@@ -1111,40 +893,6 @@ export const taskRepository = {
 
   /** 手动重试：把本地当前状态原样重新同步到云端，不触发任何本地状态变化（本地模式无需处理，直接视为已同步） */
   async resyncTask(_taskId: string, _occurrenceDate?: string): Promise<boolean> {
-    return true;
-  },
-
-  async listReadingLogs(taskId: string, weekDate: string) {
-    const weekStart = getWeekStartKey(weekDate);
-    return db.readingLogs.where("[taskId+weekStart]").equals([taskId, weekStart]).reverse().sortBy("createdAt");
-  },
-
-  async addReadingLog(input: { taskId: string; date: string; amount: number; title?: string; note?: string }) {
-    const task = await db.tasks.get(input.taskId);
-    if (!task || task.deletedAt || task.mainCategory !== "readingPlan" || !task.weeklyQuota) throw new Error("找不到对应的阅读计划");
-    if (!Number.isFinite(input.amount) || input.amount <= 0) throw new Error("阅读数量必须大于 0");
-    const now = new Date().toISOString();
-    const log: ReadingLog = {
-      id: makeId(), taskId: task.id, weekStart: getWeekStartKey(input.date), date: input.date,
-      readingType: task.subCategory === "chineseReading" ? "中文阅读" : "英文阅读",
-      amount: input.amount, unit: task.weeklyQuota.unit, title: input.title?.trim() || undefined,
-      note: input.note?.trim() || undefined, deviceLabel: deviceInfo().deviceLabel, createdAt: now, updatedAt: now,
-    };
-    await db.transaction("rw", db.readingLogs, db.activityLogs, async () => {
-      await db.readingLogs.add(log);
-      await writeLog("recordReading", "readingLog", { entityId: log.id, entityTitle: `${log.readingType} ${log.amount}${log.unit}`, afterSnapshot: log });
-    });
-    return log;
-  },
-
-  async undoLatestReadingLog(taskId: string, weekDate: string) {
-    const logs = await this.listReadingLogs(taskId, weekDate);
-    const latest = logs.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-    if (!latest) return false;
-    await db.transaction("rw", db.readingLogs, db.activityLogs, async () => {
-      await db.readingLogs.delete(latest.id);
-      await writeLog("undoReading", "readingLog", { entityId: latest.id, entityTitle: `${latest.readingType} ${latest.amount}${latest.unit}`, beforeSnapshot: latest });
-    });
     return true;
   },
 

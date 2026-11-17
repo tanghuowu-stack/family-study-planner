@@ -41,10 +41,6 @@ export function weeklyTimesProgress(task: Pick<Task, "weeklyQuota" | "weeklyLog"
   return { weekStart, target, unit: task.weeklyQuota?.unit ?? "次", done, dayCount: task.weeklyLog?.[date] ?? 0, days, reached: done >= target };
 }
 
-/** 每周目标不超过 7 的按天记（一天算一次，点圆点做了 / 取消）；超过 7 的一天能做好几份，按数量记（加减） */
-export const WEEKLY_PER_DAY_MAX_TARGET = 7;
-export const isPerDayWeekly = (target: number) => target <= WEEKLY_PER_DAY_MAX_TARGET;
-
 /** 一天最多记多少（按页记的练习册一天可能几十页） */
 export const WEEKLY_LOG_DAY_MAX = 50;
 

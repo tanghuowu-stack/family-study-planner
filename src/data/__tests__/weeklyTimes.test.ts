@@ -43,7 +43,7 @@ import { db } from "../db";
 import { taskRepository } from "../taskRepository";
 import { cloudRepository } from "../cloudRepository";
 import type { Task, TaskDraft } from "../../types/task";
-import { applyWeeklyLog, isPerDayWeekly, weeklyTimesActiveIn, weeklyTimesProgress } from "../../utils/weeklyTimes";
+import { applyWeeklyLog, weeklyTimesActiveIn, weeklyTimesProgress } from "../../utils/weeklyTimes";
 import { isEndedRecurring } from "../../utils/taskMeta";
 import { getWeekReview } from "../weekReview";
 import { computeWeeklyStreak, getHabitCalendars, getHabitCandidates } from "../statsRepository";
@@ -120,15 +120,16 @@ describe("本地读写", () => {
     expect(saved.status).toBe("todo");
   });
 
-  it("5b. 点圆点补记 / 取消某天；按数量记的连点加号不丢（2026-11-17 用户反馈）", async () => {
-    expect(isPerDayWeekly(5)).toBe(true);
-    expect(isPerDayWeekly(7)).toBe(true);
-    expect(isPerDayWeekly(8)).toBe(false);
+  it("5b. 补记 / 取消某天；填数量（差值写入）；连续快速写入不丢（2026-11-17 用户反馈）", async () => {
     const { task } = await taskRepository.create(piano({ weeklyLog: { "2026-11-16": 3 } }));
-    // 按天记：取消周一 = 减去那天的数量，那天整个清掉
+    // 填 0 = 减去那天的数量，那天整个清掉
     await taskRepository.logWeeklyTime(task.id, "2026-11-16", -3);
     expect((await db.tasks.get(task.id))!.weeklyLog).toBeUndefined();
-    // 按数量记：同时连点 4 下加号（不等前一次写完），4 份都记上
+    // 任务今天才开始也能给本周一补记（每周几次按整周算）
+    const { task: fresh } = await taskRepository.create(piano({ startDate: TODAY }));
+    await taskRepository.logWeeklyTime(fresh.id, "2026-11-16", 2);
+    expect((await db.tasks.get(fresh.id))!.weeklyLog).toEqual({ "2026-11-16": 2 });
+    // 连续快速写入 4 次（不等前一次写完），4 份都记上
     await Promise.all([1, 2, 3, 4].map(() => taskRepository.logWeeklyTime(task.id, "2026-11-18", 1)));
     expect((await db.tasks.get(task.id))!.weeklyLog).toEqual({ "2026-11-18": 4 });
   });

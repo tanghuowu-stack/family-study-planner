@@ -102,15 +102,16 @@ export function DayPage(props: Props) {
   const pending = daily.filter((task) => !isSettled(task) || held.get(dayTaskKey(task)) === "pending");
   const done = daily.filter((task) => isSettled(task) && !held.has(dayTaskKey(task)));
   const overdueShown = [...overdue, ...daily.filter((task) => isSettled(task) && held.get(dayTaskKey(task)) === "overdue")];
-  const weekPending = weekly.filter((task) => !isSettled(task) || held.get(dayTaskKey(task)) === "pending")
-    .sort((a, b) => (a.endDate ?? "").localeCompare(b.endDate ?? ""));
+  // 本周作业 / 每周练习都能拖手柄排序（写 sortOrder）；没拖过的按截止日。不按学科排，跨学科拖动才不会被压回去
+  const byOrder = (a: TaskDisplay, b: TaskDisplay) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || (a.endDate ?? "").localeCompare(b.endDate ?? "") || a.createdAt.localeCompare(b.createdAt);
+  const weekPending = weekly.filter((task) => !isSettled(task) || held.get(dayTaskKey(task)) === "pending").sort(byOrder);
   const weekDone = [...weekly.filter((task) => isSettled(task) && !held.has(dayTaskKey(task))), ...weekPlanDone];
   // 左栏 = 作业（今天的 + 本周内交的），右栏 = 每周练习（每周几次）。2026-11-17 起本周作业并入左栏
   const allDone = [...done, ...weekDone];
   const leftPending = pending.length + weekPending.length;
   // 每周练习：本周没做够的在上面，做够了的收进"已完成"
   const timesReached = (task: TaskDisplay) => weeklyTimesProgress(task, props.date).reached;
-  const timesPending = weeklyTimes.filter((task) => !timesReached(task) || weeklyHeld.has(task.id));
+  const timesPending = weeklyTimes.filter((task) => !timesReached(task) || weeklyHeld.has(task.id)).sort(byOrder);
   const timesDone = weeklyTimes.filter((task) => timesReached(task) && !weeklyHeld.has(task.id));
   const hasPractice = weeklyTimes.length > 0;
   const progress = countProgress([...daily, ...weekly, ...weekPlanDone]);
@@ -149,7 +150,7 @@ export function DayPage(props: Props) {
     {...rowProps}
   />;
 
-  return <main className="mx-auto w-full max-w-3xl overflow-x-hidden lg:max-w-none xl:max-w-6xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
+  return <main className="mx-auto w-full max-w-3xl overflow-x-hidden lg:max-w-none xl:max-w-7xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
     <header className="page-header">
       <div className="day-header-content grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 sm:gap-x-4">
         <div className="min-w-0"><div className="flex min-w-0 flex-wrap content-center items-center gap-x-2 gap-y-1"><h1 className="page-title"><span className="whitespace-nowrap">{dateLabel}</span><span className="block whitespace-nowrap sm:ml-2 sm:inline">{weekdayLabel}</span></h1>{annotationLabels.length > 0 && <span title={annotationLabels.join(" · ")} className="max-w-full truncate text-[13px] font-semibold text-amber-700">{annotationLabels.join(" · ")}</span>}{annotation.holidayStatus && <span className={`shrink-0 rounded px-1.5 py-0.5 text-[13px] font-bold leading-4 ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{annotation.holidayStatus}</span>}</div></div>
@@ -170,7 +171,7 @@ export function DayPage(props: Props) {
           {pending.length === 0 && weekPending.length > 0 && done.length > 0 && <p className="px-4 py-3 text-[15px] font-semibold text-primary">{isToday ? "今天" : "这一天"}的作业都做完了</p>}
           {weekPending.length > 0 && <div className={pending.length > 0 || done.length > 0 ? "border-t border-ink/[0.07]" : ""}>
             <GroupHeading label="本周作业" dot={NEUTRAL_DOT} count={weekPending.length} />
-            {weekPending.map((task) => renderTask(task))}
+            <SortableTaskList tasks={weekPending} renderTask={renderTask} onReorder={reorderTasks} />
           </div>}
           {leftPending === 0 && (isToday && allDone.length > 0 && overdueShown.length === 0 ? <AllDoneCelebration count={allDone.length} /> : allDone.length > 0 ? <p className="px-4 py-4 text-[15px] font-semibold text-primary">这一天的事都做完了</p> : <div className="p-3"><EmptyState compact /></div>)}
         </section>
@@ -179,7 +180,7 @@ export function DayPage(props: Props) {
       {hasPractice && <div className="contents lg:flex lg:min-w-0 lg:flex-col">
         <section aria-label="每周练习" className="surface order-3 overflow-visible lg:order-none lg:flex-1">
           <div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">每周练习</h2><ProgressMeter completed={practiceReached} total={weeklyTimes.length} /><span className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${practiceRemaining === 0 ? "text-primary" : "text-ink"}`}>{practiceRemaining === 0 ? "本周都做够了" : `还差 ${practiceRemaining} 项`}</span></div>
-          {timesPending.map((task) => renderTask(task))}
+          <SortableTaskList tasks={timesPending} renderTask={renderTask} onReorder={reorderTasks} />
           {timesPending.length === 0 && <p className="px-4 py-3 text-[15px] font-semibold text-primary">这周的练习都做够了</p>}
           {timesDone.length > 0 && <>
             <button onClick={() => setShowWeekDone(!showWeekDone)} aria-expanded={showWeekDone} className="flex min-h-11 w-full items-center justify-between border-t border-ink/[0.07] px-3 text-left text-[13px] font-semibold text-muted sm:px-4"><span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-primary" />已做够 {timesDone.length}</span><ChevronDown className={`h-4 w-4 transition ${showWeekDone ? "rotate-180" : ""}`} /></button>

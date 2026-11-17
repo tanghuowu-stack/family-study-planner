@@ -140,6 +140,7 @@ export function DayPage(props: Props) {
     key={dayTaskKey(task)}
     dragHandle={dragHandle}
     dueLabel={dueLabelFor(task)}
+    collapseChecklist={isWeekPlanTask(task, props.date)}
     weekly={task.timeType === "weeklyTimes" ? { progress: weeklyTimesProgress(task, props.date), canLog: canLogWeekly, isToday, onLog: (delta) => props.onWeeklyLog(task, delta, props.date) } : undefined}
     task={task}
     unsynced={props.unsyncedTasks?.has(taskSyncKey(task))}
@@ -158,27 +159,32 @@ export function DayPage(props: Props) {
     </header>
     {!isToday && <div role="status" className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-sun/60 bg-sun/20 px-3 py-2 sm:px-4"><p className="min-w-0 text-sm font-semibold text-ink">正在看 {formatCompactDate(props.date)}（{relativeDayLabel(props.date)}），不是今天</p><button onClick={() => props.onDateChange(todayKey())} className="h-9 shrink-0 rounded-lg bg-primary px-3 text-sm font-bold text-white [@media(pointer:coarse)]:h-11">回到今天</button></div>}
     <SidebarMemo value={props.memo} variant="narrow" editorOpen={props.memoEditorOpen} focusRequest={props.memoFocusRequest} busy={props.memoBusy} onFocus={props.onMemoFocus} onChange={props.onMemoChange} onBlur={props.onMemoBlur} onComplete={props.onMemoComplete} />
-    {/* Mac / iPad 横屏：左边"今日任务"（逾期 / 当天清单 / 已完成），右边"本周计划"；窄屏依次排下来，本周计划在当天已完成之前 */}
-    <div ref={swipeRef} className={`grid grid-cols-1 gap-4 ${hasWeekPlan ? "lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:grid-rows-[auto_auto_1fr] lg:items-start" : ""}`}>
-      {overdueShown.length > 0 && <section className="surface overflow-visible border-alert/35 lg:col-start-1"><div className="flex items-center justify-between border-b border-alert/20 bg-alert/[0.06] px-3 py-2.5 sm:px-4"><h2 className="text-base font-bold text-alert">逾期未完成</h2><span className="text-[13px] font-semibold tabular-nums text-alert">{overdue.length}</span></div>{overdueShown.map((task) => renderTask(task))}</section>}
-      <section className="surface overflow-visible lg:col-start-1"><div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">{isToday ? "今日任务" : "当日任务"}</h2><ProgressMeter completed={progress.completed} total={progress.total} />{progress.total > 0 && <span className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${remaining === 0 ? "text-primary" : "text-ink"}`}>{remaining === 0 ? "全部完成" : `还剩 ${remaining} 项`}</span>}</div>{pending.length ? <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} onTaskReorder={reorderTasks} /> : isToday && done.length > 0 && overdueShown.length === 0 ? <AllDoneCelebration count={done.length} /> : done.length > 0 ? <p className="px-4 py-4 text-[15px] font-semibold text-primary">这一天的事都做完了</p> : <div className="p-3"><EmptyState compact /></div>}</section>
-      {hasWeekPlan && <section aria-label="本周计划" className="surface overflow-visible lg:col-start-2 lg:row-span-3 lg:row-start-1">
-        <div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">本周计划</h2><ProgressMeter completed={weekProgress.completed} total={weekProgress.total} />{weekProgress.total > 0 && <span className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${weekRemaining === 0 ? "text-primary" : "text-ink"}`}>{weekRemaining === 0 ? "全部完成" : `还剩 ${weekRemaining} 项`}</span>}</div>
-        {weekPending.length > 0 && <>
-          {timesPending.length > 0 && <GroupHeading label="本周作业" dot={NEUTRAL_DOT} count={weekPending.length} />}
-          {weekPending.map((task) => renderTask(task))}
-        </>}
-        {timesPending.length > 0 && <div className={weekPending.length > 0 ? "border-t border-ink/[0.07]" : ""}>
-          <GroupHeading label="每周几次" dot={NEUTRAL_DOT} count={timesPending.length} />
-          {timesPending.map((task) => renderTask(task))}
-        </div>}
-        {weekPending.length + timesPending.length === 0 && <p className="px-4 py-3 text-[15px] font-semibold text-primary">本周计划都做完了</p>}
-        {weekDoneAll.length > 0 && <>
-          <button onClick={() => setShowWeekDone(!showWeekDone)} aria-expanded={showWeekDone} className="flex min-h-11 w-full items-center justify-between border-t border-ink/[0.07] px-3 text-left text-[13px] font-semibold text-muted sm:px-4"><span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-primary" />已完成 {weekDoneAll.length}</span><ChevronDown className={`h-4 w-4 transition ${showWeekDone ? "rotate-180" : ""}`} /></button>
-          {showWeekDone && <div className="border-t border-ink/[0.07]">{weekDoneAll.map((task) => renderTask(task))}</div>}
-        </>}
-      </section>}
-      {done.length > 0 && <section className="surface overflow-visible lg:col-start-1"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-3 py-2.5 text-left sm:px-4"><span className="flex items-center gap-2 text-base font-bold text-ink"><CheckCircle2 className="h-4 w-4 text-primary" />已完成 <span className="text-[13px] font-medium text-muted">{done.length}</span></span><ChevronDown className={`h-4 w-4 text-muted transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <div className="border-t border-ink/10">{done.map((task) => renderTask(task))}</div>}</section>}
+    {/* Mac / iPad 横屏：左右两栏等宽等高（左：逾期 / 今日任务 / 已完成，右：本周计划；两栏底边对齐，短的一栏主卡片拉长）。
+        窄屏依次排下来：逾期、今日任务、本周计划、已完成——两栏外壳在窄屏是 display:contents，靠 order 排序 */}
+    <div ref={swipeRef} className={`flex flex-col gap-4 ${hasWeekPlan ? "lg:grid lg:grid-cols-2 lg:items-stretch" : ""}`}>
+      <div className={`contents ${hasWeekPlan ? "lg:flex lg:min-w-0 lg:flex-col lg:gap-4" : ""}`}>
+        {overdueShown.length > 0 && <section className="surface overflow-visible border-alert/35 order-1 lg:order-none"><div className="flex items-center justify-between border-b border-alert/20 bg-alert/[0.06] px-3 py-2.5 sm:px-4"><h2 className="text-base font-bold text-alert">逾期未完成</h2><span className="text-[13px] font-semibold tabular-nums text-alert">{overdue.length}</span></div>{overdueShown.map((task) => renderTask(task))}</section>}
+        <section className="surface order-2 overflow-visible lg:order-none lg:flex-1"><div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">{isToday ? "今日任务" : "当日任务"}</h2><ProgressMeter completed={progress.completed} total={progress.total} />{progress.total > 0 && <span className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${remaining === 0 ? "text-primary" : "text-ink"}`}>{remaining === 0 ? "全部完成" : `还剩 ${remaining} 项`}</span>}</div>{pending.length ? <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} onTaskReorder={reorderTasks} /> : isToday && done.length > 0 && overdueShown.length === 0 ? <AllDoneCelebration count={done.length} /> : done.length > 0 ? <p className="px-4 py-4 text-[15px] font-semibold text-primary">这一天的事都做完了</p> : <div className="p-3"><EmptyState compact /></div>}</section>
+        {done.length > 0 && <section className="surface order-4 overflow-visible lg:order-none"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-3 py-2.5 text-left sm:px-4"><span className="flex items-center gap-2 text-base font-bold text-ink"><CheckCircle2 className="h-4 w-4 text-primary" />已完成 <span className="text-[13px] font-medium text-muted">{done.length}</span></span><ChevronDown className={`h-4 w-4 text-muted transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <div className="border-t border-ink/10">{done.map((task) => renderTask(task))}</div>}</section>}
+      </div>
+      {hasWeekPlan && <div className="contents lg:flex lg:min-w-0 lg:flex-col">
+        {hasWeekPlan && <section aria-label="本周计划" className="surface order-3 overflow-visible lg:order-none lg:flex-1">
+          <div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">本周计划</h2><ProgressMeter completed={weekProgress.completed} total={weekProgress.total} />{weekProgress.total > 0 && <span className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${weekRemaining === 0 ? "text-primary" : "text-ink"}`}>{weekRemaining === 0 ? "全部完成" : `还剩 ${weekRemaining} 项`}</span>}</div>
+          {weekPending.length > 0 && <>
+            {timesPending.length > 0 && <GroupHeading label="本周作业" dot={NEUTRAL_DOT} count={weekPending.length} />}
+            {weekPending.map((task) => renderTask(task))}
+          </>}
+          {timesPending.length > 0 && <div className={weekPending.length > 0 ? "border-t border-ink/[0.07]" : ""}>
+            <GroupHeading label="每周几次" dot={NEUTRAL_DOT} count={timesPending.length} />
+            {timesPending.map((task) => renderTask(task))}
+          </div>}
+          {weekPending.length + timesPending.length === 0 && <p className="px-4 py-3 text-[15px] font-semibold text-primary">本周计划都做完了</p>}
+          {weekDoneAll.length > 0 && <>
+            <button onClick={() => setShowWeekDone(!showWeekDone)} aria-expanded={showWeekDone} className="flex min-h-11 w-full items-center justify-between border-t border-ink/[0.07] px-3 text-left text-[13px] font-semibold text-muted sm:px-4"><span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-primary" />已完成 {weekDoneAll.length}</span><ChevronDown className={`h-4 w-4 transition ${showWeekDone ? "rotate-180" : ""}`} /></button>
+            {showWeekDone && <div className="border-t border-ink/[0.07]">{weekDoneAll.map((task) => renderTask(task))}</div>}
+          </>}
+        </section>}
+      </div>}
     </div>
   </main>;
 }

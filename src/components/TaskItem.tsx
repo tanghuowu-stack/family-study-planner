@@ -12,6 +12,8 @@ interface Props {
   viewDate?: string;
   /** 每周几次（今日页本周计划）：左侧显示本周进度环，标题下是一周七天的记录和"做了一次"按钮 */
   weekly?: { progress: WeeklyTimesProgress; canLog: boolean; isToday: boolean; onLog: (delta: 1 | -1) => void };
+  /** 小项默认收起成一行"还有 N 项"，点开再勾（今日页本周计划里的作业：一周的事不必每天摊开全部小项） */
+  collapseChecklist?: boolean;
   /** 截止标签（今日页"本周计划"里的"周五截止"、截止日当天的"今天截止"）：today 红、soon（明天）琥珀、其余主色 */
   dueLabel?: { text: string; tone: "today" | "soon" | "normal" };
   /** 拖拽手柄（今日页可排序的任务才有），放在"…"左边，不挤占勾选框的位置 */
@@ -86,9 +88,10 @@ function ChecklistRing({ completed, total, done, label }: { completed: number; t
   );
 }
 
-export function TaskItem({ task, compact = false, viewDate, weekly, dueLabel, dragHandle, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onExtend, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onDayNoteSave, onRetrySync, onRetryItemSync, onCopy }: Props) {
+export function TaskItem({ task, compact = false, viewDate, weekly, collapseChecklist, dueLabel, dragHandle, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onExtend, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onDayNoteSave, onRetrySync, onRetryItemSync, onCopy }: Props) {
   const [menu, setMenu] = useState(false);
   const [showEarlier, setShowEarlier] = useState(false);
+  const [checklistOpen, setChecklistOpen] = useState(false);
   // 菜单离屏幕底部（含底部导航栏）太近时向上展开，避免被遮住
   const [menuAbove, setMenuAbove] = useState(false);
   const toggleMenu = (button: HTMLButtonElement) => {
@@ -265,7 +268,14 @@ export function TaskItem({ task, compact = false, viewDate, weekly, dueLabel, dr
 
         {/* Checklist 小项：在查看日之前就做完的收成一行"已完成 N 项"（点开可看、可取消勾选）；
             当天刚勾的仍原地划掉，让孩子看到反馈。重复任务的小项按天显示，不会有"之前做完的" */}
-        {hasChecklist && (() => {
+        {hasChecklist && collapseChecklist && !checklistOpen && (
+          <button type="button" onClick={() => setChecklistOpen(true)} aria-expanded={false}
+            className="-mx-1.5 mt-0.5 flex min-h-8 items-center gap-1.5 rounded-md px-1.5 text-[13px] font-medium text-muted hover:bg-stone-100/70 [@media(pointer:coarse)]:min-h-10">
+            {displayItems.length - completedItems > 0 ? `还有 ${displayItems.length - completedItems} 项` : `${displayItems.length} 项都已完成`}
+            <ChevronDown className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {hasChecklist && (!collapseChecklist || checklistOpen) && (() => {
           const rows = task.checklistItems!.map((item) => {
             const optimisticItemDone = optimisticItems[item.id] ?? item.done;
             const doneEarlier = !!viewDate && item.done && optimisticItems[item.id] !== false && (!item.completedDate || item.completedDate < viewDate);
@@ -294,6 +304,12 @@ export function TaskItem({ task, compact = false, viewDate, weekly, dueLabel, dr
                   </button>
                   {showEarlier && earlier.map(render)}
                 </>
+              )}
+              {collapseChecklist && (
+                <button type="button" onClick={() => setChecklistOpen(false)} aria-expanded
+                  className="flex min-h-8 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-[13px] text-muted hover:bg-stone-100/70 [@media(pointer:coarse)]:min-h-10">
+                  收起<ChevronDown className="h-3.5 w-3.5 rotate-180" />
+                </button>
               )}
             </div>
           );
@@ -379,6 +395,7 @@ const WEEKDAY_SHORT = ["一", "二", "三", "四", "五", "六", "日"];
 function WeeklyTimesBar({ weekly, viewDate }: { weekly: NonNullable<Props["weekly"]>; viewDate?: string }) {
   const { progress, canLog, isToday, onLog } = weekly;
   const dayWord = isToday ? "今天" : "这天";
+  const logLabel = isToday ? "记一次" : "补记一次";
   return (
     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5">
       <ol className="flex items-center gap-1" aria-label="本周每天的记录">
@@ -391,9 +408,9 @@ function WeeklyTimesBar({ weekly, viewDate }: { weekly: NonNullable<Props["weekl
       </ol>
       {canLog && (
         <span className="flex items-center gap-1.5">
-          <button type="button" onClick={() => onLog(1)}
+          <button type="button" onClick={() => onLog(1)} aria-label={`${dayWord}做了一次`}
             className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-primary/40 bg-white px-2.5 text-[13px] font-semibold text-primary hover:bg-primary/5 [@media(pointer:coarse)]:min-h-10">
-            <Check className="h-3.5 w-3.5" strokeWidth={3} />{dayWord}做了一次
+            <Check className="h-3.5 w-3.5" strokeWidth={3} />{logLabel}
           </button>
           {progress.dayCount > 0 && (
             <button type="button" onClick={() => onLog(-1)} aria-label={`撤销${dayWord}的一次记录`}

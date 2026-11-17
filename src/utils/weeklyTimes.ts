@@ -1,7 +1,7 @@
 /**
  * 每周几次（2026-11-17）：钢琴一周 3 次、读书一周 2 本、作文一周 1 篇……
  * 一周按周一到周日算，做够目标就算这周完成；没做够不累计到下周（下周一从 0 开始）。
- * 不排到哪一天：哪天做了就在今日页"本周计划"里点"做了一次"，记在 task.weeklyLog[那天]。
+ * 不排到哪一天：哪天做了就在今日页右栏"每周练习"里点"记一次"（一天做几本就点到几），记在 task.weeklyLog[那天]。
  */
 import { addDays } from "date-fns";
 import type { Task, TaskTimeType } from "../types/task";
@@ -41,10 +41,13 @@ export function weeklyTimesProgress(task: Pick<Task, "weeklyQuota" | "weeklyLog"
   return { weekStart, target, unit: task.weeklyQuota?.unit ?? "次", done, dayCount: task.weeklyLog?.[date] ?? 0, days, reached: done >= target };
 }
 
-/** 记一次 / 撤销一次后的记录：那天次数加减 delta，最少 0、最多 20；0 次的那天不存，全空时返回 undefined */
+/** 一天最多记多少（按页记的练习册一天可能几十页） */
+export const WEEKLY_LOG_DAY_MAX = 50;
+
+/** 记一次 / 撤销一次后的记录：那天次数加减 delta，最少 0、最多 WEEKLY_LOG_DAY_MAX；0 次的那天不存，全空时返回 undefined */
 export function applyWeeklyLog(log: Record<string, number> | undefined, date: string, delta: number): Record<string, number> | undefined {
   const next = { ...(log ?? {}) };
-  const count = Math.min(20, Math.max(0, (next[date] ?? 0) + delta));
+  const count = Math.min(WEEKLY_LOG_DAY_MAX, Math.max(0, (next[date] ?? 0) + delta));
   if (count > 0) next[date] = count;
   else delete next[date];
   return Object.keys(next).length > 0 ? next : undefined;

@@ -82,7 +82,9 @@ function newDraft(date: string): TaskDraft {
 // R3：编辑入口可能传入 TaskDisplay（今日清单里的行），它的 status 已被覆盖成当天单日状态，
 // 且带着 occurrenceDate 等运行时展示字段——这些一律不得进入保存的草稿（数据层写入口还有一道兜底清洗）。
 /** 每周几次的默认目标：一周 3 次 */
-const WEEKLY_TIMES_DEFAULT: WeeklyQuota = { enabled: true, targetCount: 3, unit: "次", isWeeklyRecurring: true, allowAutoDistribute: false, allowRollover: false };
+/** 每周目标上限：RAZ 一周 10 本、练习册一周几十页都要放得下 */
+const WEEKLY_TIMES_MAX = 50;
+const WEEKLY_TIMES_DEFAULT: WeeklyQuota ={ enabled: true, targetCount: 3, unit: "次", isWeeklyRecurring: true, allowAutoDistribute: false, allowRollover: false };
 const WEEKLY_UNITS: WeeklyQuota["unit"][] = ["次", "本", "篇", "页", "题", "分钟"];
 
 const strip = (task: Task): TaskDraft => { const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, occurrenceDate: _od, occurrenceStatus: _os, overrideDate: _ovd, overrideNote: _ovn, rolledFromDate: _rf, dayNotes: _dn, weeklyLog: _wl, ...draft } = task as Task & Partial<TaskDisplay>; return { ...draft, date: normalizeDate(draft.date), startDate: normalizeDate(draft.startDate), endDate: normalizeDate(draft.endDate), weekStart: normalizeDate(draft.weekStart), recurrence: draft.recurrence ? { ...draft.recurrence, startDate: normalizeDate(draft.recurrence.startDate)!, endDate: normalizeDate(draft.recurrence.endDate) } : undefined, specificDates: draft.specificDates?.map((date) => normalizeDate(date)!).filter(Boolean) }; };
@@ -537,12 +539,12 @@ function WeeklyTimesFields({ draft, set, input, label, chip }: { draft: TaskDraf
   const count = quota.targetCount;
   return <div className="space-y-3">
     <div>
-      <p className={label}>每周做几次</p>
+      <p className={label}>每周目标</p>
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
         <div className="inline-flex items-center rounded-lg ring-1 ring-inset ring-ink/10">
           <button type="button" aria-label="少一次" disabled={count <= 1} onClick={() => update({ targetCount: Math.max(1, count - 1) })} className="flex h-10 w-10 items-center justify-center text-lg font-semibold text-muted disabled:opacity-30">−</button>
           <span className="w-8 text-center text-base font-bold tabular-nums text-ink" aria-live="polite">{count}</span>
-          <button type="button" aria-label="多一次" disabled={count >= 14} onClick={() => update({ targetCount: Math.min(14, count + 1) })} className="flex h-10 w-10 items-center justify-center text-lg font-semibold text-muted disabled:opacity-30">+</button>
+          <button type="button" aria-label="多一次" disabled={count >= WEEKLY_TIMES_MAX} onClick={() => update({ targetCount: Math.min(WEEKLY_TIMES_MAX, count + 1) })} className="flex h-10 w-10 items-center justify-center text-lg font-semibold text-muted disabled:opacity-30">+</button>
         </div>
         <div className="flex flex-wrap gap-1.5">{WEEKLY_UNITS.map((unit) => <button key={unit} type="button" onClick={() => update({ unit })} className={chip(quota.unit === unit)}>{unit}</button>)}</div>
       </div>

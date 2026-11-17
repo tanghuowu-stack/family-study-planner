@@ -75,11 +75,13 @@ describe("纯函数：本周进度", () => {
     expect(weeklyTimesProgress(task, "2026-11-23").done).toBe(1); // 下周一从头算
   });
 
-  it("2. 记一次 / 撤销：减到 0 那天不存，全空返回 undefined；一天最多 20 次", () => {
+  it("2. 记一次 / 撤销：减到 0 那天不存，全空返回 undefined；一天可以记多次（RAZ 一天 3 本），最多 50", () => {
     expect(applyWeeklyLog(undefined, TODAY, 1)).toEqual({ [TODAY]: 1 });
     expect(applyWeeklyLog({ [TODAY]: 1 }, TODAY, -1)).toBeUndefined();
     expect(applyWeeklyLog({ "2026-11-16": 1 }, TODAY, -1)).toEqual({ "2026-11-16": 1 });
-    expect(applyWeeklyLog({ [TODAY]: 20 }, TODAY, 1)).toEqual({ [TODAY]: 20 });
+    expect(applyWeeklyLog({ [TODAY]: 2 }, TODAY, 1)).toEqual({ [TODAY]: 3 });
+    expect(applyWeeklyLog({ [TODAY]: 20 }, TODAY, 1)).toEqual({ [TODAY]: 21 });
+    expect(applyWeeklyLog({ [TODAY]: 50 }, TODAY, 1)).toEqual({ [TODAY]: 50 });
   });
 
   it("3. 有效期：开始那周起、结束那周止（按整周算）；过了结束日归到已结束", () => {

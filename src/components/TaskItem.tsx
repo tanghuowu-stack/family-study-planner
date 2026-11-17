@@ -1,7 +1,7 @@
 import { CalendarPlus, CalendarX, Check, ChevronDown, Copy, MoreHorizontal, NotebookPen, Pencil, Trash2, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ChecklistItem, TaskDisplay, TaskStatus } from "../types/task";
-import type { WeeklyTimesProgress } from "../utils/weeklyTimes";
+import { WEEKLY_LOG_DAY_MAX, type WeeklyTimesProgress } from "../utils/weeklyTimes";
 import { STATUS_META, canEndRecurring, canExtendRecurring, isOccurrenceSchedule, taskShortName } from "../utils/taskMeta";
 import { formatCompactDate } from "../utils/date";
 
@@ -10,11 +10,11 @@ interface Props {
   compact?: boolean;
   /** 今日页正在看的日期：在这一天之前就做完的小项收成一行"已完成 N 项" */
   viewDate?: string;
-  /** 每周几次（今日页本周计划）：左侧显示本周进度环，标题下是一周七天的记录和"做了一次"按钮 */
+  /** 每周几次（今日页右栏"每周练习"）：左侧显示本周进度环，标题下是一周七天的记录和"记一次" / 加减器 */
   weekly?: { progress: WeeklyTimesProgress; canLog: boolean; isToday: boolean; onLog: (delta: 1 | -1) => void };
-  /** 小项默认收起成一行"还有 N 项"，点开再勾（今日页本周计划里的作业：一周的事不必每天摊开全部小项） */
+  /** 小项默认收起成一行"还有 N 项"，点开再勾（今日页"本周作业"：一周的事不必每天摊开全部小项） */
   collapseChecklist?: boolean;
-  /** 截止标签（今日页"本周计划"里的"周五截止"、截止日当天的"今天截止"）：today 红、soon（明天）琥珀、其余主色 */
+  /** 截止标签（今日页"本周作业"里的"周五截止"、截止日当天的"今天截止"）：today 红、soon（明天）琥珀、其余主色 */
   dueLabel?: { text: string; tone: "today" | "soon" | "normal" };
   /** 拖拽手柄（今日页可排序的任务才有），放在"…"左边，不挤占勾选框的位置 */
   dragHandle?: ReactNode;
@@ -391,11 +391,13 @@ function formatTime(task: TaskDisplay) {
 
 const WEEKDAY_SHORT = ["一", "二", "三", "四", "五", "六", "日"];
 
-/** 每周几次：一周七天哪天做了（做了的填色，一天多次标数字，查看的那天加框）+ "做了一次" / 撤销 */
+/** 每周几次：一周七天哪天做了（做了的填色，一天多次标数字，查看的那天加框）。
+ *  这天还没记：一个"记一次"按钮；记过以后变成 − 今天 3 本 + 的加减器，一天做几本 / 几篇直接点到几（2026-11-17） */
 function WeeklyTimesBar({ weekly, viewDate }: { weekly: NonNullable<Props["weekly"]>; viewDate?: string }) {
   const { progress, canLog, isToday, onLog } = weekly;
   const dayWord = isToday ? "今天" : "这天";
   const logLabel = isToday ? "记一次" : "补记一次";
+  const stepButton = "flex h-8 w-8 items-center justify-center text-base font-semibold text-primary hover:bg-primary/5 disabled:opacity-30 [@media(pointer:coarse)]:h-10 [@media(pointer:coarse)]:w-10";
   return (
     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5">
       <ol className="flex items-center gap-1" aria-label="本周每天的记录">
@@ -406,18 +408,17 @@ function WeeklyTimesBar({ weekly, viewDate }: { weekly: NonNullable<Props["weekl
           </li>
         ))}
       </ol>
-      {canLog && (
-        <span className="flex items-center gap-1.5">
-          <button type="button" onClick={() => onLog(1)} aria-label={`${dayWord}做了一次`}
-            className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-primary/40 bg-white px-2.5 text-[13px] font-semibold text-primary hover:bg-primary/5 [@media(pointer:coarse)]:min-h-10">
-            <Check className="h-3.5 w-3.5" strokeWidth={3} />{logLabel}
-          </button>
-          {progress.dayCount > 0 && (
-            <button type="button" onClick={() => onLog(-1)} aria-label={`撤销${dayWord}的一次记录`}
-              className="min-h-8 rounded-lg px-2 text-[13px] text-muted hover:bg-stone-100 [@media(pointer:coarse)]:min-h-10">
-              撤销
-            </button>
-          )}
+      {canLog && progress.dayCount === 0 && (
+        <button type="button" onClick={() => onLog(1)} aria-label={`${dayWord}做了一${progress.unit}`}
+          className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-primary/40 bg-white px-2.5 text-[13px] font-semibold text-primary hover:bg-primary/5 [@media(pointer:coarse)]:min-h-10">
+          <Check className="h-3.5 w-3.5" strokeWidth={3} />{logLabel}
+        </button>
+      )}
+      {canLog && progress.dayCount > 0 && (
+        <span role="group" aria-label={`${dayWord}做了几${progress.unit}`} className="inline-flex items-center overflow-hidden rounded-lg border border-primary/40 bg-white">
+          <button type="button" onClick={() => onLog(-1)} aria-label={`${dayWord}少记一${progress.unit}`} className={stepButton}>−</button>
+          <span aria-live="polite" className="min-w-[4.5rem] px-1 text-center text-[13px] font-semibold tabular-nums text-ink">{dayWord} {progress.dayCount} {progress.unit}</span>
+          <button type="button" onClick={() => onLog(1)} disabled={progress.dayCount >= WEEKLY_LOG_DAY_MAX} aria-label={`${dayWord}多记一${progress.unit}`} className={stepButton}>+</button>
         </span>
       )}
     </div>

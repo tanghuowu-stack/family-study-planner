@@ -8,7 +8,7 @@ const day = (offset: number) => toDateKey(addDays(fromDateKey(todayKey()), offse
 export async function seedPreviewData() {
   try {
     // 2026-11-17 起示例里有"本周计划"（几天内做完的作业）；旧浏览器里缺这几条时整体重灌一次
-    if (await db.tasks.get("preview-times-piano")) return;
+    if (await db.tasks.get("preview-times-raz")) return;
 
     const today = todayKey();
     const now = new Date().toISOString();
@@ -216,6 +216,8 @@ export async function seedPreviewData() {
         { id: "preview-times-piano", title: "钢琴练习", mainCategory: "interestClass", subCategory: "pianoPractice", targetCount: 3, unit: "次", log: { [getWeekStartKey(today)]: 1 } },
         { id: "preview-times-books", title: "课外读书", mainCategory: "extraHomework", subCategory: "chinese", targetCount: 2, unit: "本", log: {} },
         { id: "preview-times-essay", title: "写一篇作文", mainCategory: "extraHomework", subCategory: "chinese", targetCount: 1, unit: "篇", log: { [getWeekStartKey(today)]: 1 } },
+        // 一天可以做好几本：周一读了 3 本
+        { id: "preview-times-raz", title: "RAZ 阅读", mainCategory: "extraHomework", subCategory: "english", targetCount: 10, unit: "本", log: { [getWeekStartKey(today)]: 3 } },
       ] as const).map((item, index): Task => ({
         ...base,
         id: item.id,

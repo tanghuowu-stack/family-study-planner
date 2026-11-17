@@ -76,9 +76,9 @@ export function groupDayTasks<T extends DayGroupable>(tasks: T[], subjectOrder: 
 // ── 今日页：每日计划 / 本周计划（2026-11-17）──────────────────────────────
 
 /**
- * 某一天里，这条任务是否放在"本周计划"区，而不是"今天必须完成"：
+ * 某一天里，这条任务是否放在"本周计划"区，而不是"今日任务"：
  * 几天内做完（dateRange）的作业，在最后一天（截止日）之前都不是当天必须做完的事。
- * - 截止日当天回到"今天必须完成"（与本周回看"只算在截止日"同一口径）；
+ * - 截止日当天回到"今日任务"（与本周回看"只算在截止日"同一口径）；
  * - 过了截止日还没做完的由逾期区负责（不在当天清单里）；
  * - "其他安排"（旅游、休闲、考试比赛等）是一段时间的安排、不是要做完的作业，留在当天清单。
  * 只决定显示位置，不改任何数据。
@@ -88,6 +88,15 @@ export function isWeekPlanTask(task: Pick<Task, "timeType" | "mainCategory" | "e
 }
 
 const WEEKDAY = ["日", "一", "二", "三", "四", "五", "六"];
+
+/** 截止标签的醒目程度：今天截止 / 明天截止 / 更晚 */
+export function weekPlanDueTone(endDate: string, date: string): "today" | "soon" | "normal" {
+  if (endDate <= date) return "today";
+  const next = new Date(`${date}T00:00:00`);
+  next.setDate(next.getDate() + 1);
+  const tomorrow = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
+  return endDate === tomorrow ? "soon" : "normal";
+}
 
 /** 本周计划里的截止说明：明天截止 / 周五截止（同一周内）/ 11月24日截止 */
 export function weekPlanDueLabel(endDate: string, date: string): string {

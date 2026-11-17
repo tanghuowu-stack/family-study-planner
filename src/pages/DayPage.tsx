@@ -9,7 +9,7 @@ import { getRepository } from "../data/repositoryProvider";
 import { taskRepository } from "../data/taskRepository";
 import type { TaskDisplay, TaskStatus } from "../types/task";
 import { formatCompactDate, formatFullDate, fromDateKey, relativeDayLabel, toDateKey, todayKey } from "../utils/date";
-import { dayTaskKey, findJustCompleted, groupDayTasks, isWeekPlanTask, normalizeSubjectOrder, weekPlanDueLabel, type DayTaskPlacement, type TaskSubjectGroup } from "../utils/taskGrouping";
+import { dayTaskKey, findJustCompleted, groupDayTasks, isWeekPlanTask, normalizeSubjectOrder, weekPlanDueLabel, weekPlanDueTone, type DayTaskPlacement, type TaskSubjectGroup } from "../utils/taskGrouping";
 import { useGroupOrder } from "../hooks/useGroupOrder";
 import { useSortableList } from "../hooks/useSortableList";
 import { itemSyncKey, taskSyncKey } from "../utils/taskMeta";
@@ -96,7 +96,7 @@ export function DayPage(props: Props) {
   useEffect(() => () => { holdTimers.current.forEach((timer) => clearTimeout(timer)); }, []);
   const reorderTasks = async (ids: string[]) => { await getRepository().reorderTasks(ids); await reload(); };
   const isSettled = (task: TaskDisplay) => ["done", "cancelled"].includes(task.status);
-  // 每日计划 / 本周计划（2026-11-17）：几天内做完的作业不到截止日不算"今天必须完成"，放到"本周计划"区（规则见 isWeekPlanTask）
+  // 每日计划 / 本周计划（2026-11-17）：几天内做完的作业不到截止日不算"今日任务"，放到"本周计划"区（规则见 isWeekPlanTask）
   const daily = tasks.filter((task) => !isWeekPlanTask(task, props.date));
   const weekly = tasks.filter((task) => isWeekPlanTask(task, props.date));
   const pending = daily.filter((task) => !isSettled(task) || held.get(dayTaskKey(task)) === "pending");
@@ -121,7 +121,7 @@ export function DayPage(props: Props) {
   const weekRemaining = weekProgress.total - weekProgress.completed;
   const dueLabelFor = (task: TaskDisplay) =>
     task.timeType === "dateRange" && task.mainCategory !== "temporary" && task.endDate && !task.rolledFromDate && task.endDate >= props.date
-      ? { text: weekPlanDueLabel(task.endDate, props.date), urgent: task.endDate === props.date }
+      ? { text: weekPlanDueLabel(task.endDate, props.date), tone: weekPlanDueTone(task.endDate, props.date) }
       : undefined;
   const move = (days: number) => props.onDateChange(toDateKey(addDays(fromDateKey(props.date), days)));
   const swipeRef = useSwipe<HTMLDivElement>(
@@ -158,15 +158,14 @@ export function DayPage(props: Props) {
     </header>
     {!isToday && <div role="status" className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-sun/60 bg-sun/20 px-3 py-2 sm:px-4"><p className="min-w-0 text-sm font-semibold text-ink">正在看 {formatCompactDate(props.date)}（{relativeDayLabel(props.date)}），不是今天</p><button onClick={() => props.onDateChange(todayKey())} className="h-9 shrink-0 rounded-lg bg-primary px-3 text-sm font-bold text-white [@media(pointer:coarse)]:h-11">回到今天</button></div>}
     <SidebarMemo value={props.memo} variant="narrow" editorOpen={props.memoEditorOpen} focusRequest={props.memoFocusRequest} busy={props.memoBusy} onFocus={props.onMemoFocus} onChange={props.onMemoChange} onBlur={props.onMemoBlur} onComplete={props.onMemoComplete} />
-    {/* Mac / iPad 横屏：左边"今天必须完成"（逾期 / 当天清单 / 已完成），右边"本周计划"；窄屏依次排下来，本周计划在当天已完成之前 */}
+    {/* Mac / iPad 横屏：左边"今日任务"（逾期 / 当天清单 / 已完成），右边"本周计划"；窄屏依次排下来，本周计划在当天已完成之前 */}
     <div ref={swipeRef} className={`grid grid-cols-1 gap-4 ${hasWeekPlan ? "lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:grid-rows-[auto_auto_1fr] lg:items-start" : ""}`}>
       {overdueShown.length > 0 && <section className="surface overflow-visible border-alert/35 lg:col-start-1"><div className="flex items-center justify-between border-b border-alert/20 bg-alert/[0.06] px-3 py-2.5 sm:px-4"><h2 className="text-base font-bold text-alert">逾期未完成</h2><span className="text-[13px] font-semibold tabular-nums text-alert">{overdue.length}</span></div>{overdueShown.map((task) => renderTask(task))}</section>}
-      <section className="surface overflow-visible lg:col-start-1"><div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">{isToday ? "今天必须完成" : "当天必须完成"}</h2><ProgressMeter completed={progress.completed} total={progress.total} />{progress.total > 0 && <span className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${remaining === 0 ? "text-primary" : "text-ink"}`}>{remaining === 0 ? "全部完成" : `还剩 ${remaining} 项`}</span>}</div>{pending.length ? <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} onTaskReorder={reorderTasks} /> : isToday && done.length > 0 && overdueShown.length === 0 ? <AllDoneCelebration count={done.length} /> : done.length > 0 ? <p className="px-4 py-4 text-[15px] font-semibold text-primary">这一天的事都做完了</p> : <div className="p-3"><EmptyState compact /></div>}</section>
+      <section className="surface overflow-visible lg:col-start-1"><div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">{isToday ? "今日任务" : "当日任务"}</h2><ProgressMeter completed={progress.completed} total={progress.total} />{progress.total > 0 && <span className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${remaining === 0 ? "text-primary" : "text-ink"}`}>{remaining === 0 ? "全部完成" : `还剩 ${remaining} 项`}</span>}</div>{pending.length ? <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} onTaskReorder={reorderTasks} /> : isToday && done.length > 0 && overdueShown.length === 0 ? <AllDoneCelebration count={done.length} /> : done.length > 0 ? <p className="px-4 py-4 text-[15px] font-semibold text-primary">这一天的事都做完了</p> : <div className="p-3"><EmptyState compact /></div>}</section>
       {hasWeekPlan && <section aria-label="本周计划" className="surface overflow-visible lg:col-start-2 lg:row-span-3 lg:row-start-1">
         <div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">本周计划</h2><ProgressMeter completed={weekProgress.completed} total={weekProgress.total} />{weekProgress.total > 0 && <span className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${weekRemaining === 0 ? "text-primary" : "text-ink"}`}>{weekRemaining === 0 ? "全部完成" : `还剩 ${weekRemaining} 项`}</span>}</div>
         {weekPending.length > 0 && <>
           {timesPending.length > 0 && <GroupHeading label="本周作业" dot={NEUTRAL_DOT} count={weekPending.length} />}
-          <p className="border-b border-ink/[0.07] px-3 py-2 text-[13px] text-muted sm:px-4">截止前哪天做都行，到截止那天会出现在“{isToday ? "今天" : "当天"}必须完成”里。</p>
           {weekPending.map((task) => renderTask(task))}
         </>}
         {timesPending.length > 0 && <div className={weekPending.length > 0 ? "border-t border-ink/[0.07]" : ""}>

@@ -12,8 +12,8 @@ interface Props {
   viewDate?: string;
   /** 每周几次（今日页本周计划）：左侧显示本周进度环，标题下是一周七天的记录和"做了一次"按钮 */
   weekly?: { progress: WeeklyTimesProgress; canLog: boolean; isToday: boolean; onLog: (delta: 1 | -1) => void };
-  /** 截止说明（今日页"本周计划"里的"周五截止"、截止日当天的"今天截止"），urgent 时用醒目色 */
-  dueLabel?: { text: string; urgent?: boolean };
+  /** 截止标签（今日页"本周计划"里的"周五截止"、截止日当天的"今天截止"）：today 红、soon（明天）琥珀、其余主色 */
+  dueLabel?: { text: string; tone: "today" | "soon" | "normal" };
   /** 拖拽手柄（今日页可排序的任务才有），放在"…"左边，不挤占勾选框的位置 */
   dragHandle?: ReactNode;
   unsynced?: boolean; // 任务自身完成状态未同步到云端
@@ -48,6 +48,8 @@ function UnsyncedBadge({ onRetry }: { onRetry?: () => void }) {
 }
 
 type AnimState = "idle" | "checking" | "unchecking";
+
+const DUE_TONE = { today: "bg-alert/10 text-alert", soon: "bg-amber-100 text-amber-800", normal: "bg-primary/10 text-primary" } as const;
 
 /** 写入结束后，界面数据仍未跟上乐观值时，多久之后放弃乐观值、如实显示库内状态 */
 const OPTIMISTIC_FALLBACK_MS = 1500;
@@ -227,12 +229,12 @@ export function TaskItem({ task, compact = false, viewDate, weekly, dueLabel, dr
             )}
           </div>
           {hasChecklist && <span className="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-6 text-muted">{!ringMode && <span className="relative h-1 w-10 overflow-hidden rounded-full bg-stone-200"><span className="absolute inset-y-0 left-0 rounded-full bg-primary transition-all" style={{ width: `${(completedItems / displayItems.length) * 100}%` }} /></span>}<span className="tabular-nums">{completedItems}/{displayItems.length}</span></span>}
+          {dueLabel && !task.rolledFromDate && <span className={`mt-0.5 inline-flex h-5 shrink-0 items-center rounded px-1.5 text-[13px] font-semibold leading-none ${done ? "bg-stone-100 text-stone-400" : DUE_TONE[dueLabel.tone]}`}>{dueLabel.text}</span>}
           {weekly && <span className={`shrink-0 text-[13px] font-semibold leading-6 tabular-nums ${weekly.progress.reached ? "text-primary" : "text-muted"}`}>{weekly.progress.done}/{weekly.progress.target} {weekly.progress.unit}</span>}
           {unsynced && <UnsyncedBadge onRetry={onRetrySync} />}
         </div>
         {weekly && <WeeklyTimesBar weekly={weekly} viewDate={viewDate} />}
 
-        {dueLabel && !task.rolledFromDate && <div className={`text-[13px] ${dueLabel.urgent && !done ? "font-semibold text-amber-700" : "text-muted"}`}>{dueLabel.text}</div>}
         {task.note && !task.overrideNote && <div className="min-w-0 truncate text-[13px] text-muted">{task.note}</div>}
 
         {canNote && noteEditing && (

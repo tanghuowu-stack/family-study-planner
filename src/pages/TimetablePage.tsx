@@ -26,14 +26,10 @@ const SECTION_META: Record<TimetableSection, { label: string; className: string 
   extended: { label: "延时", className: "text-primary" },
 };
 
-const BREAK_AFTER: Record<string, { label: string; time: string; long?: boolean; splitByDay?: boolean }> = {
-  "am-1": { label: "大课间", time: "09:05-09:35" },
-  "am-2": { label: "课间活动", time: "10:15-10:30" },
-  "am-3": { label: "眼保健操 · 课间活动", time: "11:10-11:30" },
-  "am-4": { label: "午餐 · 午休", time: "12:10-14:00", long: true },
-  "pm-1": { label: "眼保健操 · 课间活动", time: "14:40-15:00" },
-  "pm-2": { label: "课间活动", time: "15:40-15:55" },
-  "extended-1": { label: "课间活动", time: "16:35-16:50", splitByDay: true },
+/** 休息行的版式（名称和时间存在课表设置 breaks 里，编辑课表时可改） */
+const BREAK_LAYOUT: Record<string, { long?: boolean; splitByDay?: boolean }> = {
+  "am-4": { long: true },
+  "extended-1": { splitByDay: true },
 };
 
 function courseClass(course: string): string {
@@ -115,6 +111,13 @@ export function TimetablePage() {
     } : current);
   };
 
+  const updateBreak = (slotId: string, field: "label" | "time", value: string) => {
+    setDraft((current) => current ? {
+      ...current,
+      breaks: { ...current.breaks, [slotId]: { ...current.breaks[slotId], [field]: value } },
+    } : current);
+  };
+
   const updateTime = (slotId: string, value: string) => {
     setDraft((current) => current ? {
       ...current,
@@ -161,7 +164,10 @@ export function TimetablePage() {
         <tbody>{draft.slots.map((slot, index) => {
           const firstOfSection = index === 0 || draft.slots[index - 1].section !== slot.section;
           const section = SECTION_META[slot.section];
-          const breakMeta = BREAK_AFTER[slot.id];
+          const breakItem = draft.breaks[slot.id];
+          const breakMeta = breakItem && { ...breakItem, ...BREAK_LAYOUT[slot.id] };
+          // 编辑时休息行整行一个编辑框：名称 + 时间
+          const breakEditor = breakItem && <span className="inline-flex flex-wrap items-center justify-center gap-1.5"><input aria-label={`${section.label}${slot.label}之后的休息名称`} value={breakItem.label} onChange={(event) => updateBreak(slot.id, "label", event.target.value)} className="w-40 rounded border bg-white px-1.5 py-0.5 text-center text-[12px] font-bold text-ink" /><input aria-label={`${section.label}${slot.label}之后的休息时间`} value={breakItem.time} onChange={(event) => updateBreak(slot.id, "time", event.target.value)} className="w-[96px] rounded border bg-white px-1 py-0.5 text-center font-mono text-[11px] text-muted" /></span>;
           return [
             <tr key={slot.id} className={firstOfSection && index > 0 ? "[&>*]:border-t-2 [&>*]:border-t-ink/15" : ""}>
               <th className="timetable-slot sticky left-0 z-20 border-b border-r border-ink/[0.08] bg-[#FAF9F6] px-3 py-2.5 text-left font-normal"><div className="flex items-center gap-2"><span className={`timetable-section-label w-7 shrink-0 text-[10px] font-bold ${section.className}`}>{firstOfSection ? section.label : ""}</span><div className="min-w-0"><div className="timetable-slot-label text-xs font-bold text-ink"><span className={`timetable-section-inline hidden ${section.className}`}>{firstOfSection ? `${section.label} ` : ""}</span>{slot.label}</div>{editing ? <input aria-label={`${section.label}${slot.label}时间`} value={slot.time} onChange={(event) => updateTime(slot.id, event.target.value)} className="mt-1 w-[82px] rounded border px-1 py-0.5 font-mono text-[9px] text-muted" /> : <div className="timetable-slot-time mt-0.5 whitespace-nowrap font-mono text-[10px] font-medium text-muted">{displayTime(slot.time)}</div>}</div></div></th>
@@ -172,7 +178,7 @@ export function TimetablePage() {
                 return <td key={day} rowSpan={merged ? 3 : 1} className={`timetable-course border-b border-r border-ink/[0.08] px-2 py-3.5 text-center align-middle last:border-r-0 ${tomorrow === day ? "bg-alert/[0.035]" : "bg-white"}`}>{editing ? <div className="flex flex-col items-center gap-1"><input aria-label={`${DAY_LABELS[day]}${section.label}${slot.label}`} value={slot.courses[day]} onChange={(event) => updateCourse(slotIds, day, event.target.value)} className="w-full rounded-md border px-1.5 py-2 text-center text-base font-bold text-ink" /><label className="flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-muted"><input type="checkbox" aria-label={`${DAY_LABELS[day]}${section.label}${slot.label}高亮显示`} checked={slot.highlights[day]} onChange={(event) => updateHighlight(slotIds, day, event.target.checked)} className="accent-primary" />高亮显示</label></div> : <span className={`inline-block rounded-md text-[17px] font-extrabold leading-tight ${slot.highlights[day] ? "w-[calc(100%-6px)] bg-mint px-1 py-1 sm:w-auto sm:min-w-24 sm:px-4" : ""} ${courseClass(slot.courses[day])}`}><CourseName course={slot.courses[day]} /></span>}</td>;
               })}
             </tr>,
-            breakMeta && (breakMeta.splitByDay ? <tr key={`${slot.id}-break`} className="timetable-break timetable-break-split bg-[#F5F4F1]"><th aria-hidden="true" className="sticky left-0 z-20 border-b border-r border-ink/[0.08] bg-[#F5F4F1] px-3 py-1" />{TIMETABLE_DAYS.map((day) => {
+            breakMeta && editing ? <tr key={`${slot.id}-break`} className={`timetable-break ${breakMeta.long ? "bg-amber-50/75" : "bg-[#F5F4F1]"}`}><th aria-hidden="true" className={`sticky left-0 z-20 border-b border-r border-ink/[0.08] px-3 py-1 ${breakMeta.long ? "bg-amber-50" : "bg-[#F5F4F1]"}`} /><td colSpan={5} className="border-b border-ink/[0.08] px-2 py-1.5 text-center">{breakEditor}</td></tr> : breakMeta && (breakMeta.splitByDay ? <tr key={`${slot.id}-break`} className="timetable-break timetable-break-split bg-[#F5F4F1]"><th aria-hidden="true" className="sticky left-0 z-20 border-b border-r border-ink/[0.08] bg-[#F5F4F1] px-3 py-1" />{TIMETABLE_DAYS.map((day) => {
               if (mergedDays.has(day) || (day === "tuesday" && mergeMondayTuesdayBreak)) return null;
               const colSpan = day === "monday" && mergeMondayTuesdayBreak ? 2 : 1;
               return <td key={day} colSpan={colSpan} className="border-b border-r border-ink/[0.08] px-1.5 py-1.5 text-center text-[10px] font-semibold text-muted last:border-r-0">{breakMeta.label}<span className="ml-1 whitespace-nowrap font-mono text-[9px] font-normal text-muted/80">({displayTime(breakMeta.time)})</span></td>;

@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { HabitSection } from "../components/HabitSection";
+import { WeekReviewStrip } from "../components/WeekReviewStrip";
 import { taskRepository } from "../data/taskRepository";
 import { todayKey } from "../utils/date";
 
 type CourseStats = Awaited<ReturnType<typeof taskRepository.getCourseStatistics>>;
 
 /**
- * 打卡页（原"统计与设置"，2026-11 第 6 批拆分）：只留打卡月历和课程节数统计；
- * 云同步、备份、课程、假期、历史备忘、操作记录都移到"设置"页。
+ * 周计划及打卡（原"统计与设置"，2026-11 第 6 批拆分；2026-11-18 改名，并把本周条从月视图搬过来）：
+ * 顶部本周完成情况（每天 + 每周几次），下面打卡月历和课程节数统计；
+ * 云同步、备份、课程、假期、历史备忘、操作记录都在"设置"页。
  */
-export function StatsPage() {
+export function StatsPage({ refreshKey, onOpenDay }: { refreshKey: number; onOpenDay: (date: string) => void }) {
   const [message, setMessage] = useState("");
   const [courseStart, setCourseStart] = useState(() => `${todayKey().slice(0, 7)}-01`);
   const [courseEnd, setCourseEnd] = useState(todayKey);
@@ -19,7 +21,8 @@ export function StatsPage() {
     setCourseStats(await taskRepository.getCourseStatistics(courseStart, courseEnd));
     setMessage("");
   };
-  return <main className="mx-auto w-full max-w-5xl lg:max-w-none xl:max-w-6xl px-4 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10"><header className="page-header"><h1 className="page-title">打卡</h1></header>
+  return <main className="mx-auto w-full max-w-5xl lg:max-w-none xl:max-w-6xl px-4 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10"><header className="page-header"><h1 className="page-title">周计划及打卡</h1></header>
+    <WeekReviewStrip refreshKey={refreshKey} onOpenDay={onOpenDay} />
     <HabitSection />
     <section className="surface mt-6 p-4 sm:p-5"><h2 className="text-base font-bold text-ink">课程节数统计</h2><div className="mt-3 flex flex-wrap items-end gap-2"><label className="text-[13px] text-muted">开始日期<input type="date" value={courseStart} onChange={(event) => setCourseStart(event.target.value)} className="mt-1 block min-h-11 rounded-lg border px-2.5 text-sm text-stone-700" /></label><label className="text-[13px] text-muted">结束日期<input type="date" value={courseEnd} onChange={(event) => setCourseEnd(event.target.value)} className="mt-1 block min-h-11 rounded-lg border px-2.5 text-sm text-stone-700" /></label><button onClick={countCourses} className="min-h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-white">统计</button></div>{message && <p role="alert" className="mt-3 text-sm text-rose-700">{message}</p>}{courseStats && <CourseStatistics data={courseStats} />}</section>
   </main>;

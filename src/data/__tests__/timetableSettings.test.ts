@@ -45,6 +45,25 @@ describe("school timetable settings", () => {
     expect(timetable.slots[1].courses.tuesday).toBe("数学");
   });
 
+  it("keeps edited break names and times, falls back to defaults when missing or blank (2026-11-18)", () => {
+    expect(normalizeSchoolTimetable(null).breaks["am-1"]).toEqual({ label: "大课间", time: "09:05-09:35" });
+    const saved = cloneSchoolTimetable(DEFAULT_SCHOOL_TIMETABLE);
+    saved.breaks["am-1"] = { label: " 升旗仪式 ", time: "09:05-09:40" };
+    saved.breaks["pm-2"] = { label: "  ", time: "" };
+    (saved.breaks as Record<string, unknown>)["bogus"] = { label: "x", time: "y" };
+    const timetable = normalizeSchoolTimetable(saved);
+    expect(timetable.breaks["am-1"]).toEqual({ label: "升旗仪式", time: "09:05-09:40" });
+    expect(timetable.breaks["pm-2"]).toEqual({ label: "课间活动", time: "15:40-15:55" });
+    expect(timetable.breaks).not.toHaveProperty("bogus");
+    // 以前存的课表没有 breaks：读出来是默认的几行
+    const legacy = { version: 3, term: "旧", slots: DEFAULT_SCHOOL_TIMETABLE.slots } as unknown as SchoolTimetable;
+    expect(Object.keys(normalizeSchoolTimetable(legacy).breaks)).toHaveLength(7);
+    // clone 不共享引用
+    const copy = cloneSchoolTimetable(timetable);
+    copy.breaks["am-1"].label = "改了";
+    expect(timetable.breaks["am-1"].label).toBe("升旗仪式");
+  });
+
   it("highlights textbook and tool lessons while leaving Monday extended English plain", () => {
     const timetable = normalizeSchoolTimetable(null);
     const slot = (id: string) => timetable.slots.find((item) => item.id === id)!;

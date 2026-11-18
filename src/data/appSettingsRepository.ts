@@ -221,11 +221,29 @@ export interface TimetableSlot {
   highlights: Record<TimetableDay, boolean>;
 }
 
+/** 课节之间的休息行（大课间、课间活动、午餐午休……）：名称和时间可在编辑课表时修改（2026-11-18） */
+export interface TimetableBreak {
+  label: string;
+  time: string;
+}
+
 export interface SchoolTimetable {
   version: 3;
   term: string;
   slots: TimetableSlot[];
+  /** 键是它前面那一节的 id（"am-1" = 上午第一节之后）；行的位置固定，只改名称和时间 */
+  breaks: Record<string, TimetableBreak>;
 }
+
+export const DEFAULT_TIMETABLE_BREAKS: Record<string, TimetableBreak> = {
+  "am-1": { label: "大课间", time: "09:05-09:35" },
+  "am-2": { label: "课间活动", time: "10:15-10:30" },
+  "am-3": { label: "眼保健操 · 课间活动", time: "11:10-11:30" },
+  "am-4": { label: "午餐 · 午休", time: "12:10-14:00" },
+  "pm-1": { label: "眼保健操 · 课间活动", time: "14:40-15:00" },
+  "pm-2": { label: "课间活动", time: "15:40-15:55" },
+  "extended-1": { label: "课间活动", time: "16:35-16:50" },
+};
 
 const courses = (monday: string, tuesday: string, wednesday: string, thursday: string, friday: string): Record<TimetableDay, string> => ({
   monday,
@@ -264,6 +282,7 @@ export const DEFAULT_SCHOOL_TIMETABLE: SchoolTimetable = {
     timetableSlot("extended-2", "extended", "第四节", "16:50-17:30", courses("数学", "语文", "云脑班", "语文", "俱乐部")),
     timetableSlot("extended-3", "extended", "第五节", "17:30-17:55", courses("数学", "语文", "语文", "语文", "云脑班")),
   ],
+  breaks: DEFAULT_TIMETABLE_BREAKS,
 };
 
 export function cloneSchoolTimetable(value: SchoolTimetable): SchoolTimetable {
@@ -271,10 +290,12 @@ export function cloneSchoolTimetable(value: SchoolTimetable): SchoolTimetable {
     version: 3,
     term: value.term,
     slots: value.slots.map((slot) => ({ ...slot, courses: { ...slot.courses }, highlights: { ...slot.highlights } })),
+    breaks: Object.fromEntries(Object.entries(value.breaks ?? DEFAULT_TIMETABLE_BREAKS).map(([id, item]) => [id, { ...item }])),
   };
 }
 
-/** 固定课节骨架，只接受可编辑的学期、时间和课程内容，避免坏设置让整行消失。 */
+/** 固定课节骨架，只接受可编辑的学期、时间、课程内容和休息行的名称 / 时间，避免坏设置让整行消失。
+ *  休息行名称或时间留空时恢复默认（以前存的课表没有 breaks，读出来就是默认那几行）。 */
 export function normalizeSchoolTimetable(value: SchoolTimetable | null): SchoolTimetable {
   const incomingSlots = Array.isArray(value?.slots) ? value.slots : [];
   const legacy = !value || value.version !== 3;
@@ -313,6 +334,11 @@ export function normalizeSchoolTimetable(value: SchoolTimetable | null): SchoolT
         ])) as Record<TimetableDay, boolean>,
       };
     }),
+    breaks: Object.fromEntries(Object.entries(DEFAULT_TIMETABLE_BREAKS).map(([id, fallback]) => {
+      const incoming: Partial<Record<keyof TimetableBreak, unknown>> | undefined = value?.breaks && typeof value.breaks === "object" ? value.breaks[id] : undefined;
+      const text = (field: keyof TimetableBreak) => typeof incoming?.[field] === "string" && (incoming[field] as string).trim() ? (incoming[field] as string).trim() : fallback[field];
+      return [id, { label: text("label"), time: text("time") }];
+    })),
   };
 }
 

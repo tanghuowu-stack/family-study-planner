@@ -25,7 +25,7 @@ type Page = "today" | "month" | "tasks" | "stats" | "timetable" | "settings";
 const navItems = [
   { page: "today" as const, label: "今日", icon: Home },
   { page: "month" as const, label: "月视图", icon: CalendarDays }, { page: "tasks" as const, label: "任务管理", icon: ClipboardList },
-  { page: "stats" as const, label: "打卡", icon: BarChart3 },
+  { page: "stats" as const, label: "周计划及打卡", icon: BarChart3 },
   { page: "timetable" as const, label: "课表", icon: Table2 },
 ];
 
@@ -356,7 +356,7 @@ export default function App() {
       {page === "today" && <DayPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenMonth={() => setPage("month")} onAddTask={() => setForm({ open: true })} memo={memo} memoEditorOpen={memoEditorOpen} memoFocusRequest={memoFocusRequest} memoBusy={memoBusy} onMemoFocus={beginMemoEdit} onMemoChange={changeMemo} onMemoBlur={finishNarrowMemoEdit} onMemoComplete={() => void completeMemo()} {...actions} />}
       {page === "month" && <MonthPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenDay={openDay} onAddTask={(date) => { setSelectedDate(date); setForm({ open: true }); }} />}
       {page === "tasks" && <TaskManagementPage refreshKey={refreshKey} onRefresh={refresh} notify={notify} onEdit={(task) => setForm({ open: true, task })} onDelete={deleteTask} onEnd={endTask} onExtend={extendTask} onCopy={copyTask} />}
-      {page === "stats" && <StatsPage />}
+      {page === "stats" && <StatsPage refreshKey={refreshKey} onOpenDay={openDay} />}
       {page === "settings" && <SettingsPage refreshKey={refreshKey} onImported={refresh} notify={notify} cloudMode={cloudMode} onAuthChange={syncCloudSession} memoHistory={memoHistory} memoBusy={memoBusy} onRestoreMemo={(id) => updateMemoHistory(() => restoreSidebarMemo(id), "已恢复到当前备忘，有原内容时会追加")} onDeleteMemo={(id) => updateMemoHistory(() => deleteSidebarMemoHistory(id), "历史备忘已永久删除")} />}
       {page === "timetable" && <TimetablePage />}
     </div>

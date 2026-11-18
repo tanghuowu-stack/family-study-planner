@@ -7,7 +7,7 @@ import { formatCompactDate, todayKey, toDateKey } from "../utils/date";
 import { SUBJECT_DOT } from "./GroupHeading";
 
 /**
- * 月视图顶部的"本周"条：7 天各自完成几件。默认只显示这一行；点某一天，下方展开那天还没完成的事
+ * "周计划及打卡"页顶部的"本周"条（2026-11-18 从月视图搬来）：7 天各自完成几件。默认只显示这一行；点某一天，下方展开那天还没完成的事
  * （未来的日子是还没做的安排），再点一次收起。展开区里点某件事或"打开这一天"进入那天的今日页。
  * 口径见 data/weekReview.ts：每件事只算一次，完成看现在的状态。
  */

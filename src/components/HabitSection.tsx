@@ -54,19 +54,22 @@ export function HabitSection() {
   const isThisMonth = month === todayKey().slice(0, 7);
 
   return (
-    <section className="mt-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1">
-          <button onClick={() => shiftMonth(-1)} className="flex h-10 w-10 items-center justify-center rounded-lg text-muted hover:bg-white hover:text-ink" aria-label="上个月"><ChevronLeft className="h-5 w-5" /></button>
-          <h2 className="min-w-24 text-center text-base font-bold text-ink">{month.slice(0, 4)}年{Number(month.slice(5, 7))}月</h2>
-          <button onClick={() => shiftMonth(1)} className="flex h-10 w-10 items-center justify-center rounded-lg text-muted hover:bg-white hover:text-ink" aria-label="下个月"><ChevronRight className="h-5 w-5" /></button>
-          {!isThisMonth && <button onClick={() => setMonth(todayKey().slice(0, 7))} className="h-10 rounded-lg px-2 text-[13px] font-semibold text-primary hover:bg-primary/10">回到本月</button>}
+    <section>
+      {/* 月份切换、管理、休息日同一行（2026-11-18 手机排版收紧）；不是本月时点月份回到本月 */}
+      <div className="flex items-center gap-1.5">
+        <div className="flex min-w-0 items-center">
+          <button onClick={() => shiftMonth(-1)} className="flex h-9 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-white hover:text-ink sm:w-10" aria-label="上个月"><ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" /></button>
+          <h2 className="whitespace-nowrap text-center text-[15px] font-bold text-ink sm:min-w-24 sm:text-base">{isThisMonth
+            ? <>{month.slice(0, 4)}年{Number(month.slice(5, 7))}月</>
+            : <button onClick={() => setMonth(todayKey().slice(0, 7))} title="回到本月" className="rounded-md px-1 hover:bg-primary/10">{month.slice(0, 4)}年{Number(month.slice(5, 7))}月</button>}</h2>
+          <button onClick={() => shiftMonth(1)} className="flex h-9 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-white hover:text-ink sm:w-10" aria-label="下个月"><ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" /></button>
+          {!isThisMonth && <button onClick={() => setMonth(todayKey().slice(0, 7))} className="hidden h-9 rounded-lg px-2 text-[13px] font-semibold text-primary hover:bg-primary/10 sm:inline-flex sm:items-center">回到本月</button>}
         </div>
-        <div className="ml-auto flex gap-2">
-          <button onClick={() => setManageOpen(true)} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-ink/10 bg-white px-3 text-sm font-medium text-ink hover:bg-mint/40">
-            <ListChecks className="h-4 w-4" />管理打卡项目
+        <div className="ml-auto flex shrink-0 gap-1.5 sm:gap-2">
+          <button onClick={() => setManageOpen(true)} aria-label="管理打卡项目" className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-ink/10 bg-white px-2.5 text-[13px] font-medium text-ink hover:bg-mint/40 sm:min-h-10 sm:gap-1.5 sm:px-3 sm:text-sm">
+            <ListChecks className="h-4 w-4" />管理
           </button>
-          <button onClick={() => setRestOpen(true)} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-ink/10 bg-white px-3 text-sm font-medium text-ink hover:bg-mint/40">
+          <button onClick={() => setRestOpen(true)} className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-ink/10 bg-white px-2.5 text-[13px] font-medium text-ink hover:bg-mint/40 sm:min-h-10 sm:gap-1.5 sm:px-3 sm:text-sm">
             <CalendarOff className="h-4 w-4" />休息日
           </button>
         </div>
@@ -117,12 +120,12 @@ function HabitMatrix({ calendars, restDays }: { calendars: HabitCalendar[]; rest
           : "bg-stone-200";
 
   return (
-    <div className="surface mt-3 overflow-hidden">
+    <div className="surface mt-2 overflow-hidden sm:mt-3">
       <div ref={scroller} className="overflow-x-auto">
         <table className="w-full border-separate border-spacing-0 text-center">
           <thead>
             <tr>
-              <th scope="col" className="sticky left-0 z-10 min-w-[6.5rem] border-b border-ink/10 bg-white px-3 shadow-[1px_0_0_rgba(32,41,37,0.08)] py-2 text-left text-[13px] font-semibold text-muted sm:px-4">项目</th>
+              <th scope="col" className="sticky left-0 z-10 min-w-[6rem] border-b border-ink/10 bg-white px-3 shadow-[1px_0_0_rgba(32,41,37,0.08)] py-1.5 text-left sm:py-2 text-[13px] font-semibold text-muted sm:px-4">项目</th>
               {days.map((date) => {
                 const weekday = getDay(parseISO(date));
                 const isToday = date === today;
@@ -141,26 +144,26 @@ function HabitMatrix({ calendars, restDays }: { calendars: HabitCalendar[]; rest
           <tbody>
             {calendars.map((cal) => (
               <tr key={cal.taskId}>
-                <th scope="row" className="sticky left-0 z-10 border-b border-ink/[0.07] bg-white px-3 shadow-[1px_0_0_rgba(32,41,37,0.08)] py-2.5 text-left sm:px-4">
-                  <span className="block max-w-[8rem] truncate text-[15px] font-semibold text-ink xl:max-w-[12rem]" title={cal.title}>{cal.title}</span>
-                  <span className="block text-[13px] font-medium text-muted">{cal.currentStreak > 0 ? <>🔥 连续 {cal.currentStreak} {cal.streakUnit === "周" ? "周做够" : "天"}</> : "还没开始连续"}</span>
+                <th scope="row" className="sticky left-0 z-10 border-b border-ink/[0.07] bg-white px-3 shadow-[1px_0_0_rgba(32,41,37,0.08)] py-1.5 text-left sm:px-4 sm:py-2.5">
+                  <span className="block max-w-[7rem] truncate text-[14px] font-semibold leading-5 text-ink sm:max-w-[8rem] sm:text-[15px] xl:max-w-[12rem]" title={cal.title}>{cal.title}</span>
+                  <span className="block whitespace-nowrap text-[12px] font-medium leading-4 text-muted sm:text-[13px]">{cal.currentStreak > 0 ? <>🔥 连续 {cal.currentStreak} {cal.streakUnit === "周" ? "周做够" : "天"}</> : "还没开始连续"}</span>
                 </th>
                 {cal.days.map((day) => {
                   const future = day.date > today;
                   return (
-                    <td key={day.date} className={`border-b border-ink/[0.07] px-0 py-2.5 ${day.date === today ? "bg-mint/40" : restDays.has(day.date) ? "bg-stone-50" : ""}`}>
+                    <td key={day.date} className={`border-b border-ink/[0.07] px-0 py-1.5 sm:py-2.5 ${day.date === today ? "bg-mint/40" : restDays.has(day.date) ? "bg-stone-50" : ""}`}>
                       <span role="img" aria-label={`${Number(day.date.slice(5, 7))}月${Number(day.date.slice(8))}日 ${future ? "未到" : STATUS_TEXT[day.status]}`} title={future ? undefined : STATUS_TEXT[day.status]}
-                        className={`mx-auto block h-4 w-4 rounded-full ${dot(day.status, future)}`} />
+                        className={`mx-auto block h-3.5 w-3.5 rounded-full sm:h-4 sm:w-4 ${dot(day.status, future)}`} />
                     </td>
                   );
                 })}
-                <td className="border-b border-ink/[0.07] py-2.5 pl-1 pr-3 text-right text-[15px] font-semibold tabular-nums text-ink sm:px-4">{cal.monthCompletedDays}<span className="text-[13px] font-medium text-muted"> 天</span></td>
+                <td className="border-b border-ink/[0.07] py-1.5 pl-1 pr-3 text-right text-[14px] font-semibold sm:py-2.5 sm:text-[15px] tabular-nums text-ink sm:px-4">{cal.monthCompletedDays}<span className="text-[13px] font-medium text-muted"> 天</span></td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 px-3 py-2.5 text-[13px] text-muted sm:px-4">
+      <div className="flex flex-wrap gap-x-3 gap-y-1 px-3 py-2 text-[12px] text-muted sm:gap-x-4 sm:px-4 sm:py-2.5 sm:text-[13px]">
         <span className="inline-flex items-center gap-1.5"><i className="h-3 w-3 rounded-full bg-primary" />完成</span>
         <span className="inline-flex items-center gap-1.5"><i className="h-3 w-3 rounded-full bg-rose-300" />漏卡</span>
         <span className="inline-flex items-center gap-1.5"><i className="h-3 w-3 rounded-full bg-stone-200" />休息或无排期</span>

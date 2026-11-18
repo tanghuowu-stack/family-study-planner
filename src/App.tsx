@@ -221,7 +221,7 @@ export default function App() {
 
   const repo = () => getRepository();
   /** 与表单"哪天做"按钮同名，用于"已改成……"提示 */
-  const TIME_TYPE_LABEL: Partial<Record<TaskDraft["timeType"], string>> = { singleDate: "某一天", dateRange: "几天内做完", recurring: "重复" };
+  const TIME_TYPE_LABEL: Partial<Record<TaskDraft["timeType"], string>> = { singleDate: "单日", dateRange: "时段", recurring: "重复" };
 
   const saveTask = async (draft: TaskDraft, force = false) => {
     const conflicts = force ? [] : await repo().findTimeConflicts(draft, form.task?.id);

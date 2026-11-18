@@ -1,6 +1,5 @@
 import type { ChecklistItem, CourseStatus, ExtraContentType, MainCategory, PlanPeriod, RolloverMode, SchedulePattern, TaskDraft, TaskStatus, TaskTimeType, SubCategory } from "../types/task";
-import { addDays, getDay, startOfWeek } from "date-fns";
-import { fromDateKey, todayKey, toDateKey } from "./date";
+import { todayKey } from "./date";
 
 export function schoolHomeworkTitle(subCategory: string): string {
   const subject = ({ chinese: "语文", math: "数学", english: "英语" } as Record<string, string>)[subCategory];
@@ -22,22 +21,7 @@ export function regularSchoolHomeworkTitle(
 
 export function courseHomeworkTitle(draft: Pick<TaskDraft, "mainCategory" | "subCategory" | "extraContentType">): string {
   if (draft.mainCategory !== "extraHomework" || draft.extraContentType !== "homework") return "";
-  return ({ chinese: "大增语文课后作业", math: "奥数班作业" } as Record<string, string>)[draft.subCategory] ?? "";
-}
-
-/** Default windows contain the selected day; they are not recurring schedules. */
-export function homeworkDateDefault(
-  draft: Pick<TaskDraft, "mainCategory" | "subCategory" | "extraContentType"> & { title?: string },
-  date: string,
-): { id: string; startDate: string; endDate: string } | undefined {
-  const day = fromDateKey(date);
-  if (draft.mainCategory === "school" && schoolHomeworkTitle(draft.subCategory) && getDay(day) === 5) {
-    return { id: "school-weekend", startDate: date, endDate: toDateKey(addDays(day, 2)) };
-  }
-  if (!courseHomeworkTitle(draft)) return undefined;
-  if (draft.title?.trim() && !(draft.subCategory === "chinese" ? draft.title.includes("大增") : draft.title.includes("奥数"))) return undefined;
-  const start = startOfWeek(day, { weekStartsOn: draft.subCategory === "chinese" ? 6 : 0 });
-  return { id: draft.subCategory === "chinese" ? "dazeng" : "aoshu", startDate: toDateKey(start), endDate: toDateKey(addDays(start, 6)) };
+  return ({ chinese: "大增语文课后作业", math: "奥数班作业", english: "FCE作业" } as Record<string, string>)[draft.subCategory] ?? "";
 }
 
 /**
@@ -197,12 +181,12 @@ export const STATUS_META: Record<TaskStatus, { label: string; className: string 
 };
 
 export const TIME_TYPE_META: Record<TaskTimeType, string> = {
-  singleDate: "指定一天", dateRange: "日期范围", weekGoal: "每周任务池",
+  singleDate: "单日", dateRange: "时段", weekGoal: "每周任务池",
   monthGoal: "每月计划", assignmentWindow: "课后作业周期", recurring: "固定重复", weeklyTimes: "每周几次",
 };
 
 export const ROLLOVER_META: Record<RolloverMode, string> = {
-  autoNextDay: "自动顺延到下一天", keepOverdue: "保留原日期并标记逾期", skipIfMissed: "过期自动跳过",
+  autoNextDay: "顺延至次日", keepOverdue: "保留在逾期区", skipIfMissed: "到期结束",
 };
 
 export const WEEKDAY_LABELS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
@@ -263,18 +247,7 @@ export const isCourseTask = (task: { mainCategory: MainCategory; subCategory: st
   (task.mainCategory === "extraHomework" && task.extraContentType === "class")
   || (task.mainCategory === "interestClass" && (FIXED_CLASS_INTEREST_SUBS.includes(task.subCategory) || task.extraContentType === "class"));
 
-/**
- * 新建任务时"没做完时"的默认值（2026-11-13 起上课类单列）：
- * - 上课（isCourseTask：课外班上课、钢琴/游泳/轮滑课、勾了"算作上课"的兴趣班）→ 当天没上就算了，不挪、不标红；
- * - 课外班作业、阅读计划、钢琴练习 → 挪到第二天；
- * - 其余（学校作业、其他安排等）→ 留在原日标红。
- * 只决定表单默认值，已有任务不改；用户在"更多设置"里手动改的以手动为准（直到再切换分类/内容）。
- */
-export function defaultRollover(task: { mainCategory: MainCategory; subCategory: string; extraContentType?: ExtraContentType }): { rolloverMode: RolloverMode; allowRollover: boolean } {
-  if (isCourseTask(task)) return { rolloverMode: "skipIfMissed", allowRollover: false };
-  const auto = task.mainCategory === "extraHomework" || task.mainCategory === "readingPlan" || task.subCategory === "pianoPractice";
-  return auto ? { rolloverMode: "autoNextDay", allowRollover: true } : { rolloverMode: "keepOverdue", allowRollover: false };
-}
+// 新建任务的默认未完成处理等 2026-11-18 起统一由 utils/taskDefaults.getTaskDefaults 给出
 
 /**
  * 重复类任务的小项按天看（2026-11-13）：小项是所有日子共用的一份，某天只有"在这一天勾的"才算已勾，

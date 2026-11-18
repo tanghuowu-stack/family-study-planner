@@ -33,7 +33,22 @@ export type DayGroupable = Pick<Task, "mainCategory" | "subCategory" | "title" |
 export interface DayTaskGroups<T> {
   classes: T[];
   homework: { key: TaskSubjectGroup; label: string; tasks: T[] }[];
+  /** 其他安排·其他：单独一组，显示为"其他 · 提醒"（2026-11-18） */
+  reminders: T[];
 }
+
+/**
+ * "提醒"：其他安排里的"其他"（如"整理明天上课资料和水杯"）。只在显示层按分类 + 二级类型判断，
+ * 不新增字段、不迁移数据。今日页从"其他 · 作业"里拆出来单独成组。
+ */
+export const isReminderTask = (task: Pick<Task, "mainCategory" | "subCategory">) => task.mainCategory === "temporary" && task.subCategory === "other";
+
+/**
+ * 不计入今日页"还剩 N 项"和进度条的任务：其他安排里的"其他"（提醒）、"休闲"、"旅游"。照常显示、可以打勾。
+ * 考试或比赛照常计入。（以后做积分时这几类默认不计分）
+ */
+export const isUncountedTask = (task: Pick<Task, "mainCategory" | "subCategory">) =>
+  task.mainCategory === "temporary" && ["other", "leisure", "travel"].includes(task.subCategory);
 
 /**
  * 用户拖出来的学科顺序（持久化在 app_settings）规整成完整、无重复的四个学科。
@@ -63,14 +78,16 @@ export function dayBucketSort(a: DayGroupable, b: DayGroupable): number {
 
 export function groupDayTasks<T extends DayGroupable>(tasks: T[], subjectOrder: readonly string[]): DayTaskGroups<T> {
   const classes = tasks.filter((task) => isCourseTask(task)).sort(dayBucketSort);
+  // 提醒从作业组里拆出来；上课的判定（isCourseTask）不受影响，提醒本来就不会是上课
+  const reminders = tasks.filter((task) => !isCourseTask(task) && isReminderTask(task)).sort(dayBucketSort);
   const homework = normalizeSubjectOrder(subjectOrder)
     .map((key) => ({
       key,
       label: TASK_SUBJECT_GROUPS.find((group) => group.key === key)!.label,
-      tasks: tasks.filter((task) => !isCourseTask(task) && taskSubjectGroup(task) === key).sort(dayBucketSort),
+      tasks: tasks.filter((task) => !isCourseTask(task) && !isReminderTask(task) && taskSubjectGroup(task) === key).sort(dayBucketSort),
     }))
     .filter((group) => group.tasks.length > 0);
-  return { classes, homework };
+  return { classes, homework, reminders };
 }
 
 // ── 今日页：每日计划 / 本周计划（2026-11-17）──────────────────────────────

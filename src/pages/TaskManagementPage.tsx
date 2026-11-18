@@ -14,7 +14,7 @@ interface Props { refreshKey: number; onRefresh: () => void; notify: (text: stri
 const order: MainCategory[] = ["school", "extraHomework", "interestClass", "temporary"];
 
 type KindFilter = "all" | "repeat" | "weekly" | "range" | "once";
-const KIND_LABEL: Record<Exclude<KindFilter, "all">, string> = { repeat: "重复", weekly: "每周几次", range: "几天内做完", once: "某一天" };
+const KIND_LABEL: Record<Exclude<KindFilter, "all">, string> = { repeat: "重复", weekly: "每周几次", range: "时段", once: "单日" };
 /** 任务按"怎么安排"分四类：筛选条和每行右侧的类型标签共用 */
 const kindOf = (task: Task): Exclude<KindFilter, "all"> =>
   task.timeType === "weeklyTimes" ? "weekly"
@@ -29,7 +29,7 @@ const KIND_TONE: Record<Exclude<KindFilter, "all">, string> = {
 
 /**
  * 任务管理（2026-11-18 重新整理，用户反馈"很乱，找任务找不到；有的有手柄有的没有"）：
- * - 顶部搜索框（按名称找，连已结束 / 已完成里的一起找）+ 平时 / 假期 + 按安排方式筛选（重复 / 每周几次 / 几天内做完 / 某一天）。
+ * - 顶部搜索框（按名称找，连已结束 / 已完成里的一起找）+ 平时 / 假期 + 按安排方式筛选（重复 / 每周几次 / 时段 / 单日）。
  * - 大类（学校作业 / 课外 / 兴趣班 / 其他安排）下按学科（或兴趣项目）分组，课外不再拆"上课 / 作业"两组，碎组少了。
  * - 每行：名称 + 上课时间（名称后面），第二行是安排说明和小项进度，右侧类型标签、拖动手柄、"…"。
  * - 拖动手柄只在电脑上有（手机、iPad 不显示）；能排序的区域里每行都留出手柄位置（只有一条的组放占位），列对齐。

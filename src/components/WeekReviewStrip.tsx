@@ -29,15 +29,15 @@ export function WeekReviewStrip({ refreshKey, onOpenDay }: { refreshKey: number;
   const openDay = review.days.find((day) => day.date === openDate) ?? null;
 
   return (
-    <section className="surface mb-4 overflow-hidden" aria-label="本周完成情况">
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-ink/10 px-3 py-3 sm:px-4">
+    <section className="surface mb-3 overflow-hidden sm:mb-4" aria-label="本周完成情况">
+      <header className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-ink/10 py-1.5 pl-3 pr-1.5 sm:gap-x-3 sm:px-4 sm:py-3">
         <h2 className="text-base font-bold text-ink">{title}</h2>
         <span className="text-[13px] text-muted">{formatCompactDate(review.weekStart)}–{formatCompactDate(review.weekEnd)}</span>
         {total > 0 && <span className="text-[13px] font-semibold text-ink">已完成 {done}/{total}</span>}
-        <div className="ml-auto flex items-center gap-1">
-          <button onClick={() => shift(-7)} aria-label="上一周" className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-stone-100 hover:text-ink"><ChevronLeft className="h-4 w-4" /></button>
-          {!isThisWeek && <button onClick={() => setAnchor(today)} className="h-9 rounded-lg px-2 text-[13px] font-semibold text-primary hover:bg-primary/10">回到本周</button>}
-          <button onClick={() => shift(7)} aria-label="下一周" className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-stone-100 hover:text-ink"><ChevronRight className="h-4 w-4" /></button>
+        <div className="ml-auto flex items-center gap-0.5 sm:gap-1">
+          <button onClick={() => shift(-7)} aria-label="上一周" className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg text-muted hover:bg-stone-100 hover:text-ink"><ChevronLeft className="h-4 w-4" /></button>
+          {!isThisWeek && <button onClick={() => setAnchor(today)} className="h-8 sm:h-9 rounded-lg px-2 text-[13px] font-semibold text-primary hover:bg-primary/10">回到本周</button>}
+          <button onClick={() => shift(7)} aria-label="下一周" className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg text-muted hover:bg-stone-100 hover:text-ink"><ChevronRight className="h-4 w-4" /></button>
         </div>
       </header>
 
@@ -47,15 +47,15 @@ export function WeekReviewStrip({ refreshKey, onOpenDay }: { refreshKey: number;
           const allDone = day.total > 0 && day.done === day.total;
           return (
             <button key={day.date} onClick={() => setOpenDate(openDate === day.date ? null : day.date)} aria-expanded={openDate === day.date} aria-label={`${format(parseISO(day.date), "M月d日 EEEE", { locale: zhCN })}，${day.isFuture ? `安排了 ${day.total} 件` : `完成 ${day.done}/${day.total}`}`}
-              className={`relative flex min-h-[4.75rem] flex-col items-center gap-1 px-0.5 py-2 hover:bg-mint/30 ${openDate === day.date ? "bg-primary/10" : day.isToday ? "bg-mint/40" : ""}`}>
+              className={`relative flex min-h-[4rem] flex-col items-center gap-0.5 px-0.5 py-1.5 hover:bg-mint/30 sm:min-h-[4.75rem] sm:gap-1 sm:py-2 ${openDate === day.date ? "bg-primary/10" : day.isToday ? "bg-mint/40" : ""}`}>
               {openDate === day.date && <span aria-hidden className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary" />}
-              <span className={`text-[13px] ${day.isToday ? "font-bold text-primary" : "text-muted"}`}>{format(parseISO(day.date), "EEEEE", { locale: zhCN })}</span>
-              <span className={`text-[13px] tabular-nums ${day.isToday ? "font-bold text-primary" : "font-semibold text-ink"}`}>{parseISO(day.date).getDate()}</span>
-              {day.total === 0 ? <span className="text-[13px] text-stone-300">–</span>
-                : day.isFuture ? <span className="text-[13px] tabular-nums text-muted">{day.total} 件</span>
+              <span className={`text-[12px] leading-4 sm:text-[13px] sm:leading-5 ${day.isToday ? "font-bold text-primary" : "text-muted"}`}>{format(parseISO(day.date), "EEEEE", { locale: zhCN })}</span>
+              <span className={`text-[13px] leading-4 tabular-nums sm:leading-5 ${day.isToday ? "font-bold text-primary" : "font-semibold text-ink"}`}>{parseISO(day.date).getDate()}</span>
+              {day.total === 0 ? <span className="text-[13px] leading-4 text-stone-300">–</span>
+                : day.isFuture ? <span className="text-[12px] leading-4 tabular-nums text-muted sm:text-[13px]">{day.total} 件</span>
                 : <>
                   <span className="h-1 w-8 overflow-hidden rounded-full bg-stone-200 sm:w-12"><span className="block h-full rounded-full bg-primary" style={{ width: `${ratio * 100}%` }} /></span>
-                  <span className={`text-[13px] font-semibold tabular-nums ${allDone ? "text-primary" : "text-ink"}`}>{allDone ? "✓" : `${day.done}/${day.total}`}</span>
+                  <span className={`text-[12px] font-semibold leading-4 tabular-nums sm:text-[13px] ${allDone ? "text-primary" : "text-ink"}`}>{allDone ? "✓" : `${day.done}/${day.total}`}</span>
                 </>}
             </button>
           );
@@ -64,15 +64,15 @@ export function WeekReviewStrip({ refreshKey, onOpenDay }: { refreshKey: number;
 
       {review.weeklyTimes.length > 0 && (
         // 每周几次不排到哪一天：单独一行，看这一周做了几次（过去的周没做够标出来）
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-ink/10 px-3 py-2.5 sm:px-4" aria-label="每周几次">
-          <span className="text-[13px] font-semibold text-muted">每周几次</span>
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-ink/10 px-3 py-2 sm:gap-x-2 sm:px-4 sm:py-2.5" aria-label="每周几次">
+          <span className="text-[12px] font-semibold text-muted sm:text-[13px]">每周几次</span>
           {review.weeklyTimes.map((item) => {
             const missed = !item.reached && review.weekEnd < today;
             return (
               <span key={item.taskId} title={`${item.title}：这一周做了 ${item.done}/${item.target} ${item.unit}`}
-                className={`inline-flex min-h-7 items-center gap-1.5 rounded-full px-2.5 text-[13px] ring-1 ring-inset ${item.reached ? "bg-mint/60 ring-primary/20" : missed ? "bg-rose-50 ring-rose-200" : "bg-white ring-ink/10"}`}>
+                className={`inline-flex min-h-6 items-center gap-1 rounded-full px-2 text-[12px] ring-1 ring-inset sm:min-h-7 sm:gap-1.5 sm:px-2.5 sm:text-[13px] ${item.reached ? "bg-mint/60 ring-primary/20" : missed ? "bg-rose-50 ring-rose-200" : "bg-white ring-ink/10"}`}>
                 <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: SUBJECT_DOT[item.subject] }} />
-                <span className="max-w-[7rem] truncate text-ink">{item.title}</span>
+                <span className="max-w-[5.5rem] truncate text-ink sm:max-w-[7rem]">{item.title}</span>
                 <span className={`font-semibold tabular-nums ${item.reached ? "text-primary" : missed ? "text-rose-700" : "text-ink"}`}>{item.reached ? `✓ ${item.done}/${item.target}` : `${item.done}/${item.target}`}</span>
               </span>
             );

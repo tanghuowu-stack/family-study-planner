@@ -9,7 +9,7 @@ import { getRepository } from "../data/repositoryProvider";
 import { taskRepository } from "../data/taskRepository";
 import type { TaskDisplay, TaskStatus } from "../types/task";
 import { formatCompactDate, formatFullDate, fromDateKey, relativeDayLabel, toDateKey, todayKey } from "../utils/date";
-import { dayTaskKey, findJustCompleted, groupDayTasks, isWeekPlanTask, normalizeSubjectOrder, weekPlanDueLabel, weekPlanDueTone, type DayTaskPlacement, type TaskSubjectGroup } from "../utils/taskGrouping";
+import { dayTaskKey, findJustCompleted, groupDayTasks, isUncountedTask, isWeekPlanTask, normalizeSubjectOrder, weekPlanDueLabel, weekPlanDueTone, type DayTaskPlacement, type TaskSubjectGroup } from "../utils/taskGrouping";
 import { useGroupOrder } from "../hooks/useGroupOrder";
 import { useSortableList } from "../hooks/useSortableList";
 import { itemSyncKey, taskSyncKey } from "../utils/taskMeta";
@@ -114,7 +114,8 @@ export function DayPage(props: Props) {
   const timesPending = weeklyTimes.filter((task) => !timesReached(task) || weeklyHeld.has(task.id)).sort(byOrder);
   const timesDone = weeklyTimes.filter((task) => timesReached(task) && !weeklyHeld.has(task.id));
   const hasPractice = weeklyTimes.length > 0;
-  const progress = countProgress([...daily, ...weekly, ...weekPlanDone]);
+  // 提醒、休闲、旅游照常显示可勾，但不算进"还剩 N 项"和进度条（isUncountedTask）
+  const progress = countProgress([...daily, ...weekly, ...weekPlanDone].filter((task) => !isUncountedTask(task)));
   // 「还剩 N 项」与进度条同一口径（有小项按小项、没有小项按任务），避免两个数字对不上
   const remaining = progress.total - progress.completed;
   // 每周练习各项单位不同（本 / 篇 / 次），按"做够了几项"算
@@ -206,7 +207,7 @@ function GroupedTaskGrid({
   onTaskReorder?: (ids: string[]) => Promise<void>;
 }) {
   // 上课 / 作业两组（规则见 utils/taskGrouping.ts groupDayTasks）；作业组内的学科分组可整组拖拽排序
-  const { classes, homework } = groupDayTasks(tasks, order);
+  const { classes, homework, reminders } = groupDayTasks(tasks, order);
   // 整组拖拽只在看得见的学科里挪，再按位置写回完整的学科顺序（看不见的学科保持原位）
   const groups = useSortableList(homework.map((group) => group.key), (visible) => {
     const full = normalizeSubjectOrder(order);
@@ -239,6 +240,12 @@ function GroupedTaskGrid({
             );
           })}
         </div>
+      )}
+      {reminders.length > 0 && (
+        <section className="w-full overflow-visible">
+          <GroupHeading label="其他" suffix="提醒" dot={SUBJECT_DOT.other} count={reminders.length} />
+          <SortableTaskList tasks={reminders} renderTask={renderTask} onReorder={onTaskReorder} />
+        </section>
       )}
     </div>
   );

@@ -7,7 +7,7 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "../../data/db";
 import { taskRepository } from "../../data/taskRepository";
-import { dayBucketSort, groupDayTasks, normalizeSubjectOrder, type DayGroupable, dayTaskKey, findJustCompleted, type DayTaskPlacement } from "../taskGrouping";
+import { dayBucketSort, groupDayTasks, isReminderTask, isUncountedTask, normalizeSubjectOrder, type DayGroupable, dayTaskKey, findJustCompleted, type DayTaskPlacement } from "../taskGrouping";
 import type { Task, TaskDraft } from "../../types/task";
 
 const DEFAULT_ORDER = ["chinese", "math", "english", "other"];
@@ -242,5 +242,35 @@ describe("findJustCompleted（今日页：刚完成的任务原位停留）", ()
     const before = first([row("rec", "todo", { occurrenceDate: "2026-11-12" })]);
     const { justCompleted } = findJustCompleted(before, [row("rec", "done", { occurrenceDate: "2026-11-13" })], []);
     expect(justCompleted.size).toBe(0);
+  });
+});
+
+describe("其他安排·其他 → 「其他 · 提醒」一组；提醒 / 休闲 / 旅游不计入还剩 N 项（2026-11-18）", () => {
+  it("其他安排·其他单独进提醒组，其余其他安排、钢琴练习、学校其他仍在「其他 · 作业」，上课组不受影响", () => {
+    const tasks = [
+      t("整理明天上课资料和水杯", { mainCategory: "temporary", subCategory: "other", extraContentType: undefined }),
+      t("钢琴练习", { mainCategory: "interestClass", subCategory: "pianoPractice", extraContentType: undefined }),
+      t("看电影", { mainCategory: "temporary", subCategory: "leisure", extraContentType: undefined }),
+      t("学校其他", { mainCategory: "school", subCategory: "other", extraContentType: undefined }),
+      t("游泳课", { mainCategory: "interestClass", subCategory: "swimming", extraContentType: undefined }),
+    ];
+    const { classes, homework, reminders } = groupDayTasks(tasks, DEFAULT_ORDER);
+    expect(titles(reminders)).toEqual(["整理明天上课资料和水杯"]);
+    expect(titles(classes)).toEqual(["游泳课"]);
+    expect(homework.map((group) => [group.key, titles(group.tasks)])).toEqual([["other", ["钢琴练习", "看电影", "学校其他"]]]);
+    // 每个任务恰好落进一个桶
+    expect(classes.length + reminders.length + homework.reduce((sum, group) => sum + group.tasks.length, 0)).toBe(tasks.length);
+  });
+  it("只有提醒时不出现「其他 · 作业」空组", () => {
+    const { homework, reminders } = groupDayTasks([t("带水杯", { mainCategory: "temporary", subCategory: "other", extraContentType: undefined })], DEFAULT_ORDER);
+    expect(homework).toEqual([]);
+    expect(reminders).toHaveLength(1);
+  });
+  it("按分类 + 二级类型判断：提醒 / 休闲 / 旅游不计数，考试或比赛、学校其他照常计数", () => {
+    expect(isReminderTask({ mainCategory: "temporary", subCategory: "other" })).toBe(true);
+    expect(isReminderTask({ mainCategory: "school", subCategory: "other" })).toBe(false);
+    for (const sub of ["other", "leisure", "travel"]) expect(isUncountedTask({ mainCategory: "temporary", subCategory: sub })).toBe(true);
+    expect(isUncountedTask({ mainCategory: "temporary", subCategory: "examCompetition" })).toBe(false);
+    expect(isUncountedTask({ mainCategory: "school", subCategory: "other" })).toBe(false);
   });
 });

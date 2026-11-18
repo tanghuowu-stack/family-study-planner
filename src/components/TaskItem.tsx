@@ -220,7 +220,6 @@ export function TaskItem({ task, compact = false, viewDate, weekly, collapseChec
 
       <div className="min-w-0 flex-1 pt-0.5">
         <div className="flex min-w-0 items-start gap-2">
-          {formatTime(task) && <span className="shrink-0 rounded bg-ink/[0.05] px-1.5 text-[13px] font-medium leading-6 tabular-nums text-muted">{formatTime(task).trim()}</span>}
           <div className="min-w-0 flex-1 text-base font-semibold leading-6">
             <span className={done || effectiveStatus === "cancelled" ? "line-through" : ""}>{taskShortName(task)}</span>
             {canNote && !note && !noteEditing && (
@@ -230,6 +229,8 @@ export function TaskItem({ task, compact = false, viewDate, weekly, collapseChec
                 <NotebookPen className="h-4 w-4" />
               </button>
             )}
+            {/* 上课时间放在名称后面（2026-11-18 用户要求），名称在前一眼先看到是什么课；窄屏放不下时整块换行 */}
+            {formatTime(task) && <span className="ml-1.5 inline-block whitespace-nowrap rounded bg-ink/[0.05] px-1.5 align-top text-[13px] font-medium leading-6 tabular-nums text-muted">{formatTime(task).trim()}</span>}
           </div>
           {hasChecklist && <span className="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-6 text-muted">{!ringMode && <span className="relative h-1 w-10 overflow-hidden rounded-full bg-stone-200"><span className="absolute inset-y-0 left-0 rounded-full bg-primary transition-all" style={{ width: `${(completedItems / displayItems.length) * 100}%` }} /></span>}<span className="tabular-nums">{completedItems}/{displayItems.length}</span></span>}
           {dueLabel && !task.rolledFromDate && <span className={`mt-0.5 inline-flex h-5 shrink-0 items-center rounded px-1.5 text-[13px] font-semibold leading-none ${done ? "bg-stone-100 text-stone-400" : DUE_TONE[dueLabel.tone]}`}>{dueLabel.text}</span>}

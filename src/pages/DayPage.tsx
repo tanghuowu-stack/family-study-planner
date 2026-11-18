@@ -247,6 +247,7 @@ function GroupedTaskGrid({
 // 组内逐条任务拖拽（与任务管理页共用 reorderTasks/sortOrder）：只对无具体时间的任务开放，
 // 带时间的任务始终按时间置顶（taskSort 规则），不提供手柄避免误导。
 // 2026-11-14 起用 useSortableList（指针拖拽、实时让位、松手立刻生效），手柄在每行右侧"…"旁边。
+// 2026-11-18：手柄只在电脑（精确指针）上显示，手机和 iPad 不显示（用户：触屏上不需要调顺序）。
 function SortableTaskList({
   tasks,
   renderTask,
@@ -272,7 +273,7 @@ function SortableTaskList({
         const item = list.itemProps(id);
         const handle = (
           <button type="button" aria-label={`拖动调整“${task.title || "这项任务"}”的顺序`} title="按住拖动调整顺序" {...list.handleProps(id)}
-            className="-my-1 flex h-8 w-7 shrink-0 items-center justify-center rounded-md text-stone-300 hover:bg-stone-100 hover:text-muted [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-9">
+            className="-my-1 hidden h-8 w-7 shrink-0 items-center justify-center rounded-md text-stone-300 hover:bg-stone-100 hover:text-muted [@media(pointer:fine)]:flex">
             <GripVertical aria-hidden className="h-4 w-4" />
           </button>
         );

@@ -1,11 +1,11 @@
-import { CalendarPlus, CalendarX, ChevronDown, Copy, GripVertical, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { CalendarPlus, CalendarX, ChevronDown, Copy, GripVertical, MoreHorizontal, Pencil, Search, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { taskRepository } from "../data/taskRepository";
 import { getRepository } from "../data/repositoryProvider";
 import { loadCustomTaskCategories, type CustomTaskCategories } from "../data/appSettingsRepository";
 import type { Course, CourseStatus, ExtraContentType, MainCategory, PlanPeriod, Task } from "../types/task";
 import { fmtDate, formatSpecificDates, getWeekEndKey, todayKey } from "../utils/date";
-import { COURSE_MAIN_OPTIONS, COURSE_STATUS_META, MAIN_CATEGORY_META, SUB_CATEGORY_OPTIONS, WEEKDAY_LABELS, canEndRecurring, canExtendRecurring, interestContentType, isCourseTask, isEndedRecurring, isValidSubCategory, subCategoryLabel, taskShortName, checklistOnDay, isOccurrenceSchedule } from "../utils/taskMeta";
+import { COURSE_MAIN_OPTIONS, COURSE_STATUS_META, MAIN_CATEGORY_META, SUB_CATEGORY_OPTIONS, WEEKDAY_LABELS, canEndRecurring, canExtendRecurring, interestContentType, isEndedRecurring, isValidSubCategory, subCategoryLabel, taskShortName, checklistOnDay, isOccurrenceSchedule } from "../utils/taskMeta";
 import { taskSubjectGroup } from "../utils/taskGrouping";
 import { GroupHeading, SUBJECT_DOT } from "../components/GroupHeading";
 import { useSortableList } from "../hooks/useSortableList";
@@ -13,11 +13,35 @@ import { useSortableList } from "../hooks/useSortableList";
 interface Props { refreshKey: number; onRefresh: () => void; notify: (text: string) => void; onEdit: (task: Task) => void; onDelete: (task: Task) => void; onEnd: (task: Task) => void; onExtend: (task: Task) => void; onCopy: (task: Task) => void; }
 const order: MainCategory[] = ["school", "extraHomework", "interestClass", "temporary"];
 
+type KindFilter = "all" | "repeat" | "weekly" | "range" | "once";
+const KIND_LABEL: Record<Exclude<KindFilter, "all">, string> = { repeat: "重复", weekly: "每周几次", range: "几天内做完", once: "某一天" };
+/** 任务按"怎么安排"分四类：筛选条和每行右侧的类型标签共用 */
+const kindOf = (task: Task): Exclude<KindFilter, "all"> =>
+  task.timeType === "weeklyTimes" ? "weekly"
+    : task.timeType === "recurring" ? "repeat"
+      : ["dateRange", "assignmentWindow", "weekGoal"].includes(task.timeType) ? "range" : "once";
+const KIND_TONE: Record<Exclude<KindFilter, "all">, string> = {
+  repeat: "bg-sky-50 text-sky-700",
+  weekly: "bg-violet-50 text-violet-700",
+  range: "bg-amber-50 text-amber-800",
+  once: "bg-stone-100 text-stone-600",
+};
+
+/**
+ * 任务管理（2026-11-18 重新整理，用户反馈"很乱，找任务找不到；有的有手柄有的没有"）：
+ * - 顶部搜索框（按名称找，连已结束 / 已完成里的一起找）+ 平时 / 假期 + 按安排方式筛选（重复 / 每周几次 / 几天内做完 / 某一天）。
+ * - 大类（学校作业 / 课外 / 兴趣班 / 其他安排）下按学科（或兴趣项目）分组，课外不再拆"上课 / 作业"两组，碎组少了。
+ * - 每行：名称 + 上课时间（名称后面），第二行是安排说明和小项进度，右侧类型标签、拖动手柄、"…"。
+ * - 拖动手柄只在电脑上有（手机、iPad 不显示）；能排序的区域里每行都留出手柄位置（只有一条的组放占位），列对齐。
+ *   搜索或筛选时不能排序（只拖一部分会把整组顺序写乱）。
+ */
 export function TaskManagementPage(props: Props) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [periods, setPeriods] = useState<PlanPeriod[]>([]);
   // 筛选只留 全部 / 平时 / 假期；没手动选过时跟随当前阶段（假期中默认"假期"，否则"平时"）
   const [filterChoice, setFilterChoice] = useState<"all" | "regular" | "holiday" | null>(null);
+  const [kind, setKind] = useState<KindFilter>("all");
+  const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // 批量管理：平时不显示勾选框（容易和今日页的"完成"勾选框混淆），点"批量管理"才出现
   const [selecting, setSelecting] = useState(false);
@@ -30,12 +54,16 @@ export function TaskManagementPage(props: Props) {
   const currentHoliday = holidays.find((period) => period.isActive && todayKey() >= period.startDate && todayKey() <= period.endDate);
   const currentPhase: "regular" | "holiday" = currentHoliday ? "holiday" : "regular";
   const filter = filterChoice ?? currentPhase;
-  const filtered = useMemo(() => tasks.filter((task) => {
+  const keyword = query.trim().toLowerCase();
+  const searching = keyword.length > 0;
+  const phaseFiltered = useMemo(() => tasks.filter((task) => {
     const boundHoliday = !!task.planPeriodId && holidays.some((period) => period.id === task.planPeriodId);
     if (filter === "all") return true;
     if (filter === "regular") return !boundHoliday;
     return boundHoliday;
   }), [tasks, periods, filter]);
+  const matchesKeyword = (task: Task) => !searching || taskShortName(task).toLowerCase().includes(keyword) || task.title.toLowerCase().includes(keyword) || (task.note ?? "").toLowerCase().includes(keyword);
+  const filtered = phaseFiltered.filter((task) => (kind === "all" || kindOf(task) === kind) && matchesKeyword(task));
   const notFinished = filtered.filter((task) => !["done", "cancelled"].includes(task.status));
   // 「结束」≠「完成」：结束只改 recurrence.endDate，occurrence 类任务本体 status 按 R1 恒为
   // todo/cancelled，永远进不了"已完成"分组——不单独摘出来会一直卡在待办列表里（2026-07-20 用户反馈）
@@ -44,8 +72,11 @@ export function TaskManagementPage(props: Props) {
   const completed = filtered.filter((task) => ["done", "cancelled"].includes(task.status));
   const completedCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const recentCompleted = completed.filter((task) => (task.completedAt ?? task.updatedAt) >= completedCutoff);
-  const visibleCompleted = showAllDone ? completed : recentCompleted;
+  const visibleCompleted = showAllDone || searching ? completed : recentCompleted;
   const earlierCompletedCount = completed.length - recentCompleted.length;
+  const kindCounts = phaseFiltered.filter((task) => !["done", "cancelled"].includes(task.status) && !isEndedRecurring(task) && matchesKeyword(task))
+    .reduce((counts, task) => { counts[kindOf(task)] += 1; counts.all += 1; return counts; }, { all: 0, repeat: 0, weekly: 0, range: 0, once: 0 } as Record<KindFilter, number>);
+  const canReorder = !selecting && !searching && kind === "all";
   const toggle = (id: string) => setSelected((current) => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; });
   const selectIds = (ids: string[]) => setSelected((current) => { const next = new Set(current); const all = ids.every((id) => next.has(id)); ids.forEach((id) => all ? next.delete(id) : next.add(id)); return next; });
   const batchDelete = async () => {
@@ -53,65 +84,79 @@ export function TaskManagementPage(props: Props) {
     const count = await getRepository().batchRemove([...selected]);
     await reload(); setSelecting(false); props.onRefresh(); props.notify(`已删除 ${count} 项任务`);
   };
+  const reorder = async (ids: string[]) => { await getRepository().reorderTasks(ids); await reload(); props.onRefresh(); };
+  const groupProps = { selected, selecting, onToggle: toggle, onSelectGroup: selectIds, ...props };
+  const chip = (active: boolean) => `inline-flex min-h-8 items-center gap-1 rounded-full px-3 text-[13px] font-semibold transition-colors ${active ? "bg-ink text-white" : "bg-white text-muted ring-1 ring-inset ring-ink/10 hover:text-ink"}`;
   return <main className="task-management mx-auto w-full max-w-4xl xl:max-w-6xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
     <header className="page-header"><h1 className="page-title shrink-0">任务管理</h1>{selecting
       ? <div className="flex items-center gap-2"><button onClick={batchDelete} disabled={!selected.size} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-rose-600 px-3 text-sm font-semibold text-white disabled:opacity-40 sm:px-4"><Trash2 className="h-4 w-4" />删除{selected.size ? `（${selected.size}）` : ""}</button><button onClick={() => { setSelecting(false); setSelected(new Set()); }} className="min-h-10 rounded-lg border border-ink/10 bg-white px-3 text-sm font-semibold text-ink sm:px-4">完成</button></div>
       : <button onClick={() => setSelecting(true)} className="min-h-10 rounded-lg border border-ink/10 bg-white px-3 text-sm font-semibold text-muted hover:text-ink sm:px-4">批量管理</button>}</header>
     {selecting && <p className="-mt-2 mb-3 text-[13px] text-muted">点任务选中，可以按组全选，再点"删除"。</p>}
-    <div className="mb-5 flex flex-wrap items-center gap-1 border-b border-ink/10">{(["all", "regular", "holiday"] as const).map((value) => <button key={value} onClick={() => setFilterChoice(value)} className={`border-b-2 px-3 py-2.5 text-[13px] font-semibold ${filter === value ? "border-alert text-ink" : "border-transparent text-muted hover:text-ink"}`}>{{ all: "全部", regular: "平时", holiday: "假期" }[value]}{value === currentPhase && <span className="ml-1 font-medium text-muted">· 当前{currentHoliday ? `（${currentHoliday.name}）` : ""}</span>}</button>)}</div>
-    <div className="space-y-5">{order.map((category) => <TaskGroup key={category} category={category} sortable onReorder={async (ids) => { await getRepository().reorderTasks(ids); await reload(); props.onRefresh(); }} tasks={pending.filter((task) => task.mainCategory === category)} selected={selected} selecting={selecting} onToggle={toggle} onSelectGroup={selectIds} {...props} />)}</div>
-    {ended.length > 0 && <section className="mt-6 rounded-lg border border-stone-100 bg-white p-3 opacity-75 shadow-card"><button onClick={() => setShowEnded(!showEnded)} className="flex w-full items-center justify-between px-1 py-2 text-sm font-semibold text-stone-500">已结束的重复任务 · {ended.length}<ChevronDown className={`h-4 w-4 transition ${showEnded ? "rotate-180" : ""}`} /></button>{showEnded && <div className="mt-2 space-y-4">{order.map((category) => <TaskGroup key={category} category={category} tasks={ended.filter((task) => task.mainCategory === category)} selected={selected} selecting={selecting} onToggle={toggle} onSelectGroup={selectIds} {...props} />)}</div>}</section>}
-    {completed.length > 0 && <section className="mt-6 rounded-lg border border-stone-100 bg-white p-3 opacity-75 shadow-card"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-1 py-2 text-sm font-semibold text-stone-500">已完成任务 · {visibleCompleted.length}{!showAllDone && earlierCompletedCount > 0 ? `（另有 ${earlierCompletedCount} 项更早记录）` : ""}<ChevronDown className={`h-4 w-4 transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <div className="mt-2 space-y-4">{order.map((category) => <TaskGroup key={category} category={category} tasks={visibleCompleted.filter((task) => task.mainCategory === category)} selected={selected} selecting={selecting} onToggle={toggle} onSelectGroup={selectIds} {...props} />)}{earlierCompletedCount > 0 && <button onClick={() => setShowAllDone(!showAllDone)} className="mx-auto block rounded-lg border px-4 py-2 text-[13px] font-semibold text-stone-500">{showAllDone ? "只显示最近 30 天" : "显示更早已完成任务"}</button>}</div>}</section>}
+    <div className="mb-5 space-y-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <label className="relative block min-w-0 flex-1">
+          <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+          <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索任务名称" aria-label="搜索任务"
+            className="h-10 w-full rounded-lg border border-ink/10 bg-white pl-9 pr-9 text-[15px] text-ink outline-none placeholder:text-stone-400 focus:border-primary/50 [&::-webkit-search-cancel-button]:hidden" />
+          {query && <button type="button" onClick={() => setQuery("")} aria-label="清空搜索" className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-stone-400 hover:bg-stone-100 hover:text-ink"><X className="h-4 w-4" /></button>}
+        </label>
+        <div className="inline-flex shrink-0 self-start rounded-lg bg-stone-100 p-0.5 sm:self-auto" role="tablist" aria-label="平时 / 假期">
+          {(["regular", "holiday", "all"] as const).map((value) => <button key={value} role="tab" aria-selected={filter === value} onClick={() => setFilterChoice(value)}
+            className={`min-h-9 rounded-md px-3 text-[13px] font-semibold ${filter === value ? "bg-white text-ink shadow-sm" : "text-muted hover:text-ink"}`}>
+            {{ all: "全部", regular: "平时", holiday: "假期" }[value]}{value === currentPhase && filter !== value ? <span className="ml-1 font-medium text-stone-400">·当前</span> : ""}
+          </button>)}
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-1.5" aria-label="按安排方式筛选">
+        {(["all", "repeat", "weekly", "range", "once"] as const).map((value) => <button key={value} onClick={() => setKind(value)} aria-pressed={kind === value} className={chip(kind === value)}>
+          {value === "all" ? "全部" : KIND_LABEL[value]}<span className={`tabular-nums ${kind === value ? "text-white/70" : "text-stone-400"}`}>{kindCounts[value]}</span>
+        </button>)}
+      </div>
+    </div>
+    {pending.length === 0 && ended.length === 0 && completed.length === 0
+      ? <p className="surface px-4 py-8 text-center text-[15px] text-muted">{searching ? `没有找到“${query.trim()}”` : "这里还没有任务"}</p>
+      : <div className="space-y-5">{order.map((category) => <TaskGroup key={category} category={category} reorderable={canReorder} onReorder={reorder} tasks={pending.filter((task) => task.mainCategory === category)} {...groupProps} />)}</div>}
+    {ended.length > 0 && <section className="mt-6 rounded-lg border border-stone-100 bg-white p-3 opacity-75 shadow-card"><button onClick={() => setShowEnded(!showEnded)} className="flex w-full items-center justify-between px-1 py-2 text-sm font-semibold text-stone-500">已结束的重复任务 · {ended.length}<ChevronDown className={`h-4 w-4 transition ${showEnded || searching ? "rotate-180" : ""}`} /></button>{(showEnded || searching) && <div className="mt-2 space-y-4">{order.map((category) => <TaskGroup key={category} category={category} tasks={ended.filter((task) => task.mainCategory === category)} {...groupProps} />)}</div>}</section>}
+    {completed.length > 0 && <section className="mt-6 rounded-lg border border-stone-100 bg-white p-3 opacity-75 shadow-card"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-1 py-2 text-sm font-semibold text-stone-500">已完成任务 · {visibleCompleted.length}{!showAllDone && !searching && earlierCompletedCount > 0 ? `（另有 ${earlierCompletedCount} 项更早记录）` : ""}<ChevronDown className={`h-4 w-4 transition ${showDone || searching ? "rotate-180" : ""}`} /></button>{(showDone || searching) && <div className="mt-2 space-y-4">{order.map((category) => <TaskGroup key={category} category={category} tasks={visibleCompleted.filter((task) => task.mainCategory === category)} {...groupProps} />)}{!searching && earlierCompletedCount > 0 && <button onClick={() => setShowAllDone(!showAllDone)} className="mx-auto block rounded-lg border px-4 py-2 text-[13px] font-semibold text-stone-500">{showAllDone ? "只显示最近 30 天" : "显示更早已完成任务"}</button>}</div>}</section>}
   </main>;
 }
 
 // 子分组内手动顺序：与今日页 taskSort 的组内规则一致（sortOrder → createdAt），拖拽后两处顺序同步
 const manualOrder = (a: Task, b: Task) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || a.createdAt.localeCompare(b.createdAt);
 
-function TaskGroup({ category, tasks, selected, selecting, onToggle, onSelectGroup, sortable, onReorder, ...props }: Props & { category: MainCategory; tasks: Task[]; selected: Set<string>; selecting: boolean; onToggle: (id: string) => void; onSelectGroup: (ids: string[]) => void; sortable?: boolean; onReorder?: (ids: string[]) => Promise<void> }) {
+type GroupProps = Props & { selected: Set<string>; selecting: boolean; onToggle: (id: string) => void; onSelectGroup: (ids: string[]) => void };
+
+function TaskGroup({ category, tasks, selected, selecting, onToggle, onSelectGroup, reorderable, onReorder, ...props }: GroupProps & { category: MainCategory; tasks: Task[]; reorderable?: boolean; onReorder?: (ids: string[]) => Promise<void> }) {
   if (!tasks.length) return null;
   const standardOptions = SUB_CATEGORY_OPTIONS[category];
   const subgroupOptions = category === "temporary" ? ["travel", "leisure", "examCompetition", "other"].map((value) => standardOptions.find((option) => option.value === value)!).filter(Boolean) : standardOptions;
   const knownValues = new Set(subgroupOptions.map((option) => option.value));
-  const customOptions = [...new Set(tasks.filter((task) => !knownValues.has(task.subCategory)).map((task) => task.subCategory))];
+  const customValues = [...new Set(tasks.filter((task) => !knownValues.has(task.subCategory)).map((task) => task.subCategory))];
+  // 按学科（兴趣班按项目、其他安排按类型）分组；课外的上课和作业放同一组，有时间的课排在前面
   const groups = [
-    ...subgroupOptions.flatMap((option) => {
-      const matching = tasks.filter((task) => task.subCategory === option.value);
-      if (category !== "extraHomework") return [{ value: option.value, label: category === "school" ? `${option.label}作业` : option.label, tasks: matching }];
-      const classes = matching.filter(isCourseTask);
-      const homework = matching.filter((task) => !isCourseTask(task));
-      return [
-        { value: `${option.value}-class`, label: `${option.label}上课`, tasks: classes },
-        { value: `${option.value}-homework`, label: `${option.label}作业`, tasks: homework },
-      ];
-    }),
-    ...customOptions.flatMap((value) => {
-      const label = subCategoryLabel(category, value);
-      const matching = tasks.filter((task) => task.subCategory === value);
-      if (category !== "extraHomework") return [{ value, label, tasks: matching }];
-      return [
-        { value: `${value}-class`, label: `${label}上课`, tasks: matching.filter(isCourseTask) },
-        { value: `${value}-homework`, label: `${label}作业`, tasks: matching.filter((task) => !isCourseTask(task)) },
-      ];
-    }),
-  ].filter((group) => group.tasks.length);
-  return <section className="surface overflow-visible"><header className="flex items-center gap-2 rounded-t-lg border-b border-ink/10 bg-white px-4 py-3"><h2 className="text-base font-bold text-ink">{MAIN_CATEGORY_META[category].label}</h2><span className="text-[13px] text-muted">{tasks.length}</span>{selecting && <button onClick={() => onSelectGroup(tasks.map((task) => task.id))} className="ml-auto min-h-9 text-[13px] font-semibold text-primary">{tasks.every((task) => selected.has(task.id)) ? "取消本组" : "全选本组"}</button>}</header><div className="divide-y divide-ink/[0.07]">{groups.map((subgroup) => <SortableSubgroup key={subgroup.value} label={subgroup.label} tasks={subgroup.tasks} sortable={sortable && !selecting} onReorder={onReorder} renderRow={(task, dragHandle) => <TaskRow key={task.id} task={task} selected={selected.has(task.id)} selecting={selecting} onToggle={() => onToggle(task.id)} dragHandle={dragHandle} {...props} />} />)}</div></section>;
+    ...subgroupOptions.map((option) => ({ value: option.value, label: option.label })),
+    ...customValues.map((value) => ({ value, label: subCategoryLabel(category, value) })),
+  ].map((group) => ({ ...group, tasks: tasks.filter((task) => task.subCategory === group.value) })).filter((group) => group.tasks.length);
+  return <section className="surface overflow-visible"><header className="flex items-center gap-2 rounded-t-lg border-b border-ink/10 bg-white px-4 py-3"><h2 className="text-base font-bold text-ink">{MAIN_CATEGORY_META[category].label}</h2><span className="text-[13px] tabular-nums text-muted">{tasks.length}</span>{selecting && <button onClick={() => onSelectGroup(tasks.map((task) => task.id))} className="ml-auto min-h-9 text-[13px] font-semibold text-primary">{tasks.every((task) => selected.has(task.id)) ? "取消本组" : "全选本组"}</button>}</header><div className="divide-y divide-ink/[0.07]">{groups.map((subgroup) => <SortableSubgroup key={subgroup.value} label={subgroup.label} tasks={subgroup.tasks} reorderable={reorderable} onReorder={onReorder} renderRow={(task, dragHandle) => <TaskRow key={task.id} task={task} selected={selected.has(task.id)} selecting={selecting} onToggle={() => onToggle(task.id)} dragHandle={dragHandle} {...props} />} />)}</div></section>;
 }
 
-// 组内拖拽排序（2026-11-14 起与今日页同一套 useSortableList：只从手柄拖、其他行实时让位、松手立即生效）
-function SortableSubgroup({ label, tasks, sortable, onReorder, renderRow }: { label: string; tasks: Task[]; sortable?: boolean; onReorder?: (ids: string[]) => Promise<void>; renderRow: (task: Task, dragHandle?: ReactNode) => ReactNode }) {
-  const ordered = [...tasks].sort(manualOrder);
-  const canSort = !!sortable && !!onReorder && ordered.length > 1;
+// 组内拖拽排序（与今日页同一套 useSortableList：只从手柄拖、其他行实时让位、松手立即生效）。
+// 手柄只在电脑（精确指针）上显示；能排序的区域里只有一条的组放同宽占位，保证每行右侧对齐
+const HANDLE_SLOT = "hidden h-9 w-8 shrink-0 [@media(pointer:fine)]:flex";
+function SortableSubgroup({ label, tasks, reorderable, onReorder, renderRow }: { label: string; tasks: Task[]; reorderable?: boolean; onReorder?: (ids: string[]) => Promise<void>; renderRow: (task: Task, dragHandle?: ReactNode) => ReactNode }) {
+  const timedFirst = (a: Task, b: Task) => Number(!(a.startTime ?? a.time)) - Number(!(b.startTime ?? b.time));
+  const ordered = [...tasks].sort((a, b) => timedFirst(a, b) || manualOrder(a, b));
+  const canSort = !!reorderable && !!onReorder && ordered.length > 1;
   const list = useSortableList(ordered.map((task) => task.id), (ids) => onReorder?.(ids), canSort);
   const byId = new Map(ordered.map((task) => [task.id, task]));
   return <section className="overflow-visible"><GroupHeading label={label} dot={SUBJECT_DOT[taskSubjectGroup(tasks[0])]} count={tasks.length} />{list.order.map((id) => {
     const task = byId.get(id);
     if (!task) return null;
-    if (!canSort) return <div key={id}>{renderRow(task)}</div>;
+    if (!canSort) return <div key={id}>{renderRow(task, reorderable ? <span aria-hidden className={HANDLE_SLOT} /> : undefined)}</div>;
     const item = list.itemProps(id);
     const handle = (
       <button type="button" aria-label={`拖动调整“${task.title || "这项任务"}”的顺序`} title="按住拖动调整顺序" {...list.handleProps(id)}
-        className="flex h-9 w-8 shrink-0 items-center justify-center rounded-md text-stone-300 hover:bg-stone-100 hover:text-muted [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-10">
+        className={`${HANDLE_SLOT} items-center justify-center rounded-md text-stone-300 hover:bg-stone-100 hover:text-muted`}>
         <GripVertical aria-hidden className="h-4 w-4" />
       </button>
     );
@@ -126,6 +171,7 @@ function TaskRow({ task, selected, selecting, onToggle, onCopy, onEdit, onDelete
   // 重复任务的小项按天算，这里显示今天的进度
   const shownItems = isOccurrenceSchedule(task) ? checklistOnDay(task.checklistItems, todayKey()) : task.checklistItems;
   const checklist = shownItems?.length ? ` · 小项${isOccurrenceSchedule(task) ? "（今天）" : ""} ${shownItems.filter((item) => item.done).length}/${shownItems.length}` : "";
+  const taskKind = kindOf(task);
   const toggleMenu = (button: HTMLButtonElement) => {
     if (!menu) {
       const bounds = button.getBoundingClientRect();
@@ -134,7 +180,16 @@ function TaskRow({ task, selected, selecting, onToggle, onCopy, onEdit, onDelete
     }
     setMenu(!menu);
   };
-  return <div onClick={selecting ? onToggle : undefined} className={`relative ${menu ? "z-40" : ""} flex items-center gap-2.5 border-b border-ink/[0.07] px-3 py-2.5 last:border-0 sm:px-4 ${selecting ? "cursor-pointer" : ""} ${selected ? "bg-mint/50" : finished ? "bg-stone-50/40 text-stone-400" : "bg-white"}`}>{selecting && <input type="checkbox" checked={selected} onChange={onToggle} onClick={(event) => event.stopPropagation()} aria-label={`选择 ${task.title}`} className="h-5 w-5 shrink-0 rounded accent-primary" />}<div className="min-w-0 flex-1"><div className="flex min-w-0 items-center gap-2">{formatTime(task) && <span className="shrink-0 rounded bg-ink/[0.05] px-1.5 text-[13px] font-medium leading-6 tabular-nums text-muted">{formatTime(task)}</span>}<p className={`min-w-0 truncate text-base font-semibold leading-6 ${finished ? "line-through" : "text-ink"}`}>{taskShortName(task)}</p></div><p className="truncate text-[13px] text-muted">{timeLabel(task)}{checklist}</p></div>{!selecting && dragHandle}{!selecting && <div className="relative"><button onClick={(event) => toggleMenu(event.currentTarget)} aria-label="任务操作" className="rounded-lg p-2 text-muted hover:bg-stone-100 hover:text-ink"><MoreHorizontal className="h-4 w-4" /></button>{menu && <div className={`absolute right-0 ${menuAbove ? "bottom-9" : "top-9"} z-50 max-h-[calc(100dvh-6rem)] w-48 overflow-y-auto rounded-lg border border-ink/10 bg-white p-1.5 text-sm text-ink shadow-card`}><button onClick={() => { onCopy(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 hover:bg-stone-50"><Copy className="h-4 w-4" />复制</button><button onClick={() => { onEdit(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 hover:bg-stone-50"><Pencil className="h-4 w-4" />编辑</button>{canEndRecurring(task) && !finished && <button onClick={() => { onEnd(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-amber-700 hover:bg-amber-50"><CalendarX className="h-4 w-4" />今天起不再安排</button>}{canExtendRecurring(task) && !finished && <button onClick={() => { onExtend(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-primary hover:bg-mint"><CalendarPlus className="h-4 w-4" />继续安排</button>}<button onClick={() => { onDelete(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-rose-600 hover:bg-rose-50"><Trash2 className="h-4 w-4" />删除</button></div>}</div>}</div>;
+  return <div onClick={selecting ? onToggle : undefined} className={`relative ${menu ? "z-40" : ""} flex items-center gap-2.5 px-3 py-2.5 sm:px-4 ${selecting ? "cursor-pointer" : ""} ${selected ? "bg-mint/50" : finished ? "bg-stone-50/40 text-stone-400" : "bg-white"}`}>
+    {selecting && <input type="checkbox" checked={selected} onChange={onToggle} onClick={(event) => event.stopPropagation()} aria-label={`选择 ${task.title}`} className="h-5 w-5 shrink-0 rounded accent-primary" />}
+    <div className="min-w-0 flex-1">
+      <p className="flex min-w-0 items-center gap-2"><span className={`min-w-0 truncate text-base font-semibold leading-6 ${finished ? "line-through" : "text-ink"}`}>{taskShortName(task)}</span>{formatTime(task) && <span className="shrink-0 rounded bg-ink/[0.05] px-1.5 text-[13px] font-medium leading-6 tabular-nums text-muted">{formatTime(task)}</span>}</p>
+      <p className="truncate text-[13px] text-muted">{timeLabel(task)}{checklist}</p>
+    </div>
+    <span className={`hidden shrink-0 rounded px-1.5 py-0.5 text-[12px] font-semibold sm:inline ${finished ? "bg-stone-100 text-stone-400" : KIND_TONE[taskKind]}`}>{KIND_LABEL[taskKind]}</span>
+    {!selecting && dragHandle}
+    {!selecting && <div className="relative"><button onClick={(event) => toggleMenu(event.currentTarget)} aria-label="任务操作" className="rounded-lg p-2 text-muted hover:bg-stone-100 hover:text-ink"><MoreHorizontal className="h-4 w-4" /></button>{menu && <div className={`absolute right-0 ${menuAbove ? "bottom-9" : "top-9"} z-50 max-h-[calc(100dvh-6rem)] w-48 overflow-y-auto rounded-lg border border-ink/10 bg-white p-1.5 text-sm text-ink shadow-card`}><button onClick={() => { onCopy(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 hover:bg-stone-50"><Copy className="h-4 w-4" />复制</button><button onClick={() => { onEdit(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 hover:bg-stone-50"><Pencil className="h-4 w-4" />编辑</button>{canEndRecurring(task) && !finished && <button onClick={() => { onEnd(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-amber-700 hover:bg-amber-50"><CalendarX className="h-4 w-4" />今天起不再安排</button>}{canExtendRecurring(task) && !finished && <button onClick={() => { onExtend(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-primary hover:bg-mint"><CalendarPlus className="h-4 w-4" />继续安排</button>}<button onClick={() => { onDelete(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-rose-600 hover:bg-rose-50"><Trash2 className="h-4 w-4" />删除</button></div>}</div>}
+  </div>;
 }
 
 export function PlanPeriodManager({ periods, currentHoliday, onChanged, notify, embedded = false }: { periods: PlanPeriod[]; currentHoliday?: PlanPeriod; onChanged: () => void; notify: (text: string) => void; embedded?: boolean }) {

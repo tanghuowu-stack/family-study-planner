@@ -39,8 +39,8 @@ export function GroupHeading({ label, suffix, count, dot, handle, highlight, act
       {suffix && <span className="font-medium text-muted">{suffix}</span>}
       {count !== undefined && <span className="ml-auto font-medium tabular-nums text-muted">{count}</span>}
       {action && <span className={count === undefined ? "ml-auto" : ""}>{action}</span>}
-      {/* 手柄放最右侧：放左侧会让有手柄和没手柄的分组色点对不齐 */}
-      {handle && <button type="button" aria-label={`拖动调整“${label}”的位置`} title="按住拖动调整顺序" {...handle} className={`-my-2 -mr-2 flex h-9 w-8 shrink-0 items-center justify-center rounded-md text-stone-300 hover:bg-stone-100 hover:text-muted [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-10 ${count === undefined && !action ? "ml-auto" : ""}`}><GripVertical aria-hidden className="h-4 w-4" /></button>}
+      {/* 手柄放最右侧：放左侧会让有手柄和没手柄的分组色点对不齐；只在电脑上显示（2026-11-18） */}
+      {handle && <button type="button" aria-label={`拖动调整“${label}”的位置`} title="按住拖动调整顺序" {...handle} className={`-my-2 -mr-2 hidden h-9 w-8 shrink-0 items-center justify-center rounded-md text-stone-300 hover:bg-stone-100 hover:text-muted [@media(pointer:fine)]:flex ${count === undefined && !action ? "ml-auto" : ""}`}><GripVertical aria-hidden className="h-4 w-4" /></button>}
     </h3>
   );
 }

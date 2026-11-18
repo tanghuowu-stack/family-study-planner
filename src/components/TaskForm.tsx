@@ -45,13 +45,14 @@ const rolloverText = (mode?: string) => ROLLOVER_CHOICES.find(([value]) => value
 const TIME_TYPE_CHOICES: [TaskTimeType, string][] = [["singleDate", "单日"], ["dateRange", "时段"], ["weeklyTimes", "每周几次"], ["recurring", "重复"]];
 
 /**
- * 新建任务的空白草稿：不再沿用"上次的选择"（2026-11-18）。分类没选之前，二级类型、标题为空，
- * 安排和未完成处理在选了分类后按 getTaskDefaults 填；mainCategory 只是占位，界面上显示为未选。
+ * 新建任务的初始草稿（2026-11-18）：不沿用"上次的选择"，固定从最常用的 学校作业 / 语文 开始，
+ * 安排和未完成处理按 getTaskDefaults 填好（所选日期周五就是周五至周日的时段）；
+ * 标题"语文家庭作业"由下方的自动标题逻辑带出（假期里不带）。点开"添加任务"不用再先选分类。
  */
-const blankDraft = (date: string): TaskDraft => ({
-  title: "", mainCategory: "school", subCategory: "", timeType: "singleDate", schedulePattern: "singleDate", date, calendarVisibility: "show",
-  status: "todo", rolloverMode: "keepOverdue", allowRollover: false, childVisible: true, sortOrder: 0, applicablePeriodType: "all",
-});
+const newTaskDraft = (date: string): TaskDraft => mergeTaskDefaults({
+  title: "", mainCategory: "school", subCategory: "chinese", timeType: "singleDate", schedulePattern: "singleDate", date, calendarVisibility: "show",
+  status: "todo", rolloverMode: "autoNextDay", allowRollover: true, childVisible: true, sortOrder: defaultSortOrder("school", "chinese"), applicablePeriodType: "all",
+}, getTaskDefaults("school", "chinese", date), new Set());
 
 // R3：编辑入口可能传入 TaskDisplay（今日清单里的行），它的 status 已被覆盖成当天单日状态，
 // 且带着 occurrenceDate 等运行时展示字段——这些一律不得进入保存的草稿（数据层写入口还有一道兜底清洗）。
@@ -64,14 +65,12 @@ const strip = (task: Task): TaskDraft => { const { id: _id, createdAt: _createdA
 export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onContinue, carry, justAdded = [] }: Props) {
   const [draft, setDraft] = useState<TaskDraft>(() => {
     if (task) return strip(task);
-    const fresh = blankDraft(carry?.date ?? initialDate);
+    const fresh = newTaskDraft(carry?.date ?? initialDate);
     if (!carry) return fresh;
     const mainCategory = carry.mainCategory ?? fresh.mainCategory;
     return { ...fresh, ...carry, mainCategory, subCategory: "", title: "", checklistItems: undefined, courseId: undefined,
       extraContentType: mainCategory === "extraHomework" ? "homework" : undefined, sortOrder: defaultSortOrder(mainCategory, "") };
   });
-  // 分类是否已选：新建时一开始不选（相关字段空白）；编辑和"保存，再加一个"带过来的算已选
-  const [categoryChosen, setCategoryChosen] = useState(!!task || !!carry?.mainCategory);
   // 手动改过的字段：默认值只填没改过的。连续添加带过来的日期安排和未完成处理视为手动设置
   const touched = useRef(new Set<TouchedField>(task ? ["timeType", "endDate", "rollover", "time"] : carry ? ["timeType", "endDate", "rollover"] : []));
   // 默认值按"所选日期"算（学校作业周一到周四 / 周五），不按录入当天
@@ -149,7 +148,6 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
     const course = courses.find((item) => item.id === courseId);
     if (!course) return;
     setTitleTouched(true);
-    setCategoryChosen(true);
     setDraft((current) => applyDefaults({
       ...current,
       courseId,
@@ -244,7 +242,6 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
     // 切换分类后二级类型置空、必须手动选择，不静默落到第一项（选中后由 changeSub 补齐标题 / 默认安排）
     const subCategory = "";
     const extraContentType: ExtraContentType | undefined = mainCategory === "extraHomework" ? "homework" : undefined;
-    setCategoryChosen(true);
     setAddingCategory(false);
     setCustomCategoryName("");
     setDraft((current) => applyDefaults({
@@ -327,7 +324,6 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
 
   const submit = async (event: FormEvent, mode: "close" | "continue" = "close") => {
     event.preventDefault(); setError("");
-    if (!categoryChosen) return setError("请选择分类");
     // 切换分类后未选二级类型（空值）一律拦下；编辑历史任务时放行旧版遗留的二级类型值，避免连改都改不了
     if (!draft.subCategory || (!task && !isValidSubCategory(draft.mainCategory, draft.subCategory))) return setError("请选择二级类型");
     if (!draft.title.trim() && draft.mainCategory !== "interestClass" && !(draft.mainCategory === "extraHomework" && draft.subCategory === "reading")) return setError("请填写任务标题");
@@ -377,9 +373,9 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
         <h3 className={sectionTitle}>做什么</h3>
         {selectableCourses.length > 0 && <label className={label}>从课程带出（可选）<select value={draft.courseId ?? ""} onChange={(e) => selectCourse(e.target.value)} className={input}><option value="">不关联课程</option>{selectableCourses.map((course) => <option key={course.id} value={course.id}>{courseOptionLabel(course, selectableCourses)}</option>)}</select></label>}
 
-        <div><p className={label}>分类</p><div className="mt-1.5 grid grid-cols-4 gap-1.5">{Object.entries(MAIN_CATEGORY_META).filter(([value]) => value !== "readingPlan").map(([value, meta]) => <button key={value} type="button" onClick={() => changeMain(value as MainCategory)} className={segment(categoryChosen && draft.mainCategory === value)}>{meta.label}</button>)}</div>
-          {categoryChosen && <><div className="mt-2 flex flex-wrap items-center gap-1.5">{subCategoryOptions.map((item) => <button key={item.value} type="button" onClick={() => changeSub(item.value)} className={chip(draft.subCategory === item.value)}>{item.label}</button>)}{draft.mainCategory !== "readingPlan" && <button type="button" aria-label="添加自定义分类" title="添加自定义分类" onClick={() => { setAddingCategory(true); setError(""); }} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-dashed border-primary/40 bg-white text-primary hover:bg-primary/5"><Plus className="h-4 w-4" /></button>}</div>
-          {!draft.subCategory && <p className="mt-1.5 text-[13px] text-alert">请选一个{draft.mainCategory === "school" || draft.mainCategory === "extraHomework" ? "学科" : "类型"}</p>}</>}
+        <div><p className={label}>分类</p><div className="mt-1.5 grid grid-cols-4 gap-1.5">{Object.entries(MAIN_CATEGORY_META).filter(([value]) => value !== "readingPlan").map(([value, meta]) => <button key={value} type="button" onClick={() => changeMain(value as MainCategory)} className={segment(draft.mainCategory === value)}>{meta.label}</button>)}</div>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">{subCategoryOptions.map((item) => <button key={item.value} type="button" onClick={() => changeSub(item.value)} className={chip(draft.subCategory === item.value)}>{item.label}</button>)}{draft.mainCategory !== "readingPlan" && <button type="button" aria-label="添加自定义分类" title="添加自定义分类" onClick={() => { setAddingCategory(true); setError(""); }} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-dashed border-primary/40 bg-white text-primary hover:bg-primary/5"><Plus className="h-4 w-4" /></button>}</div>
+          {!draft.subCategory && <p className="mt-1.5 text-[13px] text-alert">请选一个{draft.mainCategory === "school" || draft.mainCategory === "extraHomework" ? "学科" : "类型"}</p>}
           {addingCategory && <div className="mt-2 flex max-w-sm items-center gap-1.5"><input autoFocus value={customCategoryName} onChange={(event) => setCustomCategoryName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void addCustomCategory(); } }} placeholder="例如：跳绳课" className="min-w-0 flex-1 rounded-lg border border-primary/30 bg-white px-3 py-2 text-sm outline-none focus:border-primary" /><button type="button" onClick={() => void addCustomCategory()} className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white">添加</button><button type="button" aria-label="取消添加分类" onClick={() => { setAddingCategory(false); setCustomCategoryName(""); }} className="rounded p-1.5 text-muted hover:bg-white"><X className="h-4 w-4" /></button></div>}
         </div>
 
@@ -402,8 +398,8 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
         {homework && draft.timeType !== "weeklyTimes" && (!isCourseTask(draft) || !!draft.checklistItems?.length) && <div><div className="flex items-center justify-between"><p className={label}>小项（孩子逐项打勾）</p><button type="button" onClick={addChecklist} className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2.5 text-sm font-semibold text-primary hover:bg-primary/5"><Plus className="h-4 w-4" />加一项</button></div>{!!draft.checklistItems?.length && <div className="mt-1.5 space-y-1.5">{draft.checklistItems.map((item, index) => <div key={item.id} className="flex items-center gap-1.5"><input ref={(node) => { checklistInputs.current[item.id] = node; }} aria-label={`小项 ${index + 1}`} value={item.title} onChange={(e) => set("checklistItems", draft.checklistItems?.map((value) => value.id === item.id ? { ...value, title: e.target.value } : value))} onKeyDown={(event) => { if (event.key !== "Enter" || event.nativeEvent.isComposing) return; event.preventDefault(); if (!item.title.trim()) return; const next = draft.checklistItems?.[index + 1]; if (next) checklistInputs.current[next.id]?.focus(); else addChecklist(); }} className="min-w-0 flex-1 rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm" placeholder="回车再加一项" /><button type="button" aria-label="上移" title="上移" onClick={() => moveChecklist(index, -1)} className="p-1 text-muted"><ArrowUp className="h-4 w-4" /></button><button type="button" aria-label="下移" title="下移" onClick={() => moveChecklist(index, 1)} className="p-1 text-muted"><ArrowDown className="h-4 w-4" /></button><button type="button" aria-label="删除小项" title="删除小项" onClick={() => set("checklistItems", draft.checklistItems?.filter((value) => value.id !== item.id))} className="p-1"><Trash2 className="h-4 w-4 text-rose-400" /></button></div>)}</div>}</div>}
       </section>
 
-      {/* ── 2. 哪天做（选了分类才出现，按分类给默认安排） ── */}
-      {categoryChosen && <section className="space-y-3 border-t border-ink/10 pt-5">
+      {/* ── 2. 哪天做（按分类给默认安排，见 utils/taskDefaults） ── */}
+      <section className="space-y-3 border-t border-ink/10 pt-5">
         <h3 className={sectionTitle}>哪天做</h3>
         {!reading && ["singleDate", "dateRange", "weeklyTimes", "recurring"].includes(draft.timeType) && <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">{TIME_TYPE_CHOICES.map(([value, text]) => <button key={value} type="button" onClick={() => changeTimeType(value)} className={segment(draft.timeType === value)}>{text}</button>)}</div>}
         {draft.timeType === "weeklyTimes" && <WeeklyTimesFields draft={draft} set={set} input={input} label={label} chip={chip} />}
@@ -415,13 +411,13 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
         {recurring && <div className="space-y-2"><div className={`grid gap-2 ${["dailyRecurring", "weeklyRecurring"].includes(draft.schedulePattern ?? "") ? "sm:grid-cols-3" : ""}`}><label className={label}>怎么重复<select value={draft.schedulePattern ?? "weeklyRecurring"} onChange={(e) => changePattern(e.target.value as SchedulePattern)} className={input}><option value="dailyRecurring">每天</option><option value="weeklyRecurring">每周固定几天</option><option value="specificDates">挑几个日子</option><option value="dateRangeDaily">一段时间内每天都做</option><option value="dateRangeWeekdays">一段时间内每周固定几天</option></select></label>{["dailyRecurring", "weeklyRecurring"].includes(draft.schedulePattern ?? "") && <><DateField title="从哪天开始" value={draft.recurrence?.startDate} onChange={(value) => set("recurrence", { ...draft.recurrence!, startDate: value })} input={input} label={label} /><DateField title="到哪天结束（可空）" value={draft.recurrence?.endDate} onChange={(value) => set("recurrence", { ...draft.recurrence!, endDate: value || undefined })} input={input} label={label} /></>}</div>{draft.schedulePattern === "weeklyRecurring" && <WeekdayPicker values={draft.recurrence?.weekdays ?? []} onToggle={(day) => toggleDays(day, "recurrence")} title="每周哪几天" />}{draft.schedulePattern === "specificDates" && <MultiDatePicker values={draft.specificDates ?? []} onChange={(values) => set("specificDates", values)} initialDate={initialDate} />}{["dateRangeDaily", "dateRangeWeekdays"].includes(draft.schedulePattern ?? "") && <DateRange draft={draft} set={set} input={input} label={label} />}{draft.schedulePattern === "dateRangeWeekdays" && <WeekdayPicker values={draft.rangeWeekdays ?? []} onToggle={(day) => toggleDays(day, "rangeWeekdays")} title="每周哪几天" />}<Check label="旅游期间暂停" checked={isTravelPauseEnabled(draft)} onChange={(value) => set("pauseDuringTravel", value)} /></div>}
 
         {showTimeInline && <div><p className={label}>上课时间</p><div className="mt-1.5">{timeFields}</div></div>}
-      </section>}
+      </section>
 
       {/* 每天记下的"做了什么"（今日页标题后的小本子写的），这里只回看；表单保存不改动这些记录 */}
       {task?.dayNotes && Object.keys(task.dayNotes).length > 0 && <DayNotesHistory notes={task.dayNotes} />}
 
       {/* ── 3. 更多设置（默认收起，摘要里能看到当前选择） ── */}
-      {categoryChosen && <section className="border-t border-ink/10 pt-2">
+      <section className="border-t border-ink/10 pt-2">
         <button type="button" onClick={() => setShowMore((v) => !v)} aria-expanded={showMore} className="flex min-h-11 w-full items-center justify-between gap-3 text-left"><span className="min-w-0"><span className="block text-base font-bold text-ink">更多设置</span>{!showMore && <span className="block truncate text-[13px] text-muted">{moreSummary}</span>}</span><ChevronDown className={`h-4 w-4 shrink-0 text-muted transition-transform ${showMore ? "rotate-180" : ""}`} /></button>
 
         {showMore && <div className="mt-2 space-y-4">
@@ -440,7 +436,7 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
           <label className={label}>备注<textarea rows={1} value={draft.note ?? ""} onChange={(e) => set("note", e.target.value)} className="mt-1.5 min-h-11 w-full resize-y rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm font-normal text-ink outline-none focus:border-primary" /></label>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-ink/10 pt-3"><Check label="显示在今日清单" checked={draft.childVisible} onChange={(value) => set("childVisible", value)} /><Check label="在月视图中显示" checked={draft.calendarVisibility !== "hide"} onChange={(value) => { setCalendarVisibilityTouched(true); setDraft((current) => ({ ...current, calendarVisibility: value ? "show" : "hide", ...(!value ? { rolloverMode: "skipIfMissed" as const, allowRollover: false } : {}) })); }} />{!isOccurrenceSchedule(draft) && <label className={label}>状态<select value={draft.status} onChange={(e) => set("status", e.target.value as TaskStatus)} className="ml-2 rounded-md border px-2 py-1 text-sm font-normal">{Object.entries(STATUS_META).filter(([value]) => value !== "overdue").map(([value, meta]) => <option key={value} value={value}>{meta.label}</option>)}</select></label>}</div>
         </div>}
-      </section>}
+      </section>
 
       {pendingConflict && <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><p>该时间与已有任务"{conflictTitle}"重叠，是否仍然添加？</p><div className="mt-3 flex gap-2"><button type="button" onClick={() => setPendingConflict(undefined)} className="rounded-lg border border-amber-300 bg-white px-3 py-1.5">返回修改</button><button type="button" onClick={async () => { setSaving(true); try { await onSave(pendingConflict, true); if (continueAfterConflict.current && !task && onContinue) onContinue(carryFrom(pendingConflict), pendingConflict.title || subCategoryLabel(pendingConflict.mainCategory, pendingConflict.subCategory)); else onClose(); } catch (reason) { setError(reason instanceof Error ? reason.message : "保存失败"); setSaving(false); } }} className="rounded-lg bg-primary px-3 py-1.5 font-semibold text-white">仍然添加</button></div></div>}
       {error && <p role="alert" className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}

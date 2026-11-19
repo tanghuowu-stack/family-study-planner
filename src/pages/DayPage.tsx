@@ -14,7 +14,7 @@ import { useGroupOrder } from "../hooks/useGroupOrder";
 import { useSortableList } from "../hooks/useSortableList";
 import { itemSyncKey, taskSyncKey } from "../utils/taskMeta";
 import { SidebarMemo } from "../components/SidebarMemo";
-import { weeklyTimesProgress } from "../utils/weeklyTimes";
+import { sumWeeklyTimes, weeklyTimesProgress } from "../utils/weeklyTimes";
 import { AllDoneCelebration } from "../components/AllDoneCelebration";
 import { GroupHeading, NEUTRAL_DOT, SUBJECT_DOT } from "../components/GroupHeading";
 
@@ -118,9 +118,9 @@ export function DayPage(props: Props) {
   const progress = countProgress([...daily, ...weekly, ...weekPlanDone].filter((task) => !isUncountedTask(task)));
   // 「还剩 N 项」与进度条同一口径（有小项按小项、没有小项按任务），避免两个数字对不上
   const remaining = progress.total - progress.completed;
-  // 每周练习各项单位不同（本 / 篇 / 次），按"做够了几项"算
-  const practiceReached = weeklyTimes.filter(timesReached).length;
-  const practiceRemaining = weeklyTimes.length - practiceReached;
+  // 每周练习按总次数算（2026-11-19 用户要求）：各项目标次数之和 vs 已做次数之和（每项最多算到目标），单位不同只是次数相加
+  const practice = sumWeeklyTimes(weeklyTimes.map((task) => weeklyTimesProgress(task, props.date)));
+  const practiceAllDone = practice.target > 0 && practice.done >= practice.target;
   const dueLabelFor = (task: TaskDisplay) =>
     task.timeType === "dateRange" && task.mainCategory !== "temporary" && task.endDate && !task.rolledFromDate && task.endDate >= props.date
       ? { text: weekPlanDueLabel(task.endDate, props.date), tone: weekPlanDueTone(task.endDate, props.date) }
@@ -141,7 +141,6 @@ export function DayPage(props: Props) {
     key={dayTaskKey(task)}
     dragHandle={dragHandle}
     dueLabel={dueLabelFor(task)}
-    collapseChecklist={isWeekPlanTask(task, props.date)}
     weekly={task.timeType === "weeklyTimes" ? { progress: weeklyTimesProgress(task, props.date), onLog: (date, delta) => props.onWeeklyLog(task, delta, date) } : undefined}
     task={task}
     unsynced={props.unsyncedTasks?.has(taskSyncKey(task))}
@@ -180,7 +179,7 @@ export function DayPage(props: Props) {
       </div>
       {hasPractice && <div className="contents lg:flex lg:min-w-0 lg:flex-col">
         <section aria-label="每周练习" className="surface order-3 overflow-visible lg:order-none lg:flex-1">
-          <div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">每周练习</h2><ProgressMeter completed={practiceReached} total={weeklyTimes.length} /><span className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${practiceRemaining === 0 ? "text-primary" : "text-ink"}`}>{practiceRemaining === 0 ? "本周都做够了" : `还差 ${practiceRemaining} 项`}</span></div>
+          <div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">每周练习</h2><ProgressMeter completed={practice.done} total={practice.target} /><span title="本周已做次数 / 本周目标次数（各项加起来）" className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${practiceAllDone ? "text-primary" : "text-ink"}`}>{practiceAllDone ? `本周都做够了 ${practice.done}/${practice.target}` : `已做 ${practice.done}/${practice.target} 次`}</span></div>
           <SortableTaskList tasks={timesPending} renderTask={renderTask} onReorder={reorderTasks} />
           {timesPending.length === 0 && <p className="px-4 py-3 text-[15px] font-semibold text-primary">这周的练习都做够了</p>}
           {timesDone.length > 0 && <>

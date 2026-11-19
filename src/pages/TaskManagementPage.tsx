@@ -20,18 +20,14 @@ const kindOf = (task: Task): Exclude<KindFilter, "all"> =>
   task.timeType === "weeklyTimes" ? "weekly"
     : task.timeType === "recurring" ? "repeat"
       : ["dateRange", "assignmentWindow", "weekGoal"].includes(task.timeType) ? "range" : "once";
-const KIND_TONE: Record<Exclude<KindFilter, "all">, string> = {
-  repeat: "bg-sky-50 text-sky-700",
-  weekly: "bg-violet-50 text-violet-700",
-  range: "bg-amber-50 text-amber-800",
-  once: "bg-stone-100 text-stone-600",
-};
+type CategoryFilter = "all" | MainCategory;
 
 /**
  * 任务管理（2026-11-18 重新整理，用户反馈"很乱，找任务找不到；有的有手柄有的没有"）：
  * - 顶部搜索框（按名称找，连已结束 / 已完成里的一起找）+ 平时 / 假期 + 按安排方式筛选（重复 / 每周几次 / 时段 / 单日）。
  * - 大类（学校作业 / 课外 / 兴趣班 / 其他安排）下按学科（或兴趣项目）分组，课外不再拆"上课 / 作业"两组，碎组少了。
- * - 每行：名称 + 上课时间（名称后面），第二行是安排说明和小项进度，右侧类型标签、拖动手柄、"…"。
+ * - 每行：名称 + 上课时间（名称后面），第二行是安排说明和小项进度，右侧拖动手柄、"…"。
+ * - 2026-11-19：筛选多一排按分类（学校作业 / 课外班 / 兴趣班 / 其他安排）；行右侧的彩色类型标签去掉（安排说明里已写，看着乱）。
  * - 拖动手柄只在电脑上有（手机、iPad 不显示）；能排序的区域里每行都留出手柄位置（只有一条的组放占位），列对齐。
  *   搜索或筛选时不能排序（只拖一部分会把整组顺序写乱）。
  */
@@ -41,6 +37,7 @@ export function TaskManagementPage(props: Props) {
   // 筛选只留 全部 / 平时 / 假期；没手动选过时跟随当前阶段（假期中默认"假期"，否则"平时"）
   const [filterChoice, setFilterChoice] = useState<"all" | "regular" | "holiday" | null>(null);
   const [kind, setKind] = useState<KindFilter>("all");
+  const [category, setCategory] = useState<CategoryFilter>("all");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // 批量管理：平时不显示勾选框（容易和今日页的"完成"勾选框混淆），点"批量管理"才出现
@@ -63,7 +60,9 @@ export function TaskManagementPage(props: Props) {
     return boundHoliday;
   }), [tasks, periods, filter]);
   const matchesKeyword = (task: Task) => !searching || taskShortName(task).toLowerCase().includes(keyword) || task.title.toLowerCase().includes(keyword) || (task.note ?? "").toLowerCase().includes(keyword);
-  const filtered = phaseFiltered.filter((task) => (kind === "all" || kindOf(task) === kind) && matchesKeyword(task));
+  const inCategory = (task: Task) => category === "all" || task.mainCategory === category;
+  const filtered = phaseFiltered.filter((task) => inCategory(task) && (kind === "all" || kindOf(task) === kind) && matchesKeyword(task));
+  const shownOrder = category === "all" ? order : order.filter((value) => value === category);
   const notFinished = filtered.filter((task) => !["done", "cancelled"].includes(task.status));
   // 「结束」≠「完成」：结束只改 recurrence.endDate，occurrence 类任务本体 status 按 R1 恒为
   // todo/cancelled，永远进不了"已完成"分组——不单独摘出来会一直卡在待办列表里（2026-07-20 用户反馈）
@@ -74,7 +73,10 @@ export function TaskManagementPage(props: Props) {
   const recentCompleted = completed.filter((task) => (task.completedAt ?? task.updatedAt) >= completedCutoff);
   const visibleCompleted = showAllDone || searching ? completed : recentCompleted;
   const earlierCompletedCount = completed.length - recentCompleted.length;
-  const kindCounts = phaseFiltered.filter((task) => !["done", "cancelled"].includes(task.status) && !isEndedRecurring(task) && matchesKeyword(task))
+  const active = phaseFiltered.filter((task) => !["done", "cancelled"].includes(task.status) && !isEndedRecurring(task) && matchesKeyword(task));
+  const categoryCounts = active.filter((task) => kind === "all" || kindOf(task) === kind)
+    .reduce((counts, task) => { counts[task.mainCategory] = (counts[task.mainCategory] ?? 0) + 1; counts.all += 1; return counts; }, { all: 0 } as Partial<Record<CategoryFilter, number>> & { all: number });
+  const kindCounts = active.filter(inCategory)
     .reduce((counts, task) => { counts[kindOf(task)] += 1; counts.all += 1; return counts; }, { all: 0, repeat: 0, weekly: 0, range: 0, once: 0 } as Record<KindFilter, number>);
   const canReorder = !selecting && !searching && kind === "all";
   const toggle = (id: string) => setSelected((current) => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; });
@@ -107,17 +109,22 @@ export function TaskManagementPage(props: Props) {
           </button>)}
         </div>
       </div>
+      <div className="flex flex-wrap gap-1.5" aria-label="按分类筛选">
+        {(["all", ...order] as const).map((value) => <button key={value} onClick={() => setCategory(value)} aria-pressed={category === value} className={chip(category === value)}>
+          {value === "all" ? "全部分类" : MAIN_CATEGORY_META[value].label}<span className={`tabular-nums ${category === value ? "text-white/70" : "text-stone-400"}`}>{categoryCounts[value] ?? 0}</span>
+        </button>)}
+      </div>
       <div className="flex flex-wrap gap-1.5" aria-label="按安排方式筛选">
         {(["all", "repeat", "weekly", "range", "once"] as const).map((value) => <button key={value} onClick={() => setKind(value)} aria-pressed={kind === value} className={chip(kind === value)}>
-          {value === "all" ? "全部" : KIND_LABEL[value]}<span className={`tabular-nums ${kind === value ? "text-white/70" : "text-stone-400"}`}>{kindCounts[value]}</span>
+          {value === "all" ? "全部安排" : KIND_LABEL[value]}<span className={`tabular-nums ${kind === value ? "text-white/70" : "text-stone-400"}`}>{kindCounts[value]}</span>
         </button>)}
       </div>
     </div>
     {pending.length === 0 && ended.length === 0 && completed.length === 0
       ? <p className="surface px-4 py-8 text-center text-[15px] text-muted">{searching ? `没有找到“${query.trim()}”` : "这里还没有任务"}</p>
-      : <div className="space-y-5">{order.map((category) => <TaskGroup key={category} category={category} reorderable={canReorder} onReorder={reorder} tasks={pending.filter((task) => task.mainCategory === category)} {...groupProps} />)}</div>}
-    {ended.length > 0 && <section className="mt-6 rounded-lg border border-stone-100 bg-white p-3 opacity-75 shadow-card"><button onClick={() => setShowEnded(!showEnded)} className="flex w-full items-center justify-between px-1 py-2 text-sm font-semibold text-stone-500">已结束的重复任务 · {ended.length}<ChevronDown className={`h-4 w-4 transition ${showEnded || searching ? "rotate-180" : ""}`} /></button>{(showEnded || searching) && <div className="mt-2 space-y-4">{order.map((category) => <TaskGroup key={category} category={category} tasks={ended.filter((task) => task.mainCategory === category)} {...groupProps} />)}</div>}</section>}
-    {completed.length > 0 && <section className="mt-6 rounded-lg border border-stone-100 bg-white p-3 opacity-75 shadow-card"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-1 py-2 text-sm font-semibold text-stone-500">已完成任务 · {visibleCompleted.length}{!showAllDone && !searching && earlierCompletedCount > 0 ? `（另有 ${earlierCompletedCount} 项更早记录）` : ""}<ChevronDown className={`h-4 w-4 transition ${showDone || searching ? "rotate-180" : ""}`} /></button>{(showDone || searching) && <div className="mt-2 space-y-4">{order.map((category) => <TaskGroup key={category} category={category} tasks={visibleCompleted.filter((task) => task.mainCategory === category)} {...groupProps} />)}{!searching && earlierCompletedCount > 0 && <button onClick={() => setShowAllDone(!showAllDone)} className="mx-auto block rounded-lg border px-4 py-2 text-[13px] font-semibold text-stone-500">{showAllDone ? "只显示最近 30 天" : "显示更早已完成任务"}</button>}</div>}</section>}
+      : <div className="space-y-5">{shownOrder.map((category) => <TaskGroup key={category} category={category} reorderable={canReorder} onReorder={reorder} tasks={pending.filter((task) => task.mainCategory === category)} {...groupProps} />)}</div>}
+    {ended.length > 0 && <section className="mt-6 rounded-lg border border-stone-100 bg-white p-3 opacity-75 shadow-card"><button onClick={() => setShowEnded(!showEnded)} className="flex w-full items-center justify-between px-1 py-2 text-sm font-semibold text-stone-500">已结束的重复任务 · {ended.length}<ChevronDown className={`h-4 w-4 transition ${showEnded || searching ? "rotate-180" : ""}`} /></button>{(showEnded || searching) && <div className="mt-2 space-y-4">{shownOrder.map((category) => <TaskGroup key={category} category={category} tasks={ended.filter((task) => task.mainCategory === category)} {...groupProps} />)}</div>}</section>}
+    {completed.length > 0 && <section className="mt-6 rounded-lg border border-stone-100 bg-white p-3 opacity-75 shadow-card"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-1 py-2 text-sm font-semibold text-stone-500">已完成任务 · {visibleCompleted.length}{!showAllDone && !searching && earlierCompletedCount > 0 ? `（另有 ${earlierCompletedCount} 项更早记录）` : ""}<ChevronDown className={`h-4 w-4 transition ${showDone || searching ? "rotate-180" : ""}`} /></button>{(showDone || searching) && <div className="mt-2 space-y-4">{shownOrder.map((category) => <TaskGroup key={category} category={category} tasks={visibleCompleted.filter((task) => task.mainCategory === category)} {...groupProps} />)}{!searching && earlierCompletedCount > 0 && <button onClick={() => setShowAllDone(!showAllDone)} className="mx-auto block rounded-lg border px-4 py-2 text-[13px] font-semibold text-stone-500">{showAllDone ? "只显示最近 30 天" : "显示更早已完成任务"}</button>}</div>}</section>}
   </main>;
 }
 
@@ -171,7 +178,6 @@ function TaskRow({ task, selected, selecting, onToggle, onCopy, onEdit, onDelete
   // 重复任务的小项按天算，这里显示今天的进度
   const shownItems = isOccurrenceSchedule(task) ? checklistOnDay(task.checklistItems, todayKey()) : task.checklistItems;
   const checklist = shownItems?.length ? ` · 小项${isOccurrenceSchedule(task) ? "（今天）" : ""} ${shownItems.filter((item) => item.done).length}/${shownItems.length}` : "";
-  const taskKind = kindOf(task);
   const toggleMenu = (button: HTMLButtonElement) => {
     if (!menu) {
       const bounds = button.getBoundingClientRect();
@@ -186,7 +192,6 @@ function TaskRow({ task, selected, selecting, onToggle, onCopy, onEdit, onDelete
       <p className="flex min-w-0 items-center gap-2"><span className={`min-w-0 truncate text-base font-semibold leading-6 ${finished ? "line-through" : "text-ink"}`}>{taskShortName(task)}</span>{formatTime(task) && <span className="shrink-0 rounded bg-ink/[0.05] px-1.5 text-[13px] font-medium leading-6 tabular-nums text-muted">{formatTime(task)}</span>}</p>
       <p className="truncate text-[13px] text-muted">{timeLabel(task)}{checklist}</p>
     </div>
-    <span className={`hidden shrink-0 rounded px-1.5 py-0.5 text-[12px] font-semibold sm:inline ${finished ? "bg-stone-100 text-stone-400" : KIND_TONE[taskKind]}`}>{KIND_LABEL[taskKind]}</span>
     {!selecting && dragHandle}
     {!selecting && <div className="relative"><button onClick={(event) => toggleMenu(event.currentTarget)} aria-label="任务操作" className="rounded-lg p-2 text-muted hover:bg-stone-100 hover:text-ink"><MoreHorizontal className="h-4 w-4" /></button>{menu && <div className={`absolute right-0 ${menuAbove ? "bottom-9" : "top-9"} z-50 max-h-[calc(100dvh-6rem)] w-48 overflow-y-auto rounded-lg border border-ink/10 bg-white p-1.5 text-sm text-ink shadow-card`}><button onClick={() => { onCopy(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 hover:bg-stone-50"><Copy className="h-4 w-4" />复制</button><button onClick={() => { onEdit(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 hover:bg-stone-50"><Pencil className="h-4 w-4" />编辑</button>{canEndRecurring(task) && !finished && <button onClick={() => { onEnd(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-amber-700 hover:bg-amber-50"><CalendarX className="h-4 w-4" />今天起不再安排</button>}{canExtendRecurring(task) && !finished && <button onClick={() => { onExtend(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-primary hover:bg-mint"><CalendarPlus className="h-4 w-4" />继续安排</button>}<button onClick={() => { onDelete(task); setMenu(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-rose-600 hover:bg-rose-50"><Trash2 className="h-4 w-4" />删除</button></div>}</div>}
   </div>;

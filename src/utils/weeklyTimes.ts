@@ -52,3 +52,11 @@ export function applyWeeklyLog(log: Record<string, number> | undefined, date: st
   else delete next[date];
   return Object.keys(next).length > 0 ? next : undefined;
 }
+
+/**
+ * 一周所有"每周几次"加起来的总量（2026-11-19 用户要求）：目标 = 各项目标次数之和（阅读 2 篇 + 听写 5 次 + 钢琴 4 次 = 11），
+ * 已做 = 各项已做之和，每项最多算到它自己的目标（多做的不抵别的项，进度不超过 100%）。各项单位不同，这里只是次数相加。
+ */
+export function sumWeeklyTimes(items: { done: number; target: number }[]): { done: number; target: number } {
+  return items.reduce((sum, item) => ({ done: sum.done + Math.min(item.done, item.target), target: sum.target + item.target }), { done: 0, target: 0 });
+}

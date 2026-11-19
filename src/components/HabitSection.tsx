@@ -146,7 +146,7 @@ function HabitMatrix({ calendars, restDays }: { calendars: HabitCalendar[]; rest
               <tr key={cal.taskId}>
                 <th scope="row" className="sticky left-0 z-10 border-b border-ink/[0.07] bg-white px-3 shadow-[1px_0_0_rgba(32,41,37,0.08)] py-1.5 text-left sm:px-4 sm:py-2.5">
                   <span className="block max-w-[7rem] truncate text-[14px] font-semibold leading-5 text-ink sm:max-w-[8rem] sm:text-[15px] xl:max-w-[12rem]" title={cal.title}>{cal.title}</span>
-                  <span className="block whitespace-nowrap text-[12px] font-medium leading-4 text-muted sm:text-[13px]">{cal.currentStreak > 0 ? <>🔥 连续 {cal.currentStreak} {cal.streakUnit === "周" ? "周做够" : "天"}</> : "还没开始连续"}</span>
+                  <span className="hidden whitespace-nowrap text-[13px] font-medium leading-4 text-muted sm:block">{cal.currentStreak > 0 ? <>🔥 连续 {cal.currentStreak} {cal.streakUnit === "周" ? "周做够" : "天"}</> : "还没开始连续"}</span>
                 </th>
                 {cal.days.map((day) => {
                   const future = day.date > today;

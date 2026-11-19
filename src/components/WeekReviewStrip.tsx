@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getWeekReview, type WeekReview } from "../data/weekReview";
 import { formatCompactDate, todayKey, toDateKey } from "../utils/date";
+import { sumWeeklyTimes } from "../utils/weeklyTimes";
 import { SUBJECT_DOT } from "./GroupHeading";
 
 /**
@@ -27,6 +28,11 @@ export function WeekReviewStrip({ refreshKey, onOpenDay }: { refreshKey: number;
   const shift = (days: number) => setAnchor(toDateKey(addDays(parseISO(review.weekStart), days)));
   const title = isThisWeek ? "本周" : review.weekEnd < today ? "那一周" : "下一周";
   const openDay = review.days.find((day) => day.date === openDate) ?? null;
+  // 每周几次的总量（各项目标之和 / 已做之和），放在 7 天后面的第 8 列
+  const hasTimes = review.weeklyTimes.length > 0;
+  const times = sumWeeklyTimes(review.weeklyTimes);
+  const timesAllDone = times.target > 0 && times.done >= times.target;
+  const timesMissed = !timesAllDone && review.weekEnd < today;
 
   return (
     <section className="surface mb-3 overflow-hidden sm:mb-4" aria-label="本周完成情况">
@@ -41,7 +47,7 @@ export function WeekReviewStrip({ refreshKey, onOpenDay }: { refreshKey: number;
         </div>
       </header>
 
-      <div className="grid grid-cols-7 divide-x divide-ink/[0.07]">
+      <div className={`grid divide-x divide-ink/[0.07] ${hasTimes ? "grid-cols-[repeat(7,minmax(0,1fr))_minmax(0,1.5fr)]" : "grid-cols-7"}`}>
         {review.days.map((day) => {
           const ratio = day.total ? day.done / day.total : 0;
           const allDone = day.total > 0 && day.done === day.total;
@@ -54,18 +60,26 @@ export function WeekReviewStrip({ refreshKey, onOpenDay }: { refreshKey: number;
               {day.total === 0 ? <span className="text-[13px] leading-4 text-stone-300">–</span>
                 : day.isFuture ? <span className="text-[12px] leading-4 tabular-nums text-muted sm:text-[13px]">{day.total} 件</span>
                 : <>
-                  <span className="h-1 w-8 overflow-hidden rounded-full bg-stone-200 sm:w-12"><span className="block h-full rounded-full bg-primary" style={{ width: `${ratio * 100}%` }} /></span>
+                  <span className={`h-1 overflow-hidden rounded-full bg-stone-200 ${hasTimes ? "w-6 sm:w-10" : "w-8 sm:w-12"}`}><span className="block h-full rounded-full bg-primary" style={{ width: `${ratio * 100}%` }} /></span>
                   <span className={`text-[12px] font-semibold leading-4 tabular-nums sm:text-[13px] ${allDone ? "text-primary" : "text-ink"}`}>{allDone ? "✓" : `${day.done}/${day.total}`}</span>
                 </>}
             </button>
           );
         })}
+        {hasTimes && (
+          <div aria-label={`每周练习，这一周做了 ${times.done}/${times.target} 次`} className="flex min-h-[4rem] flex-col items-center gap-0.5 bg-stone-50/70 px-0.5 py-1.5 sm:min-h-[4.75rem] sm:gap-1 sm:py-2">
+            <span className="whitespace-nowrap text-[12px] leading-4 text-muted sm:text-[13px] sm:leading-5"><span className="sm:hidden">练习</span><span className="hidden sm:inline">每周练习</span></span>
+            <span className={`text-[13px] font-semibold leading-4 tabular-nums sm:leading-5 ${timesAllDone ? "text-primary" : timesMissed ? "text-rose-700" : "text-ink"}`}>{times.done}/{times.target}</span>
+            <span className="h-1 w-8 overflow-hidden rounded-full bg-stone-200 sm:w-14"><span className="block h-full rounded-full bg-primary" style={{ width: `${times.target ? (times.done / times.target) * 100 : 0}%` }} /></span>
+            <span className={`text-[12px] font-semibold leading-4 sm:text-[13px] ${timesAllDone ? "text-primary" : "text-muted"}`}>{timesAllDone ? "✓" : `差 ${times.target - times.done}`}</span>
+          </div>
+        )}
       </div>
 
-      {review.weeklyTimes.length > 0 && (
+      {hasTimes && (
         // 每周几次不排到哪一天：单独一行，看这一周做了几次（过去的周没做够标出来）
         <div className="flex flex-wrap items-center gap-1.5 border-t border-ink/10 px-3 py-2 sm:gap-x-2 sm:px-4 sm:py-2.5" aria-label="每周几次">
-          <span className="text-[12px] font-semibold text-muted sm:text-[13px]">每周几次</span>
+          <span className="text-[12px] font-semibold text-muted sm:text-[13px]">每周几次 <span className={`tabular-nums ${timesAllDone ? "text-primary" : "text-ink"}`}>{times.done}/{times.target}</span></span>
           {review.weeklyTimes.map((item) => {
             const missed = !item.reached && review.weekEnd < today;
             return (

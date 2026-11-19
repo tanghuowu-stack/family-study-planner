@@ -67,9 +67,12 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask
             <button
               key={key}
               onClick={() => handleDayClick(key)}
+              aria-current={key === todayKey() ? "date" : undefined}
               className={`min-h-20 border-b border-r border-ink/[0.08] p-1.5 text-left align-top sm:min-h-28 sm:p-2.5 ${
                 !isSameMonth(fromDateKey(key), monthDate)
                   ? "bg-stone-50/70 text-stone-300 opacity-65"
+                  : key === todayKey()
+                  ? `shadow-[inset_0_0_0_2px_rgba(227,107,78,0.55)] ${isSelected ? "bg-alert/[0.16]" : "bg-alert/[0.09] hover:bg-alert/[0.14]"}`
                   : isSelected
                   ? "bg-mint/70"
                   : "hover:bg-mint/25"

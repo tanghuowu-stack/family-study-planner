@@ -45,8 +45,6 @@ export default function App() {
   const [unsyncedTasks, setUnsyncedTasks] = useState<Set<string>>(new Set());
   const [unsyncedItems, setUnsyncedItems] = useState<Set<string>>(new Set());
   const [memo, setMemo] = useState("");
-  const [memoEditorOpen, setMemoEditorOpen] = useState(false);
-  const [memoFocusRequest, setMemoFocusRequest] = useState(0);
   const [memoHistory, setMemoHistory] = useState<MemoHistoryEntry[]>([]);
   const [memoBusy, setMemoBusy] = useState(false);
   const memoBusyRef = useRef(false);
@@ -73,16 +71,7 @@ export default function App() {
   };
   const queueMemoSave = (value: string) => queueMemoOperation(() => saveSidebarMemo(value));
   const beginMemoEdit = () => { if (memoBusyRef.current) return; memoEditVersionRef.current += 1; memoEditingRef.current = true; };
-  const openMemoEditor = () => {
-    if (memoBusyRef.current) return;
-    beginMemoEdit();
-    setMemoEditorOpen(true);
-    setMemoFocusRequest((value) => value + 1);
-  };
-  const finishNarrowMemoEdit = () => {
-    setMemoEditorOpen(false);
-    void finishMemoEdit();
-  };
+  // 手机 / iPad 不显示备忘录（2026-11-21），备忘只在电脑左侧边栏里写
   const changeMemo = (value: string) => {
     if (memoBusyRef.current) return;
     memoEditingRef.current = true;
@@ -123,7 +112,6 @@ export default function App() {
       memoRef.current = setting.text;
       setMemo(setting.text);
       setMemoHistory(setting.history);
-      setMemoEditorOpen(false);
       notify(message);
     } catch (reason) {
       notifyFailure(reason instanceof Error ? reason.message : "历史备忘保存失败，请重试");
@@ -338,7 +326,7 @@ export default function App() {
   const openDay = (date: string) => { setSelectedDate(date); setPage("today"); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const actions = { onStatusChange: changeStatus, onChecklistToggle: toggleChecklist, onDayNoteSave: saveDayNote, onWeeklyLog: logWeeklyTime, onCopy: copyTask, onEdit: editTask, onDelete: deleteTask, onEnd: endTask, onExtend: extendTask, onOccurrenceCancel: cancelOccurrence, onOccurrencePostpone: postponeOccurrence, unsyncedTasks, unsyncedItems, onRetrySync: retryTaskSync, onRetryItemSync: retryItemSync };
   return <div className="min-h-screen bg-paper text-ink">
-    <aside className="fixed inset-y-0 left-0 z-50 hidden w-56 flex-col overflow-y-auto bg-ink px-3 py-5 text-white lg:flex">
+    <aside className="fixed inset-y-0 left-0 z-50 hidden w-56 flex-col overflow-y-auto bg-ink px-3 py-5 text-white desk:flex">
       <button onClick={() => setPage("today")} className="flex items-center gap-3 px-2 text-left">
         <img src="/favicon.svg" alt="" className="h-10 w-10 rounded-lg" />
         <span><span className="block text-lg font-bold">小步计划</span><span className="block text-[10px] text-white/50">家庭执行台</span></span>
@@ -351,20 +339,20 @@ export default function App() {
         <button onClick={() => setPage("settings")} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium ${page === "settings" ? "bg-white text-ink" : "text-white/65 hover:bg-white/10 hover:text-white"}`}><Settings className="h-4 w-4" />设置{!cloudInitializing && <span title={cloudMode ? "云端已连接" : "本地模式"} className={`ml-auto inline-flex items-center gap-1.5 text-xs ${page === "settings" ? "text-muted" : "text-white/55"}`}><span className={`h-2 w-2 rounded-full ${cloudMode ? "bg-emerald-400" : "bg-white/30"}`} /><Cloud className="h-3.5 w-3.5" /><span className="sr-only">{cloudMode ? "云端已连接" : "本地模式"}</span></span>}</button>
       </div>
     </aside>
-    <header className="pt-safe sticky top-0 z-40 border-b border-ink/10 bg-paper/95 backdrop-blur-xl lg:hidden"><div className="flex h-14 items-center justify-between px-4"><button onClick={() => setPage("today")} className="flex items-center gap-2.5"><img src="/favicon.svg" alt="" className="h-8 w-8 rounded-lg" /><span className="text-left text-base font-bold">小步计划</span></button><div className="flex items-center gap-2">{!cloudInitializing && <span title={cloudMode ? "云端已连接" : "本地模式"} className={`h-2 w-2 rounded-full ${cloudMode ? "bg-emerald-500" : "bg-stone-300"}`} />}<button type="button" aria-label="设置" title="设置" onClick={() => setPage("settings")} className={`flex h-11 w-11 items-center justify-center rounded-lg border ${page === "settings" ? "border-primary/30 bg-primary/10 text-primary" : "border-ink/10 bg-white text-muted hover:text-primary"}`}><Settings className="h-5 w-5" /></button>{page === "today" && <button type="button" onClick={openMemoEditor} aria-controls="today-memo" aria-expanded={memoEditorOpen} className="h-11 shrink-0 rounded-lg border border-ink/10 bg-white px-3 text-sm font-medium text-muted hover:text-primary">备忘</button>}<button aria-label="添加任务" onClick={() => setForm({ open: true })} className="flex h-11 w-11 items-center justify-center rounded-lg bg-alert text-white"><Plus className="h-4 w-4" /></button></div></div></header>
+    <header className="pt-safe sticky top-0 z-40 border-b border-ink/10 bg-paper/95 backdrop-blur-xl desk:hidden"><div className="flex h-14 items-center justify-between px-4"><button onClick={() => setPage("today")} className="flex items-center gap-2.5"><img src="/favicon.svg" alt="" className="h-8 w-8 rounded-lg" /><span className="text-left text-base font-bold">小步计划</span></button><div className="flex items-center gap-2">{!cloudInitializing && <span title={cloudMode ? "云端已连接" : "本地模式"} className={`h-2 w-2 rounded-full ${cloudMode ? "bg-emerald-500" : "bg-stone-300"}`} />}<button type="button" aria-label="设置" title="设置" onClick={() => setPage("settings")} className={`flex h-11 w-11 items-center justify-center rounded-lg border ${page === "settings" ? "border-primary/30 bg-primary/10 text-primary" : "border-ink/10 bg-white text-muted hover:text-primary"}`}><Settings className="h-5 w-5" /></button><button aria-label="添加任务" onClick={() => setForm({ open: true })} className="flex h-11 w-11 items-center justify-center rounded-lg bg-alert text-white"><Plus className="h-4 w-4" /></button></div></div></header>
     <div className="app-content">
-      {page === "today" && <DayPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenMonth={() => setPage("month")} onAddTask={() => setForm({ open: true })} memo={memo} memoEditorOpen={memoEditorOpen} memoFocusRequest={memoFocusRequest} memoBusy={memoBusy} onMemoFocus={beginMemoEdit} onMemoChange={changeMemo} onMemoBlur={finishNarrowMemoEdit} onMemoComplete={() => void completeMemo()} {...actions} />}
+      {page === "today" && <DayPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenMonth={() => setPage("month")} onAddTask={() => setForm({ open: true })} {...actions} />}
       {page === "month" && <MonthPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenDay={openDay} onAddTask={(date) => { setSelectedDate(date); setForm({ open: true }); }} />}
       {page === "tasks" && <TaskManagementPage refreshKey={refreshKey} onRefresh={refresh} notify={notify} onEdit={(task) => setForm({ open: true, task })} onDelete={deleteTask} onEnd={endTask} onExtend={extendTask} onCopy={copyTask} />}
       {page === "stats" && <StatsPage refreshKey={refreshKey} onOpenDay={openDay} />}
       {page === "settings" && <SettingsPage refreshKey={refreshKey} onImported={refresh} notify={notify} cloudMode={cloudMode} onAuthChange={syncCloudSession} memoHistory={memoHistory} memoBusy={memoBusy} onRestoreMemo={(id) => updateMemoHistory(() => restoreSidebarMemo(id), "已恢复到当前备忘，有原内容时会追加")} onDeleteMemo={(id) => updateMemoHistory(() => deleteSidebarMemoHistory(id), "历史备忘已永久删除")} />}
       {page === "timetable" && <TimetablePage />}
     </div>
-    <nav className="bottom-nav-safe fixed inset-x-0 bottom-0 z-40 border-t border-ink/10 bg-white/95 backdrop-blur lg:hidden"><div className="grid grid-cols-5 px-2 pt-1">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`relative flex min-w-0 flex-col items-center gap-0.5 px-1 py-1.5 text-[10px] ${page === value ? "text-primary" : "text-muted"}`}>{page === value && <span className="absolute -top-1 h-0.5 w-8 bg-alert" />}<Icon className="h-5 w-5" /><span className="truncate">{label}</span></button>)}</div></nav>
+    <nav className="bottom-nav-safe fixed inset-x-0 bottom-0 z-40 border-t border-ink/10 bg-white/95 backdrop-blur desk:hidden"><div className="mx-auto grid max-w-2xl grid-cols-5 px-2 pt-1">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`relative flex min-w-0 flex-col items-center gap-0.5 px-1 py-1.5 text-[10px] ${page === value ? "text-primary" : "text-muted"}`}>{page === value && <span className="absolute -top-1 h-0.5 w-8 bg-alert" />}<Icon className="h-5 w-5" /><span className="truncate">{label}</span></button>)}</div></nav>
     {form.open && <TaskForm key={form.round ?? 0} task={form.task} initialDate={selectedDate} carry={form.carry} justAdded={form.justAdded} onClose={() => setForm({ open: false })} onSave={saveTask} onContinue={(carry, savedTitle) => setForm((current) => ({ open: true, carry, justAdded: [...(current.justAdded ?? []), savedTitle], round: (current.round ?? 0) + 1 }))} />}
     {extendTarget && <ExtendRecurringDialog task={extendTarget} onClose={() => setExtendTarget(null)} onConfirm={confirmExtend} />}
     {datePick && <DatePickDialog {...datePick} onClose={() => setDatePick(null)} />}
-    {toast && <div className="toast-safe fixed bottom-24 left-1/2 z-[70] -translate-x-1/2 rounded-lg bg-ink px-5 py-2.5 text-sm text-white shadow-xl lg:bottom-8 lg:ml-[7.5rem]">{toast}</div>}
-    {syncErrorToast && <div className="toast-safe-above fixed bottom-[8.5rem] left-1/2 z-[71] -translate-x-1/2 rounded-lg bg-sun px-5 py-2.5 text-sm font-medium text-ink shadow-xl lg:bottom-24 lg:ml-[7.5rem]">{syncErrorToast}</div>}
+    {toast && <div className="toast-safe fixed bottom-24 left-1/2 z-[70] -translate-x-1/2 rounded-lg bg-ink px-5 py-2.5 text-sm text-white shadow-xl desk:bottom-8 desk:ml-[7.5rem]">{toast}</div>}
+    {syncErrorToast && <div className="toast-safe-above fixed bottom-[8.5rem] left-1/2 z-[71] -translate-x-1/2 rounded-lg bg-sun px-5 py-2.5 text-sm font-medium text-ink shadow-xl desk:bottom-24 desk:ml-[7.5rem]">{syncErrorToast}</div>}
   </div>;
 }

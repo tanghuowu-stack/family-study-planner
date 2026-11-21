@@ -98,7 +98,8 @@ body::before {
   text-transform: uppercase;
 }
 
-@media (min-width: 1024px) {
+/* 左侧边栏只在电脑上有（与 tailwind 的 desk 断点同一条件） */
+@media (min-width: 1024px) and (hover: hover) and (pointer: fine) {
   .app-content { min-height: 100vh; padding-left: 14rem; }
 }
 
@@ -128,9 +129,9 @@ body::before {
    跟 pb-28 同为 padding-bottom，本文件排在 utilities 之后，这条生效。 */
 .pb-content { padding-bottom: calc(6rem + env(safe-area-inset-bottom)); }
 
-/* 提示条只在挂着底部导航的窄屏上抬高；lg 以上有 lg:bottom-* 负责，这里必须让位，
-   否则本文件在 @tailwind utilities 之后、同优先级下会盖掉 lg 断点的定位。 */
-@media (max-width: 1023px) {
+/* 提示条只在挂着底部导航时抬高（手机、iPad）；电脑有 desk:bottom-* 负责，这里必须让位，
+   否则本文件在 @tailwind utilities 之后、同优先级下会盖掉 desk 断点的定位。 */
+@media (max-width: 1023px), (hover: none), (pointer: coarse) {
   .toast-safe { bottom: calc(6rem + env(safe-area-inset-bottom)); }
   .toast-safe-above { bottom: calc(8.5rem + env(safe-area-inset-bottom)); }
 }

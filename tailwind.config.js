@@ -3,6 +3,8 @@ export default {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {
     extend: {
+      // 电脑（有鼠标 / 触控板、宽度够）才用左侧边栏；iPad 不管横竖屏都和手机一样用顶栏 + 底部标签栏（2026-11-21）
+      screens: { desk: { raw: "(min-width: 1024px) and (hover: hover) and (pointer: fine)" } },
       colors: {
         ink: "#202925",
         paper: "#F4F2ED",

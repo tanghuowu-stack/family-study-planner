@@ -103,15 +103,16 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask
                 </div>
               )}
 
-              {/* Desktop: text label pills */}
-              <div className="mt-1 hidden space-y-1 sm:block">
+              {/* 电脑 / iPad：像日程本一样直接写在格子里——色点 + 时间 + 名称，不加框（2026-11-21 用户：带框太死板） */}
+              <div className="mt-1 hidden space-y-0.5 sm:block">
                 {labels.slice(0, 5).map((label) => (
-                  <div key={`${label.type}:${label.text}`} className={`flex min-w-0 items-center gap-1.5 rounded border border-ink/10 bg-white px-1.5 py-0.5 text-[13px] ${label.done ? "text-muted line-through" : "text-ink"}`}>
-                    <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: label.dot }} />
-                    <span className="truncate">{label.name}</span>
+                  <div key={`${label.type}:${label.text}`} title={label.time ? `${label.time} ${label.name}` : label.name} className={`flex min-w-0 items-start gap-1.5 text-[13px] leading-[18px] ${label.done ? "text-muted line-through" : "text-ink"}`}>
+                    <span aria-hidden className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: label.dot }} />
+                    {/* 名称最多两行，格子窄时不至于只剩一个字；时间只在宽屏显示，窄格子里让给名称 */}
+                    <span className="min-w-0 break-all [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden">{label.time && <span className="mr-1 hidden tabular-nums text-muted xl:inline">{label.time}</span>}{label.name}</span>
                   </div>
                 ))}
-                {labels.length > 5 && <div className="px-1 text-[13px] text-muted">+{labels.length - 5}</div>}
+                {labels.length > 5 && <div className="pl-3 text-[13px] text-muted">还有 {labels.length - 5} 项</div>}
               </div>
             </button>
           );
@@ -162,10 +163,11 @@ function DayPanel({ day, tasks, onOpenDay, onAddTask, onClose }: { day: string; 
       {labels.length === 0 ? (
         <p className="mt-3 text-sm text-stone-400">今日暂无任务</p>
       ) : (
-        <div className="mt-3 space-y-2">
+        <div className="mt-2 divide-y divide-ink/[0.07]">
           {labels.map((label) => (
-            <div key={`${label.type}:${label.text}`} className={`flex min-h-11 items-center gap-2 rounded-lg border border-ink/10 bg-white px-3 text-[15px] ${label.done ? "text-muted line-through" : "text-ink"}`}>
+            <div key={`${label.type}:${label.text}`} className={`flex min-h-11 items-center gap-2 text-[15px] ${label.done ? "text-muted line-through" : "text-ink"}`}>
               <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: label.dot }} />
+              {label.time && <span className="shrink-0 text-[13px] tabular-nums text-muted">{label.time}</span>}
               <span className="flex-1">{label.name}</span>
             </div>
           ))}
@@ -195,7 +197,7 @@ function DayPanel({ day, tasks, onOpenDay, onAddTask, onClose }: { day: string; 
  * 兴趣班、其他安排用中性灰点。原先按"奥数/大增/剑桥/钢琴/游泳…"各给一种底色，一屏十来种颜色。
  */
 function calendarLabels(tasks: TaskDisplay[]) {
-  const labels: { text: string; name: string; type: string; dot: string; done: boolean }[] = [];
+  const labels: { text: string; name: string; type: string; dot: string; done: boolean; time?: string }[] = [];
   const seen = new Set<string>();
   tasks.forEach((task) => {
     const name = task.title.trim() || subCategoryLabel(task.mainCategory, task.subCategory);
@@ -204,7 +206,7 @@ function calendarLabels(tasks: TaskDisplay[]) {
     const subject = taskSubjectGroup(task);
     const dot = task.mainCategory === "interestClass" || task.mainCategory === "temporary" || subject === "other" ? NEUTRAL_DOT : SUBJECT_DOT[subject];
     const done = task.status === "done";
-    labels.push({ text: `${name}${done ? " ✓" : ""}`, name, type: task.subCategory, dot, done });
+    labels.push({ text: `${name}${done ? " ✓" : ""}`, name, type: task.subCategory, dot, done, time: task.startTime ?? task.time });
   });
   return labels;
 }

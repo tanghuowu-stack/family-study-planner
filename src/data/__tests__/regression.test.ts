@@ -588,6 +588,27 @@ describe("过去日补勾：记为查看日完成", () => {
     expect(await view(Y, task.id)).toBe("☑✓✓");
   });
 
+  // 2026-11-21 用户定：今日页翻到哪天，勾的就算哪天做的。重复类的完成时刻原先记实际点的时刻，
+  // 顺延来的那一次会按点的那天出现在那天的"已完成"里
+  it("重复任务在过去日页面上勾：完成时刻记那天，今天的已完成里不出现", async () => {
+    const { task } = await taskRepository.create(recurringDraft({ title: "钢琴", startDate: Y, recurrence: { frequency: "daily", startDate: Y, endDate: Y }, allowRollover: true, rolloverMode: "autoNextDay" } as Partial<Task>));
+    const shown = (await taskRepository.getTasksForDate(Y)).find((x) => x.id === task.id)!;
+    await taskRepository.setDisplayStatus(shown, "done", Y);
+    const row = await db.taskOccurrenceStatuses.get(`${task.id}:${Y}`);
+    expect(row?.status).toBe("done");
+    expect(toLocalDateKey(row!.completedAt!)).toBe(Y);
+    expect((await taskRepository.getTasksForDate(today)).find((x) => x.id === task.id)).toBeUndefined();
+  });
+
+  it("重复任务带小项在过去日页面上勾完：完成时刻记那天", async () => {
+    const { task } = await taskRepository.create(recurringDraft({ title: "背诗", recurrence: { frequency: "daily", startDate: dayOffset(-3) }, checklistItems: two() } as Partial<Task>));
+    await clickItem(task.id, "i1", Y);
+    await clickItem(task.id, "i2", Y);
+    const row = await db.taskOccurrenceStatuses.get(`${task.id}:${Y}`);
+    expect(row?.status).toBe("done");
+    expect(toLocalDateKey(row!.completedAt!)).toBe(Y);
+  });
+
   it("小项分两天完成：整体完成日取最后一项那天，不会被早的那项拉前", async () => {
     const { task } = await taskRepository.create(baseDraft({ title: "两天做完", date: dayOffset(-3), rolloverMode: "autoNextDay", allowRollover: true, checklistItems: two() }));
     await clickItem(task.id, "i1", dayOffset(-2));

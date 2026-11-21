@@ -109,7 +109,7 @@ export function TaskItem({ task, compact = false, viewDate, weekly, collapseChec
 
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // 当天记录（2026-11-14）：标题后的小本子标记，点一下原地写"今天具体做了什么"，不用打开编辑表单
+  // 当天记录（2026-11-14）：原先标题后有小本子标记可新写；2026-11-21 去掉入口，只保留已有记录的显示和修改
   const savedNote = viewDate ? task.dayNotes?.[viewDate] ?? "" : "";
   const [noteEditing, setNoteEditing] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
@@ -222,13 +222,7 @@ export function TaskItem({ task, compact = false, viewDate, weekly, collapseChec
         <div className="flex min-w-0 items-start gap-2">
           <div className="min-w-0 flex-1 text-base font-semibold leading-6">
             <span className={done || effectiveStatus === "cancelled" ? "line-through" : ""}>{taskShortName(task)}</span>
-            {canNote && !note && !noteEditing && (
-              // 视觉 24px，点击热区向外扩到 44px（伪元素），不撑高标题行
-              <button type="button" onClick={openNote} aria-label="写当天记录" title="记下这次具体做了什么"
-                className="relative ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md align-top text-stone-300 hover:bg-stone-100 hover:text-primary after:absolute after:-inset-2.5 after:content-['']">
-                <NotebookPen className="h-4 w-4" />
-              </button>
-            )}
+            {/* 2026-11-21 用户要求去掉标题后的"写当天记录"小本子图标；以前写过的记录仍显示在标题下，可点开修改 */}
             {/* 上课时间放在名称后面（2026-11-18 用户要求），名称在前一眼先看到是什么课；窄屏放不下时整块换行 */}
             {formatTime(task) && <span className="ml-1.5 inline-block whitespace-nowrap rounded bg-ink/[0.05] px-1.5 align-top text-[13px] font-medium leading-6 tabular-nums text-muted">{formatTime(task).trim()}</span>}
           </div>

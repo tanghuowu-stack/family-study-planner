@@ -88,7 +88,7 @@ export function TaskManagementPage(props: Props) {
   };
   const reorder = async (ids: string[]) => { await getRepository().reorderTasks(ids); await reload(); props.onRefresh(); };
   const groupProps = { selected, selecting, onToggle: toggle, onSelectGroup: selectIds, ...props };
-  const chip = (active: boolean) => `inline-flex min-h-8 items-center gap-1 rounded-full px-3 text-[13px] font-semibold transition-colors ${active ? "bg-ink text-white" : "bg-white text-muted ring-1 ring-inset ring-ink/10 hover:text-ink"}`;
+  const chip = (active: boolean) => `inline-flex min-h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 text-[13px] xl:px-2.5 font-semibold transition-colors ${active ? "bg-ink text-white" : "bg-white text-muted ring-1 ring-inset ring-ink/10 hover:text-ink"}`;
   return <main className="task-management mx-auto w-full max-w-4xl xl:max-w-6xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
     <header className="page-header"><h1 className="page-title shrink-0">任务管理</h1>{selecting
       ? <div className="flex items-center gap-2"><button onClick={batchDelete} disabled={!selected.size} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-rose-600 px-3 text-sm font-semibold text-white disabled:opacity-40 sm:px-4"><Trash2 className="h-4 w-4" />删除{selected.size ? `（${selected.size}）` : ""}</button><button onClick={() => { setSelecting(false); setSelected(new Set()); }} className="min-h-10 rounded-lg border border-ink/10 bg-white px-3 text-sm font-semibold text-ink sm:px-4">完成</button></div>
@@ -109,15 +109,19 @@ export function TaskManagementPage(props: Props) {
           </button>)}
         </div>
       </div>
-      <div className="flex flex-wrap gap-1.5" aria-label="按分类筛选">
-        {(["all", ...order] as const).map((value) => <button key={value} onClick={() => setCategory(value)} aria-pressed={category === value} className={chip(category === value)}>
-          {value === "all" ? "全部分类" : MAIN_CATEGORY_META[value].label}<span className={`tabular-nums ${category === value ? "text-white/70" : "text-stone-400"}`}>{categoryCounts[value] ?? 0}</span>
-        </button>)}
-      </div>
-      <div className="flex flex-wrap gap-1.5" aria-label="按安排方式筛选">
-        {(["all", "repeat", "weekly", "range", "once"] as const).map((value) => <button key={value} onClick={() => setKind(value)} aria-pressed={kind === value} className={chip(kind === value)}>
-          {value === "all" ? "全部安排" : KIND_LABEL[value]}<span className={`tabular-nums ${kind === value ? "text-white/70" : "text-stone-400"}`}>{kindCounts[value]}</span>
-        </button>)}
+      {/* 分类和安排方式放在同一行（2026-11-21），中间一道竖线隔开；放不下时这一行横向滑动，不换行 */}
+      <div className="-mx-3 flex items-center gap-1 overflow-x-auto px-3 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden">
+        <div className="contents" role="group" aria-label="按分类筛选">
+          {(["all", ...order] as const).map((value) => <button key={value} onClick={() => setCategory(value)} aria-pressed={category === value} className={chip(category === value)}>
+            {value === "all" ? "全部" : MAIN_CATEGORY_META[value].label}<span className={`tabular-nums ${category === value ? "text-white/70" : "text-stone-400"}`}>{categoryCounts[value] ?? 0}</span>
+          </button>)}
+        </div>
+        <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-ink/15" />
+        <div className="contents" role="group" aria-label="按安排方式筛选">
+          {(["all", "repeat", "weekly", "range", "once"] as const).map((value) => <button key={value} onClick={() => setKind(value)} aria-pressed={kind === value} className={chip(kind === value)}>
+            {value === "all" ? "全部" : KIND_LABEL[value]}<span className={`tabular-nums ${kind === value ? "text-white/70" : "text-stone-400"}`}>{kindCounts[value]}</span>
+          </button>)}
+        </div>
       </div>
     </div>
     {pending.length === 0 && ended.length === 0 && completed.length === 0

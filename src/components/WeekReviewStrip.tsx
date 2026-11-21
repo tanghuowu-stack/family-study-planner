@@ -78,13 +78,13 @@ export function WeekReviewStrip({ refreshKey, onOpenDay }: { refreshKey: number;
 
       {hasTimes && (
         // 每周几次不排到哪一天：单独一行，看这一周做了几次（过去的周没做够标出来）
-        <div className="flex flex-wrap items-center gap-1.5 border-t border-ink/10 px-3 py-2 sm:gap-x-2 sm:px-4 sm:py-2.5" aria-label="每周几次">
-          <span className="text-[12px] font-semibold text-muted sm:text-[13px]">每周几次 <span className={`tabular-nums ${timesAllDone ? "text-primary" : "text-ink"}`}>{times.done}/{times.target}</span></span>
+        // 2026-11-21：去掉开头的"每周几次 N/M"（总数已在上面第 8 列），各项排成一行，放不下时横向滑动
+        <div className="flex items-center gap-1.5 overflow-x-auto border-t border-ink/10 px-3 py-2 [scrollbar-width:none] sm:gap-x-2 sm:px-4 sm:py-2.5 [&::-webkit-scrollbar]:hidden" aria-label="每周几次">
           {review.weeklyTimes.map((item) => {
             const missed = !item.reached && review.weekEnd < today;
             return (
               <span key={item.taskId} title={`${item.title}：这一周做了 ${item.done}/${item.target} ${item.unit}`}
-                className={`inline-flex min-h-6 items-center gap-1 rounded-full px-2 text-[12px] ring-1 ring-inset sm:min-h-7 sm:gap-1.5 sm:px-2.5 sm:text-[13px] ${item.reached ? "bg-mint/60 ring-primary/20" : missed ? "bg-rose-50 ring-rose-200" : "bg-white ring-ink/10"}`}>
+                className={`inline-flex min-h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 text-[12px] ring-1 ring-inset sm:min-h-7 sm:gap-1.5 sm:px-2.5 sm:text-[13px] ${item.reached ? "bg-mint/60 ring-primary/20" : missed ? "bg-rose-50 ring-rose-200" : "bg-white ring-ink/10"}`}>
                 <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: SUBJECT_DOT[item.subject] }} />
                 <span className="max-w-[5.5rem] truncate text-ink sm:max-w-[7rem]">{item.title}</span>
                 <span className={`font-semibold tabular-nums ${item.reached ? "text-primary" : missed ? "text-rose-700" : "text-ink"}`}>{item.reached ? `✓ ${item.done}/${item.target}` : `${item.done}/${item.target}`}</span>

@@ -290,7 +290,9 @@ async function syncParentCompletion(childTaskId: string): Promise<string | undef
   const allDone = siblings.every((sibling) => sibling.status === "done");
   if (allDone === (parent.status === "done")) return undefined;
   const now = new Date().toISOString();
-  await db.tasks.update(parent.id, { status: allDone ? "done" : "todo", completedAt: allDone ? now : undefined, updatedAt: now });
+  // 父任务完成日 = 最后一个子任务的完成日（子任务可能是在过去某天的页面上补勾的，不用实际点的时刻）
+  const latestChild = siblings.map((sibling) => sibling.completedAt).filter((value): value is string => !!value).sort().at(-1);
+  await db.tasks.update(parent.id, { status: allDone ? "done" : "todo", completedAt: allDone ? latestChild ?? now : undefined, updatedAt: now });
   return parent.id;
 }
 
@@ -772,7 +774,8 @@ export const taskRepository = {
 
   /**
    * asOfDate：今日页当前查看的日期——整体标记完成时记为那天完成（不晚于今天）。不传则记今天。
-   * 重复类任务不看 asOfDate：它的完成本来就记在被勾的那一天的 occurrence 行上。
+   * 重复类任务：完成记在被勾的那一次的 occurrence 行上；completedAt 也按 asOfDate 记（2026-11-21 用户定：今日页翻到哪天，勾的就算哪天做的，
+   * 不按实际点的时刻）。否则顺延来的那一次会按点的那天出现在那天的"已完成"里。
    */
   async setDisplayStatus(task: TaskDisplay, status: TaskStatus, asOfDate?: string, onLocalWrite?: () => void): Promise<SyncResult> {
     // onLocalWrite：本地写入落库后调用一次，界面据此立刻刷新（云端包装层在这之后才开始上传）。
@@ -780,7 +783,7 @@ export const taskRepository = {
     // 被历史 bug 污染了 occurrenceDate 的非重复任务因此也能正确回到本体写入路径。
     if (isOccurrenceSchedule(task)) {
       if (!task.occurrenceDate) throw new Error("重复类任务缺少单日日期，无法记录完成状态");
-      const result = await this.setOccurrence(task.id, task.occurrenceDate, status);
+      const result = await this.setOccurrence(task.id, task.occurrenceDate, status, undefined, undefined, asOfDate);
       // 整体勾完成 → 这一天的小项全部记为这天勾的；整体取消完成 → 清掉这一天勾的小项（别的日子勾的不动）。
       // 否则会出现"整体已完成、小项 0/2"。小项按天显示，见 checklistOnDay。
       if (status === "done" || status === "todo") await stampOccurrenceChecklist(task.id, task.occurrenceDate, status === "done");
@@ -921,7 +924,8 @@ export const taskRepository = {
           const existing = await db.taskOccurrenceStatuses.get(id);
           const status: OccurrenceStatus = allDone ? "done" : existing?.status === "done" ? "todo" : existing?.status ?? "todo";
           // R2：patch 语义，保留 override 字段；completedAt 随 done 状态维护（统计完成日归因依赖）
-          const completedAt = status === "done" ? (existing?.status === "done" ? existing.completedAt : now) : undefined;
+          // 完成时刻按今日页查看的那天记（不晚于今天），不按实际点的时刻
+          const completedAt = status === "done" ? (existing?.status === "done" ? existing.completedAt : completionStampFor(recordDate, now)) : undefined;
           await db.taskOccurrenceStatuses.put({ ...existing, id, taskId, occurrenceDate, status, completedAt, createdAt: existing?.createdAt ?? now, updatedAt: now });
           if (status !== (existing?.status ?? "todo")) await writeLog(status === "done" ? "complete" : "uncomplete", "taskOccurrence", { entityId: id, entityTitle: task.title, beforeSnapshot: existing, afterSnapshot: { status, checklistItems: items } });
         }
@@ -940,7 +944,8 @@ export const taskRepository = {
     return { parentId, synced: true };
   },
 
-  async setOccurrence(taskId: string, occurrenceDate: string, status: OccurrenceStatus, overrideDate?: string, overrideNote?: string): Promise<SyncResult> {
+  /** asOfDate：今日页查看的那天，转为 done 时完成时刻记为那天（不晚于今天）；不传记现在 */
+  async setOccurrence(taskId: string, occurrenceDate: string, status: OccurrenceStatus, overrideDate?: string, overrideNote?: string, asOfDate?: string): Promise<SyncResult> {
     const id = `${taskId}:${occurrenceDate}`;
     const existing = await db.taskOccurrenceStatuses.get(id);
     const now = new Date().toISOString();
@@ -948,7 +953,8 @@ export const taskRepository = {
     await db.transaction("rw", db.taskOccurrenceStatuses, db.activityLogs, async () => {
       // R2：patch 语义——未显式传入的 override 字段保留原值，完成/取消一个已延期的任务不会抹掉延期记录
       // completedAt 随 done 状态维护：转为 done 记 now，保持 done 保留原值，退出 done 清除（统计完成日归因依赖）
-      const completedAt = status === "done" ? (existing?.status === "done" ? existing.completedAt ?? now : now) : undefined;
+      const stamp = completionStampFor(recordDateFor(asOfDate), now);
+      const completedAt = status === "done" ? (existing?.status === "done" ? existing.completedAt ?? stamp : stamp) : undefined;
       const after = { ...existing, id, taskId, occurrenceDate, status, completedAt, overrideDate: overrideDate ?? existing?.overrideDate, overrideNote: overrideNote ?? existing?.overrideNote, createdAt: existing?.createdAt ?? now, updatedAt: now };
       await db.taskOccurrenceStatuses.put(after);
       const action = status === "cancelled" ? "cancelOccurrence" : status === "postponed" ? "postponeOccurrence" : status === "done" ? "complete" : "uncomplete";

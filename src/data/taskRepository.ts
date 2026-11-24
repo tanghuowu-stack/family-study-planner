@@ -604,7 +604,7 @@ export const taskRepository = {
     const tracked = old.enableStreak === true || !!old.streakStartDate;
     const { task } = await this.create({
       ...draft,
-      weeklyQuota: undefined, weeklyLog: undefined,
+      weeklyQuota: undefined, weeklyLog: undefined, practicePoints: undefined, practiceExtraScores: undefined,
       recurrence: draft.recurrence ? { ...draft.recurrence, startDate: draft.recurrence.startDate > today ? draft.recurrence.startDate : today } : draft.recurrence,
       habitKey: tracked ? old.habitKey ?? old.id : undefined,
       enableStreak: old.enableStreak === true ? true : undefined,
@@ -637,7 +637,7 @@ export const taskRepository = {
       completedAt: undefined, actualMinutes: undefined,
       // 复制出的任务不继承打卡身份：源任务若是打卡项目，副本被强制成 singleDate 后
       // 不再是 recurring，enableStreak 残留会变成"月历有卡但管理弹窗看不到"的孤儿
-      enableStreak: undefined, streakStartDate: undefined, habitKey: undefined, dayNotes: undefined, weeklyLog: undefined,
+      enableStreak: undefined, streakStartDate: undefined, habitKey: undefined, dayNotes: undefined, weeklyLog: undefined, practicePoints: undefined, practiceExtraScores: undefined,
       checklistItems: source.checklistItems?.map((item, index) => ({ ...item, id: makeId(), done: false, completedDate: undefined, sortOrder: index, actualMinutes: undefined })),
       createdAt: now, updatedAt: now,
     });

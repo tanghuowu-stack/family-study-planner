@@ -98,7 +98,8 @@ function taskToRow(task: Task, familyId: string): Record<string, unknown> {
   });
 }
 
-function buildMetadata(task: Task): Record<string, unknown> | null {
+// 导出供 cloudFieldParity 测试：维护面板「上传本地数据」这条映射面的 metadata 也要和 rowToTask 对得上
+export function buildMetadata(task: Task): Record<string, unknown> | null {
   const meta: Record<string, unknown> = {};
   if (task.totalAmount !== undefined) meta.totalAmount = task.totalAmount;
   if (task.amountUnit !== undefined) meta.amountUnit = task.amountUnit;
@@ -113,6 +114,8 @@ function buildMetadata(task: Task): Record<string, unknown> | null {
   if (task.habitKey !== undefined) meta.habitKey = task.habitKey;
   if (task.dayNotes !== undefined && Object.keys(task.dayNotes).length > 0) meta.dayNotes = task.dayNotes;
   if (task.weeklyLog !== undefined && Object.keys(task.weeklyLog).length > 0) meta.weeklyLog = task.weeklyLog;
+  if (task.practicePoints !== undefined) meta.practicePoints = task.practicePoints;
+  if (task.practiceExtraScores !== undefined) meta.practiceExtraScores = task.practiceExtraScores;
   return Object.keys(meta).length > 0 ? meta : null;
 }
 

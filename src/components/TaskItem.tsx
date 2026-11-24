@@ -11,7 +11,14 @@ interface Props {
   /** 今日页正在看的日期：在这一天之前就做完的小项收成一行"已完成 N 项" */
   viewDate?: string;
   /** 每周几次（今日页右栏"每周练习"）：左侧显示本周进度环，标题下是一周七天的圆点（左键打勾、右键 / 长按填数量） */
-  weekly?: { progress: WeeklyTimesProgress; onLog: (date: string, delta: number) => void };
+  weekly?: {
+    progress: WeeklyTimesProgress;
+    onLog: (date: string, delta: number) => void;
+    /** 积分（2026-11-24）：标题右侧灰色小字"N 分"，超出目标但不计分的"多读了 N 本" */
+    score?: { points: string; extra?: string };
+    /** 记这一下能多得几分：今天打勾时圆点上方飘出"+2"（补记以前的日子不飘） */
+    gainFor?: (date: string, delta: number) => number;
+  };
   /** 小项默认收起成一行"还有 N 项"，点开再勾（今日页"本周作业"：一周的事不必每天摊开全部小项） */
   collapseChecklist?: boolean;
   /** 截止标签（今日页"本周作业"里的"周五截止"、截止日当天的"今天截止"）：today 红、soon（明天）琥珀、其余主色 */
@@ -229,6 +236,7 @@ export function TaskItem({ task, compact = false, viewDate, weekly, collapseChec
           {hasChecklist && <span className="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-6 text-muted">{!ringMode && <span className="relative h-1 w-10 overflow-hidden rounded-full bg-stone-200"><span className="absolute inset-y-0 left-0 rounded-full bg-primary transition-all" style={{ width: `${(completedItems / displayItems.length) * 100}%` }} /></span>}<span className="tabular-nums">{completedItems}/{displayItems.length}</span></span>}
           {dueLabel && !task.rolledFromDate && <span className={`mt-0.5 inline-flex h-5 shrink-0 items-center rounded px-1.5 text-[13px] font-semibold leading-none ${done ? "bg-stone-100 text-stone-400" : DUE_TONE[dueLabel.tone]}`}>{dueLabel.text}</span>}
           {weekly && <span className={`shrink-0 text-[13px] font-semibold leading-6 tabular-nums ${weekly.progress.reached ? "text-primary" : "text-muted"}`}>{weekly.progress.done}/{weekly.progress.target} {weekly.progress.unit}</span>}
+          {weekly?.score && <span className="shrink-0 text-[13px] leading-6 tabular-nums text-muted">{weekly.score.extra && <span className="mr-1.5">{weekly.score.extra}</span>}{weekly.score.points}</span>}
           {unsynced && <UnsyncedBadge onRetry={onRetrySync} />}
         </div>
         {weekly && <WeeklyTimesBar task={task} weekly={weekly} viewDate={viewDate} />}
@@ -397,6 +405,18 @@ function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly:
   const today = todayKey();
   const loggable = (date: string) => date <= today && (!task.endDate || date <= task.endDate);
   const [editing, setEditing] = useState<string>();
+  // 今天打勾得分时圆点上方飘出"+2"，约 1 秒自己消失（不用点）
+  const [floats, setFloats] = useState<{ id: number; date: string; text: string }[]>([]);
+  const floatId = useRef(0);
+  const log = (date: string, delta: number) => {
+    const gain = delta > 0 && date === today ? weekly.gainFor?.(date, delta) ?? 0 : 0;
+    onLog(date, delta);
+    if (gain > 0) {
+      const id = ++floatId.current;
+      setFloats((current) => [...current, { id, date, text: `+${gain}` }]);
+      setTimeout(() => setFloats((current) => current.filter((item) => item.id !== id)), 1100);
+    }
+  };
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressed = useRef(false);
   const clearPress = () => { if (pressTimer.current) clearTimeout(pressTimer.current); pressTimer.current = null; };
@@ -415,7 +435,7 @@ function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly:
               onClick={() => {
                 if (longPressed.current) { longPressed.current = false; return; }
                 if (day.count > 1) setEditing(day.date);
-                else onLog(day.date, day.count ? -1 : 1);
+                else log(day.date, day.count ? -1 : 1);
               }}
               onContextMenu={(event) => { event.preventDefault(); if (can) setEditing(day.date); }}
               onPointerDown={(event) => {
@@ -428,11 +448,14 @@ function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly:
               className={`flex h-7 w-7 select-none items-center justify-center rounded-full text-[12px] font-semibold tabular-nums transition-colors [-webkit-touch-callout:none] disabled:cursor-default [@media(pointer:coarse)]:h-8 [@media(pointer:coarse)]:w-8 ${tone} ${day.date === viewDate ? "ring-2 ring-primary/35 ring-offset-1" : ""}`}>
               {day.count > 1 ? day.count : day.count === 1 ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : WEEKDAY_SHORT[index]}
             </button>
+            {floats.filter((item) => item.date === day.date).map((item) => (
+              <span key={item.id} aria-hidden className="pointer-events-none absolute -top-3 left-1/2 text-[13px] font-bold text-primary motion-reduce:hidden" style={{ animation: "points-float 1s ease-out forwards" }}>{item.text}</span>
+            ))}
             {editing === day.date && (
               <DayCountEditor label={`${name}做了几${progress.unit}`} initial={day.count} unit={progress.unit}
                 onClose={(value) => {
                   setEditing(undefined);
-                  if (value !== undefined && value !== day.count) onLog(day.date, value - day.count);
+                  if (value !== undefined && value !== day.count) log(day.date, value - day.count);
                 }} />
             )}
           </li>

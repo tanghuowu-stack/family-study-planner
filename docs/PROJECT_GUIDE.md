@@ -53,6 +53,9 @@ cloudUpload/Read/Download.ts  维护工具：上传/预览/下载
 CloudLoginPanel.tsx     设置页里的云同步状态与维护面板
 weekReview.ts           “周计划及打卡”页“本周”条的只读汇总（每件事只算一次、算在到期那天，时段任务算在最后一天；完成看现在的状态）
 taskDefaults.ts         新建任务默认设置（getTaskDefaults / mergeTaskDefaults，规则写死在文件头表格）
+utils/points.ts         每周练习积分 / 小红花 / 愿望的纯计算（规则写死在文件头；分数由 weeklyLog 算出，不存总分）
+data/pointsLedger.ts    积分账本（app_settings `points_ledger_v1`：家长奖励、提前完成处理、愿望、已庆祝、每周快照），跨设备按 id 合并
+data/pointsService.ts   积分读取、每周补结算、按标题套分值预设（只一次）、家长操作、庆祝判定
 App.tsx                 正式任务动作汇聚点（增删改查、勾选、小项、单次状态）
 ```
 
@@ -146,6 +149,7 @@ App.tsx                 正式任务动作汇聚点（增删改查、勾选、�
 - **学校作业**：语文、数学、英语、其他
 - **课外**：语文、数学、英语、其他；内容类型有上课、作业、练习、听写、背诵、阅读、其他。阅读只在"课外→其他"下，标题可空，空标题显示"课外·其他｜阅读"。
 - **兴趣班**：钢琴课、游泳课、轮滑课、钢琴练习，以及用户通过加号创建的自定义分类。新建入口不再提供“其他兴趣班”；历史值仍可读取。钢琴课 / 游泳课 / 轮滑课固定算上课；自定义分类看“算作上课”标记（`extraContentType = "class"`，绑定课程时取课程的 isClass）。空标题显示分类名称。
+- **每周练习积分**（2026-11-24）：只有每周几次计分；每项的分值 / 多做是否计分存任务 metadata（`practicePoints` / `practiceExtraScores`）；账本存 `app_settings` 的 `points_ledger_v1`，上线时按标题套分值预设的结果存 `practice_points_preset_v1`。不改数据库结构。规则见 `utils/points.ts` 文件头与 change-log 2026-11-24。
 - **课表、自定义分类与备忘录**：分别存储在现有 `app_settings` 的 `school_timetable_v1` / `custom_task_categories_v1` / `sidebar_memo` 键中，沿用家庭云同步和本地缓存，不需要新增表。课表只突出明天的工作日列。
 - **预览隔离**：`npm run preview:file` 使用 `local-preview` 模式，示例数据和禁用云连接仅作用于预览构建；`npm run build` 为真实项目构建，不包含示例任务。
 - **历史备忘**：`sidebar_memo` 的 jsonb 同时保存当前正文和完成历史，打勾时一次写入完成归档与清空。统计页“更多设置”可恢复或永久删除；最多保留最近 50 条，超出永久移除最早记录（用户明确要求，区别于任务软删除）。恢复追加当前正文、不覆盖已有内容。

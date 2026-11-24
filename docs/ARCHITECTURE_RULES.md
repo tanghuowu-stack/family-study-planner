@@ -87,7 +87,7 @@
 **具体要求**：
 1. **`Task` 任何新增/改名字段，4 个映射面必须同步更新。** 顺序建议：先改 `types/task.ts`，再全局 `grep` 字段名确认 4 处都覆盖。
 2. **新增字段后必须在 `cloudFieldParity.test.ts` 的 `FIELD_PAIRS` 里加一行。** 这个测试对 `taskToRow` ↔ `rowToTask`（正常读写路径这一对）做"上传→云端行→下载"往返断言，漏映射会立即断言失败。`taskToRow` 已 `export` 供测试引用。维护方式：往 `fullTask()` 里补该字段的非空样例值，往 `FIELD_PAIRS` 数组加 `["字段名", t.字段名]`。
-3. **走 metadata jsonb 的低频字段**（`totalAmount` / `amountUnit` / `splitCount` / `amountPerSession` / `readingTargetCount` / `readingTargetUnit` / `allowedWeekdays` / `allowWeekend` / `enableTimer` / `pauseDuringTravel` / `habitKey` / `dayNotes` / `weeklyLog`）由 `buildMetadata` 整包透传、`...row.metadata` 整包展开，结构上不会出现单向漏映射，不必逐字段列进 parity 测试；但新增这类字段仍要确认 `buildMetadata` 里加了对应行。
+3. **走 metadata jsonb 的低频字段**（`totalAmount` / `amountUnit` / `splitCount` / `amountPerSession` / `readingTargetCount` / `readingTargetUnit` / `allowedWeekdays` / `allowWeekend` / `enableTimer` / `pauseDuringTravel` / `habitKey` / `dayNotes` / `weeklyLog` / `practicePoints` / `practiceExtraScores`）由 `buildMetadata` 整包透传、`...row.metadata` 整包展开，结构上不会出现单向漏映射，不必逐字段列进 parity 测试；但新增这类字段仍要确认 `buildMetadata` 里加了对应行——**注意 `cloudRepository.ts` 和 `cloudUpload.ts` 各有一份 `buildMetadata`，两处都要加**（2026-11-24 起 `cloudFieldParity.test.ts` 也对 cloudUpload 那份做往返断言，积分两字段同时列进了 `FIELD_PAIRS`）。
 4. **已知缺口**：`cloudFieldParity.test.ts` 只覆盖 `taskToRow`/`rowToTask` 这一对（日常读写路径，最高频最危险）。维护面板的 `cloudUpload.ts` / `cloudDownload.ts` 两个映射面**未纳入**该测试——改这两个文件时需手动逐字段核对。
 
 ### 3.2 冗余 / 派生字段规范
@@ -243,6 +243,8 @@
 | `lib/__tests__/cloudFieldParity.test.ts` | `taskToRow`↔`rowToTask` 全字段往返对照（43 例，防单向漏映射）|
 | `context/__tests__/timerStore.test.ts` | 计时器状态机纯函数（暂停继续保留 accumulated 等）|
 | `utils/__tests__/date.test.ts` | 日期工具（toLocalDateKey UTC+8 边界等）|
+| `utils/__tests__/points.test.ts` | 每周练习积分规则（次每天一次、达标 +2、多做计分/不计分、不扣分、跨周累积、小红花、兑换、起始周、快照、提前完成判定、还可以再做）+ 账本跨设备合并 |
+| `data/__tests__/pointsService.test.ts` | 积分数据层：家长奖励加减撤回、提前完成待处理、愿望确认兑换、补算快照、按标题套预设只套一次、庆祝只弹一次 |
 | `data/__tests__/completionSync.test.ts` | 勾选链路（§3.6）：本地写完即回调、同任务上传串行、拉取避让在途写入、并发勾选不丢勾（Supabase mock 带闸门）|
 
 **新增功能必须配套的测试级别**：

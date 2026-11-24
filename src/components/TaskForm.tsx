@@ -10,6 +10,7 @@ import { loadCustomTaskCategories, saveCustomTaskCategories, type CustomTaskCate
 import type { Course, ExtraContentType, MainCategory, PlanPeriod, SchedulePattern, Task, TaskDisplay, TaskDraft, TaskStatus, TaskTimeType, WeeklyQuota } from "../types/task";
 import { formatCompactDate, fromDateKey, getWeekStartKey, todayKey, toDateKey } from "../utils/date";
 import { isTravelPauseEnabled } from "../utils/travelPause";
+import { PRACTICE_POINTS_MAX, practiceSettingsOf } from "../utils/points";
 import { EXTRA_CONTENT_OPTIONS_SIMPLE, MAIN_CATEGORY_META, STATUS_META, SUB_CATEGORY_OPTIONS, TIME_TYPE_META, WEEKDAY_LABELS, courseOptionLabel, customSubCategoryValue, defaultSortOrder, interestContentType, isCourseTask, isCustomSubCategory, isOccurrenceSchedule, isValidSubCategory, subCategoryLabel } from "../utils/taskMeta";
 
 // "事项"分类或"上课"内容类型默认在月计划中显示，不受上次使用偏好影响
@@ -336,7 +337,11 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
     if (draft.timeType === "assignmentWindow" && (!draft.assignmentWindow?.startDate || !draft.assignmentWindow.endDate || draft.assignmentWindow.startDate > draft.assignmentWindow.endDate)) return setError("作业周期不正确");
     setSaving(true);
     const normalizedWeek = normalizeDate(draft.weekStart);
-    const cleaned = { ...draft, title: draft.title.trim(), checklistItems: draft.timeType === "weeklyTimes" ? undefined : draft.checklistItems?.filter((item) => item.title.trim()).map((item, index) => ({ ...item, title: item.title.trim(), sortOrder: index })), weekStart: normalizedWeek ? getWeekStartKey(normalizedWeek) : undefined };
+    // 每周练习积分（2026-11-24）：新建默认每次 1 分、多做计分，存到任务上；不是每周几次的不带这两项
+    const practice = draft.timeType === "weeklyTimes"
+      ? { practicePoints: practiceSettingsOf(draft).points, practiceExtraScores: practiceSettingsOf(draft).extraScores }
+      : { practicePoints: undefined, practiceExtraScores: undefined };
+    const cleaned = { ...draft, ...practice, title: draft.title.trim(), checklistItems: draft.timeType === "weeklyTimes" ? undefined : draft.checklistItems?.filter((item) => item.title.trim()).map((item, index) => ({ ...item, title: item.title.trim(), sortOrder: index })), weekStart: normalizedWeek ? getWeekStartKey(normalizedWeek) : undefined };
     try {
       await onSave(cleaned);
       if (mode === "continue" && !task && onContinue) onContinue(carryFrom(cleaned), cleaned.title || subCategoryLabel(cleaned.mainCategory, cleaned.subCategory));
@@ -511,6 +516,27 @@ function WeeklyTimesFields({ draft, set, input, label, chip }: { draft: TaskDraf
     <div className="grid grid-cols-2 gap-2">
       <label className={label}>从哪天开始<input type="date" required value={draft.startDate ?? ""} onChange={(e) => set("startDate", e.target.value || undefined)} className={input} /></label>
       <label className={label}>到哪天结束（可不填）<input type="date" value={draft.endDate ?? ""} min={draft.startDate} onChange={(e) => set("endDate", e.target.value || undefined)} className={input} /></label>
+    </div>
+    <PracticePointsFields draft={draft} set={set} label={label} chip={chip} />
+  </div>;
+}
+
+/** 每周练习积分：每次几分、超过目标的部分算不算分（2026-11-24；新建默认 1 分、计分） */
+function PracticePointsFields({ draft, set, label, chip }: { draft: TaskDraft; set: <K extends keyof TaskDraft>(key: K, value: TaskDraft[K]) => void; label: string; chip: (active: boolean) => string }) {
+  const { points, extraScores } = practiceSettingsOf(draft);
+  const unit = draft.weeklyQuota?.unit ?? "次";
+  return <div className="grid gap-3 sm:grid-cols-2">
+    <div>
+      <p className={label}>每{unit === "次" ? "次" : unit}几分</p>
+      <div className="mt-1.5 inline-flex items-center rounded-lg ring-1 ring-inset ring-ink/10">
+        <button type="button" aria-label="少 1 分" disabled={points <= 0} onClick={() => set("practicePoints", Math.max(0, points - 1))} className="flex h-10 w-10 items-center justify-center text-lg font-semibold text-muted disabled:opacity-30">−</button>
+        <span className="w-8 text-center text-base font-bold tabular-nums text-ink" aria-live="polite">{points}</span>
+        <button type="button" aria-label="多 1 分" disabled={points >= PRACTICE_POINTS_MAX} onClick={() => set("practicePoints", Math.min(PRACTICE_POINTS_MAX, points + 1))} className="flex h-10 w-10 items-center justify-center text-lg font-semibold text-muted disabled:opacity-30">+</button>
+      </div>
+    </div>
+    <div>
+      <p className={label}>超过目标的部分</p>
+      <div className="mt-1.5 flex gap-1.5"><button type="button" onClick={() => set("practiceExtraScores", true)} className={chip(extraScores)}>也计分</button><button type="button" onClick={() => set("practiceExtraScores", false)} className={chip(!extraScores)}>不计分</button></div>
     </div>
   </div>;
 }

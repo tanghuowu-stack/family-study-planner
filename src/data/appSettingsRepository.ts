@@ -6,7 +6,7 @@ import type { TaskSubjectGroup } from "../utils/taskGrouping";
 const SETTINGS_KEY = "group_sort_order";
 
 /** 通用 jsonb 设置读取：本地 localStorage 缓存 + 云端 app_settings（family_id+key 唯一） */
-async function loadJsonSetting<T>(key: string, reconcile?: (cached: T | null, remote: T) => T): Promise<T | null> {
+export async function loadJsonSetting<T>(key: string, reconcile?: (cached: T | null, remote: T) => T): Promise<T | null> {
   const cacheKey = `app_settings:${key}`;
   const cached = localStorage.getItem(cacheKey);
   let cachedValue: T | null = null;
@@ -43,7 +43,7 @@ async function loadJsonSetting<T>(key: string, reconcile?: (cached: T | null, re
 }
 
 /** 通用 jsonb 设置写入：先写本地缓存，云端失败走 notifySyncError（不静默） */
-async function saveJsonSetting<T>(key: string, value: T, errLabel: string): Promise<void> {
+export async function saveJsonSetting<T>(key: string, value: T, errLabel: string): Promise<void> {
   localStorage.setItem(`app_settings:${key}`, JSON.stringify(value));
   if (!isCloudMode() || !supabase) return;
   try {

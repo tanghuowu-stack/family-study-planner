@@ -12,6 +12,7 @@
 import { describe, expect, it } from "vitest";
 import { checklistItemRows, taskToRow } from "../../data/cloudRepository";
 import { rowToChecklistItem, rowToTask } from "../cloudRead";
+import { buildMetadata as buildUploadMetadata } from "../cloudUpload";
 import type { ChecklistItem, Task } from "../../types/task";
 
 const FAMILY_ID = "fam-parity-test";
@@ -58,6 +59,8 @@ function fullTask(): Task {
     habitKey: "habit-project-1",
     dayNotes: { "2026-07-18": "语用2篇", "2026-07-19": "听力 Part 1" },
     weeklyLog: { "2026-07-14": 1, "2026-07-16": 2 },
+    practicePoints: 2,
+    practiceExtraScores: false,
     streakStartDate: "2026-07-02",
     completedAt: "2026-07-19T10:00:00.000Z",
     deletedAt: "2026-07-19T11:00:00.000Z",
@@ -85,6 +88,7 @@ const FIELD_PAIRS: [keyof Task, unknown][] = (() => {
     ["sessionIndex", t.sessionIndex], ["allocationWeekStart", t.allocationWeekStart],
     ["enableStreak", t.enableStreak], ["streakStartDate", t.streakStartDate], ["pauseDuringTravel", t.pauseDuringTravel],
     ["habitKey", t.habitKey], ["dayNotes", t.dayNotes], ["weeklyLog", t.weeklyLog],
+    ["practicePoints", t.practicePoints], ["practiceExtraScores", t.practiceExtraScores],
     ["completedAt", t.completedAt], ["deletedAt", t.deletedAt], ["deletedByDevice", t.deletedByDevice],
     ["deletedByActor", t.deletedByActor], ["createdAt", t.createdAt], ["updatedAt", t.updatedAt],
   ];
@@ -102,6 +106,19 @@ describe("taskToRow / rowToTask 字段逐一对照（2026-07-19，防 actualMinu
   it("id 与 family_id 独立于上述循环，另行确认", () => {
     expect(row.family_id).toBe(FAMILY_ID);
     expect(roundTripped.id).toBe(task.id);
+  });
+});
+
+// ─── 维护面板「上传本地数据」（cloudUpload）的 metadata 映射面（2026-11-24 随积分设置纳入）────
+// cloudUpload 的 buildMetadata 是独立的一份，新加的 metadata 字段漏写在这里时，上传后再读回会丢。
+describe("cloudUpload.buildMetadata / rowToTask 往返", () => {
+  const task = fullTask();
+  const roundTripped = rowToTask({ ...taskToRow(task, FAMILY_ID), metadata: buildUploadMetadata(task) });
+  it.each([
+    ["habitKey", task.habitKey], ["dayNotes", task.dayNotes], ["weeklyLog", task.weeklyLog], ["pauseDuringTravel", task.pauseDuringTravel],
+    ["practicePoints", task.practicePoints], ["practiceExtraScores", task.practiceExtraScores],
+  ] as [keyof Task, unknown][])("metadata 字段 %s 经维护面板上传后能读回", (field, expected) => {
+    expect(roundTripped[field]).toEqual(expected);
   });
 });
 

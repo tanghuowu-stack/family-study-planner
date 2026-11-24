@@ -163,6 +163,10 @@ export interface Task {
   dayNotes?: Record<string, string>;
   /** 每周几次的记录（2026-11-17）：{ "YYYY-MM-DD": 那天做了几次 }，0 次不存。存 metadata jsonb，不加列 */
   weeklyLog?: Record<string, number>;
+  /** 每周练习积分（2026-11-24）：每次分值，不填按 1 分。存 metadata jsonb，不加列 */
+  practicePoints?: number;
+  /** 每周练习积分：超过目标的部分是否计分，不填按计分。存 metadata jsonb，不加列 */
+  practiceExtraScores?: boolean;
   checklistItems?: ChecklistItem[];
   completedAt?: string;
   deletedAt?: string;

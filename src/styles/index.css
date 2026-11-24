@@ -110,6 +110,18 @@ body::before {
   100% { transform: scale(1); }
 }
 
+/* 积分庆祝（2026-11-24）：散花落下（CelebrationLayer）、练习打勾后"+2"飘起（TaskItem） */
+@keyframes petal-fall {
+  0% { opacity: 1; transform: translate3d(0, 0, 0) rotate(0deg); }
+  85% { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(var(--drift, 0px), 92vh, 0) rotate(var(--spin, 180deg)); }
+}
+@keyframes points-float {
+  0% { opacity: 0; transform: translate(-50%, 4px); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -22px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
 }

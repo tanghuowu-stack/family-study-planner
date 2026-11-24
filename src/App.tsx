@@ -19,6 +19,11 @@ import { TimetablePage } from "./pages/TimetablePage";
 import type { Task, TaskDisplay, TaskDraft, TaskStatus } from "./types/task";
 import { fromDateKey, shouldReturnToToday, todayKey, toDateKey } from "./utils/date";
 import { isOccurrenceSchedule, itemSyncKey, taskSyncKey } from "./utils/taskMeta";
+import { CelebrationLayer } from "./components/CelebrationLayer";
+import { ParentConfirmDialog } from "./components/ParentHold";
+import { applyPracticePresetsOnce, homeworkCelebrations, markPointsDataReady, practiceCelebrations, type Celebration } from "./data/pointsService";
+import { supabase } from "./lib/supabase";
+import { taskShortName } from "./utils/taskMeta";
 import { archiveSidebarMemo, deleteSidebarMemoHistory, loadSidebarMemoState, restoreSidebarMemo, saveSidebarMemo, type MemoHistoryEntry, type SidebarMemoSetting } from "./data/appSettingsRepository";
 
 type Page = "today" | "month" | "tasks" | "stats" | "timetable" | "settings";
@@ -39,6 +44,9 @@ export default function App() {
   const [datePick, setDatePick] = useState<{ title: string; description?: string; initialDate: string; choices: DateChoice[]; note?: { label: string; initial?: string; placeholder?: string }; confirmText: string; onConfirm: (date: string, note: string) => Promise<void> } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [toast, setToast] = useState("");
+  // 积分庆祝队列（中档 / 大档，点一下关掉一个）与家长长按确认（补勾以前的日子）
+  const [celebrations, setCelebrations] = useState<Celebration[]>([]);
+  const [parentConfirm, setParentConfirm] = useState<{ title: string; detail?: string; resolve: (ok: boolean) => void } | null>(null);
   const [syncErrorToast, setSyncErrorToast] = useState("");
   const [cloudMode, setCloudModeState] = useState(false);
   const [cloudInitializing, setCloudInitializing] = useState(true);
@@ -56,6 +64,11 @@ export default function App() {
   const memoSaveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
 
   const refresh = () => setRefreshKey((value) => value + 1);
+  const celebrate = (items: Celebration[]) => { if (items.length) setCelebrations((current) => [...current, ...items.filter((item) => !current.some((existing) => existing.id === item.id))]); };
+  const askParent = (title: string, detail?: string) => new Promise<boolean>((resolve) => setParentConfirm({ title, detail, resolve }));
+  const mdLabel = (date: string) => `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日`;
+  /** 在以前的日子上补勾：要家长长按 2 秒确认（2026-11-24）；补勾不放庆祝 */
+  const confirmBackfill = (task: TaskDisplay, date: string) => askParent(`补记 ${mdLabel(date)}：${taskShortName(task)}`, "在以前的日子上补勾，需要家长确认。");
   const notify = (text: string) => { setToast(text); setTimeout(() => setToast(""), 2600); };
   // 失败提示独立于成功提示，展示更久，不会被后续操作的成功 toast 覆盖掉
   const notifyFailure = (text: string) => { setSyncErrorToast(text); setTimeout(() => setSyncErrorToast(""), 6000); };
@@ -182,15 +195,23 @@ export default function App() {
         setCloudModeState(true);
         setCloudSyncErrorHandler((msg) => notifyFailure(`⚠️ ${msg}，请检查网络`));
         // 从云端拉取最新数据到本地缓存
-        await cloudRepository.refreshFromCloud().catch((e) =>
-          console.warn("[App] 云端同步失败，降级到本地模式", e)
-        );
+        const pulled = await cloudRepository.refreshFromCloud().then(() => true, (e) => {
+          console.warn("[App] 云端同步失败，降级到本地模式", e);
+          return false;
+        });
+        // 积分：云端数据拉下来以后才结算上周、套用分值预设（没拉到时不做，免得拿不全的本地缓存结算）
+        if (pulled) {
+          markPointsDataReady();
+          await applyPracticePresetsOnce().catch((e) => console.warn("[App] 积分预设失败", e));
+        }
         refresh();
         // 进入云端模式后建立 Realtime 订阅，数据变更自动拉取并重渲染
         await startRealtimeSync(refresh);
       } else {
         // 登出：停订阅、退回本地模式，避免继续用失效的 familyId 读写
         stopRealtimeSync();
+        // 没配置云端的纯本地使用：本地就是全部数据，可以结算；配置了云端但没登录时本地是空的，不结算
+        if (!supabase) markPointsDataReady();
         setCloudMode(null);
         setCloudModeState(false);
         refresh();
@@ -235,11 +256,20 @@ export default function App() {
     asOfDate && asOfDate < todayKey() && !isOccurrenceSchedule(task) ? `已记为 ${Number(asOfDate.slice(5, 7))}/${Number(asOfDate.slice(8, 10))} 完成` : null;
   const changeStatus = async (task: TaskDisplay, status: TaskStatus, asOfDate?: string) => {
     const key = taskSyncKey(task);
+    const today = todayKey();
+    const backfill = status === "done" && !!asOfDate && asOfDate < today;
+    if (backfill && !(await confirmBackfill(task, asOfDate!))) { refresh(); return; }
+    const cheer = status === "done" && (asOfDate ?? today) === today;
+    const wasDone = task.status === "done";
     // 本地写完立刻刷新界面（进度条、还剩几项、行的位置都跟着变）；云端上传在后台继续，
     // 它的结果只影响"未同步"标记。勾选本身的反馈交给行内动画，成功不再弹提示，只有补记到过去日才说明记到了哪天。
     const backdated = status === "done" ? backdatedLabel(task, asOfDate) : null;
     try {
-      const result = await repo().setDisplayStatus(task, status, asOfDate, () => { refresh(); if (backdated) notify(backdated); });
+      const result = await repo().setDisplayStatus(task, status, asOfDate, () => {
+        refresh();
+        if (backdated) notify(backdated);
+        if (cheer) void homeworkCelebrations(task.id, wasDone, today).then(celebrate).catch(() => {});
+      });
       if (result.synced) clearUnsynced(setUnsyncedTasks, key);
       else { markUnsynced(setUnsyncedTasks, key); notifyFailure("⚠️ 未同步到云端，点击任务旁的标记可重试"); }
     } catch { refresh(); markUnsynced(setUnsyncedTasks, key); notifyFailure("⚠️ 保存失败，请检查网络"); }
@@ -249,8 +279,16 @@ export default function App() {
     // 目标状态按"界面上看到的"取反：历史日回放会把之后才勾的小项显示为未勾，点它是要补记为那天完成，不是取消
     const done = !task.checklistItems?.find((item) => item.id === itemId)?.done;
     const backdated = done ? backdatedLabel(task, asOfDate) : null;
+    const today = todayKey();
+    if (done && asOfDate && asOfDate < today && !(await confirmBackfill(task, asOfDate))) { refresh(); return; }
+    const cheer = done && (asOfDate ?? today) === today;
+    const wasDone = task.status === "done";
     try {
-      const result = await repo().toggleChecklistItem(task.id, itemId, task.occurrenceDate, { asOfDate, done }, () => { refresh(); if (backdated) notify(backdated); });
+      const result = await repo().toggleChecklistItem(task.id, itemId, task.occurrenceDate, { asOfDate, done }, () => {
+        refresh();
+        if (backdated) notify(backdated);
+        if (cheer) void homeworkCelebrations(task.id, wasDone, today).then(celebrate).catch(() => {});
+      });
       if (result.synced) clearUnsynced(setUnsyncedItems, key);
       else { markUnsynced(setUnsyncedItems, key); notifyFailure("⚠️ 未同步到云端，点击小项旁的标记可重试"); }
     } catch { refresh(); markUnsynced(setUnsyncedItems, key); notifyFailure("⚠️ 保存失败，请检查网络"); }
@@ -266,8 +304,16 @@ export default function App() {
   // 每周几次：某天的数量加减（点哪天的圆点就记哪天，补记以前的日子同样走这里）；同步失败挂"未同步"标记，点它重试整条任务
   const logWeeklyTime = async (task: TaskDisplay, delta: number, date: string) => {
     const key = taskSyncKey(task);
+    const today = todayKey();
+    // 以前的日子补记要家长确认；补记不放庆祝。当天记的：达标 / 攒到小红花时庆祝
+    if (delta > 0 && date < today && !(await confirmBackfill(task, date))) return;
+    const cheer = delta > 0 && date === today;
+    const priorLog = task.weeklyLog;
     try {
-      const synced = await repo().logWeeklyTime(task.id, date, delta, refresh);
+      const synced = await repo().logWeeklyTime(task.id, date, delta, () => {
+        refresh();
+        if (cheer) void practiceCelebrations(task.id, priorLog, today).then(celebrate).catch(() => {});
+      });
       if (synced) clearUnsynced(setUnsyncedTasks, key);
       else { markUnsynced(setUnsyncedTasks, key); notifyFailure("⚠️ 未同步到云端，点击任务旁的标记可重试"); }
     } catch { refresh(); notifyFailure("⚠️ 记录保存失败，请重试"); }
@@ -341,7 +387,7 @@ export default function App() {
     </aside>
     <header className="pt-safe sticky top-0 z-40 border-b border-ink/10 bg-paper/95 backdrop-blur-xl desk:hidden"><div className="flex h-14 items-center justify-between px-4"><button onClick={() => setPage("today")} className="flex items-center gap-2.5"><img src="/favicon.svg" alt="" className="h-8 w-8 rounded-lg" /><span className="text-left text-base font-bold">小步计划</span></button><div className="flex items-center gap-2">{!cloudInitializing && <span title={cloudMode ? "云端已连接" : "本地模式"} className={`h-2 w-2 rounded-full ${cloudMode ? "bg-emerald-500" : "bg-stone-300"}`} />}<button type="button" aria-label="设置" title="设置" onClick={() => setPage("settings")} className={`flex h-11 w-11 items-center justify-center rounded-lg border ${page === "settings" ? "border-primary/30 bg-primary/10 text-primary" : "border-ink/10 bg-white text-muted hover:text-primary"}`}><Settings className="h-5 w-5" /></button><button aria-label="添加任务" onClick={() => setForm({ open: true })} className="flex h-11 w-11 items-center justify-center rounded-lg bg-alert text-white"><Plus className="h-4 w-4" /></button></div></div></header>
     <div className="app-content">
-      {page === "today" && <DayPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenMonth={() => setPage("month")} onAddTask={() => setForm({ open: true })} {...actions} />}
+      {page === "today" && <DayPage date={selectedDate} refreshKey={refreshKey} onCelebrate={celebrate} onDateChange={setSelectedDate} onOpenMonth={() => setPage("month")} onAddTask={() => setForm({ open: true })} {...actions} />}
       {page === "month" && <MonthPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenDay={openDay} onAddTask={(date) => { setSelectedDate(date); setForm({ open: true }); }} />}
       {page === "tasks" && <TaskManagementPage refreshKey={refreshKey} onRefresh={refresh} notify={notify} onEdit={(task) => setForm({ open: true, task })} onDelete={deleteTask} onEnd={endTask} onExtend={extendTask} onCopy={copyTask} />}
       {page === "stats" && <StatsPage refreshKey={refreshKey} onOpenDay={openDay} />}
@@ -352,6 +398,8 @@ export default function App() {
     {form.open && <TaskForm key={form.round ?? 0} task={form.task} initialDate={selectedDate} carry={form.carry} justAdded={form.justAdded} onClose={() => setForm({ open: false })} onSave={saveTask} onContinue={(carry, savedTitle) => setForm((current) => ({ open: true, carry, justAdded: [...(current.justAdded ?? []), savedTitle], round: (current.round ?? 0) + 1 }))} />}
     {extendTarget && <ExtendRecurringDialog task={extendTarget} onClose={() => setExtendTarget(null)} onConfirm={confirmExtend} />}
     {datePick && <DatePickDialog {...datePick} onClose={() => setDatePick(null)} />}
+    {parentConfirm && <ParentConfirmDialog title={parentConfirm.title} detail={parentConfirm.detail} onResult={(ok) => { parentConfirm.resolve(ok); setParentConfirm(null); }} />}
+    <CelebrationLayer queue={celebrations} onDismiss={() => setCelebrations((current) => current.slice(1))} />
     {toast && <div className="toast-safe fixed bottom-24 left-1/2 z-[70] -translate-x-1/2 rounded-lg bg-ink px-5 py-2.5 text-sm text-white shadow-xl desk:bottom-8 desk:ml-[7.5rem]">{toast}</div>}
     {syncErrorToast && <div className="toast-safe-above fixed bottom-[8.5rem] left-1/2 z-[71] -translate-x-1/2 rounded-lg bg-sun px-5 py-2.5 text-sm font-medium text-ink shadow-xl desk:bottom-24 desk:ml-[7.5rem]">{syncErrorToast}</div>}
   </div>;

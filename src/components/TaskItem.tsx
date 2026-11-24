@@ -63,11 +63,13 @@ function UnsyncedBadge({ onRetry }: { onRetry?: () => void }) {
 
 type AnimState = "idle" | "checking" | "unchecking";
 
-/** 打勾得分弹窗周围散开的小圆点：[横向位移, 纵向位移, 颜色] */
-const POINT_SPARKS: [number, number, string][] = [
-  [-118, -34, "bg-sun"], [-104, 30, "bg-primary/60"], [-52, -62, "bg-alert/80"], [8, -70, "bg-primary"],
-  [64, -60, "bg-sun"], [118, -22, "bg-primary/60"], [100, 38, "bg-alert/80"], [-20, 62, "bg-sun"],
-];
+/** 打勾得分弹窗周围散开的小圆点：[横向位移, 纵向位移, 直径 px, 颜色]，14 颗大小不一绕一圈 */
+const POINT_SPARKS: [number, number, number, string][] = Array.from({ length: 14 }, (_, index) => {
+  const angle = (index / 14) * Math.PI * 2 + (index % 2 ? 0.18 : -0.1);
+  const distance = index % 3 === 0 ? 210 : index % 3 === 1 ? 165 : 130;
+  const colors = ["bg-sun", "bg-primary", "bg-alert", "bg-primary/60"];
+  return [Math.round(Math.cos(angle) * distance * 1.25), Math.round(Math.sin(angle) * distance * 0.8), index % 3 === 0 ? 14 : index % 3 === 1 ? 10 : 7, colors[index % 4]];
+});
 const DUE_TONE = { today: "bg-alert/10 text-alert", soon: "bg-amber-100 text-amber-800", normal: "bg-primary/10 text-primary" } as const;
 
 /** 写入结束后，界面数据仍未跟上乐观值时，多久之后放弃乐观值、如实显示库内状态 */
@@ -427,7 +429,7 @@ function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly:
     if (gain > 0) {
       const id = ++floatId.current;
       setFloats((current) => [...current, { id, gain }]);
-      setTimeout(() => setFloats((current) => current.filter((item) => item.id !== id)), 1600);
+      setTimeout(() => setFloats((current) => current.filter((item) => item.id !== id)), 1700);
     }
   };
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -438,16 +440,19 @@ function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly:
   return (
     <ol className="mt-1 flex items-center gap-1" aria-label="本周每天的记录">
       {lastFloat && createPortal(
-        <div className="pointer-events-none fixed inset-0 z-[70] flex items-center justify-center">
+        <div className="pointer-events-none fixed inset-0 z-[70] flex items-center justify-center overflow-hidden">
           <div key={lastFloat.id} role="status" aria-label={`加 ${lastFloat.gain} 分`} data-testid="points-float"
-            className="points-float relative flex items-baseline gap-1 rounded-full bg-white/90 px-7 py-3 text-primary shadow-[0_12px_32px_-12px_rgba(43,118,86,0.45)] ring-1 ring-primary/10 backdrop-blur-sm"
-            style={{ animation: "points-pop 1500ms cubic-bezier(.22,.8,.3,1) forwards" }}>
-            {POINT_SPARKS.map(([dx, dy, color], index) => (
-              <span key={index} aria-hidden="true" className={`absolute left-1/2 top-1/2 h-2 w-2 rounded-full ${color}`}
-                style={{ "--dx": `${dx}px`, "--dy": `${dy}px`, animation: `points-spark 750ms ease-out ${90 + index * 25}ms both` } as CSSProperties} />
+            className="points-float relative" style={{ animation: "points-pop 1600ms cubic-bezier(.22,.8,.3,1) forwards" }}>
+            {/* 小圆点和波纹垫在胶囊下面，从胶囊后面炸出来 */}
+            <span aria-hidden="true" className="absolute inset-0 rounded-full border-[3px] border-primary/40" style={{ animation: "points-ring 700ms ease-out 60ms both" }} />
+            {POINT_SPARKS.map(([dx, dy, size, color], index) => (
+              <span key={index} aria-hidden="true" className={`absolute left-1/2 top-1/2 rounded-full ${color}`}
+                style={{ width: size, height: size, "--dx": `${dx}px`, "--dy": `${dy}px`, animation: `points-spark 850ms cubic-bezier(.15,.7,.3,1) ${70 + (index % 5) * 30}ms both` } as CSSProperties} />
             ))}
-            <span aria-hidden="true" className="inline-block text-5xl font-medium leading-none tabular-nums tracking-tight" style={{ animation: "points-rise 520ms cubic-bezier(.2,.9,.3,1.25) 40ms both" }}>+{lastFloat.gain}</span>
-            <span aria-hidden="true" className="inline-block text-xl font-normal text-primary/60" style={{ animation: "points-rise 520ms cubic-bezier(.2,.9,.3,1.25) 150ms both" }}>分</span>
+            <div className="relative flex items-baseline gap-2 rounded-full bg-white/95 px-12 py-5 text-primary shadow-[0_20px_50px_-14px_rgba(43,118,86,0.5)] ring-1 ring-primary/10">
+              <span aria-hidden="true" className="inline-block text-[5.5rem] font-semibold leading-none tabular-nums tracking-tight" style={{ animation: "points-rise 620ms cubic-bezier(.2,.9,.3,1.45) 60ms both" }}>+{lastFloat.gain}</span>
+              <span aria-hidden="true" className="inline-block text-3xl font-medium text-primary/60" style={{ animation: "points-rise 620ms cubic-bezier(.2,.9,.3,1.45) 180ms both" }}>分</span>
+            </div>
           </div>
         </div>,
         document.body,

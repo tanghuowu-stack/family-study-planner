@@ -149,9 +149,9 @@ export function DayPage(props: Props) {
   const schoolToday = daily.filter((task) => task.mainCategory === "school");
   const schoolAllDone = isToday && schoolToday.length > 0 && schoolToday.every(isSettled);
   const moreText = isToday ? formatMoreToDo(moreToDoToday(weeklyTimes, props.date)) : "";
-  // docs/TASK_09_points.md §9.5："今天的作业都做完了。今天还可以做：钢琴 +2　背诗 +1　听写 +1"
+  // docs/TASK_09_points.md §9.5："今天的作业做完了，快去赚积分吧！今天还可以做：钢琴 +2　背诗 +1　听写 +1"
   const moreLine = schoolAllDone && pointsOn
-    ? <p data-testid="more-to-do" className="px-4 py-3 text-[15px] leading-6 text-ink"><span className="font-semibold text-primary">今天的作业都做完了。</span>{moreText ? <>今天还可以做：<span className="whitespace-pre-wrap">{moreText}</span></> : weeklyTimes.every(timesReached) ? "这周的练习也都达标了。" : "今天能做的练习也都做过了。"}</p>
+    ? <p data-testid="more-to-do" className="px-4 py-3 text-[15px] leading-6 text-ink">{moreText ? <><span className="font-semibold text-primary">今天的作业做完了，快去赚积分吧！</span>今天还可以做：<span className="whitespace-pre-wrap">{moreText}</span></> : <><span className="font-semibold text-primary">今天的作业都做完了。</span>{weeklyTimes.every(timesReached) ? "这周的练习也都达标了。" : "今天能做的练习也都做过了。"}</>}</p>
     : null;
   // 过去日期的补记（打勾或取消）只在 Mac 上有；iPad / 手机上过去日期的勾选框点不了（§7、§8）
   const parentDevice = isParentDevice();

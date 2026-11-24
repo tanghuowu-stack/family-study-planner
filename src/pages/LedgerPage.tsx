@@ -1,51 +1,93 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties } from "react";
+import {
+  ArrowDownToLine, ArrowUpFromLine, Award, BookOpen, ChevronDown, Ellipsis, Flag, Gift, PencilLine, PiggyBank, Puzzle, Receipt, Scale, TrendingUp, Utensils,
+} from "lucide-react";
 import { Sheet } from "../components/Sheet";
 import { loadPointsContext, settlePendingWeeks } from "../data/pointsService";
 import {
   addReconcileAdjustments, confirmTransfer, deleteLedgerEntry, loadLedgerContext, saveLedgerEntry, setMonthlyRate, setOpeningBalances, type LedgerContext,
 } from "../data/ledgerService";
-import { formatCompactDate, relativeDayLabel } from "../utils/date";
+import { formatCompactDate, formatLongDate } from "../utils/date";
 import { isParentDevice } from "../utils/device";
 import {
-  ACCOUNT_LABEL, activeEntries, canModifyEntry, EXPENSE_CATEGORIES, entryEffect, formatRate, formatYuan, LEDGER_TYPE_LABEL, monthLabel, parseYuan, rateForMonth,
-  reconcileDiff, type ExpenseCategory, type LedgerAccount, type LedgerEntry, type LedgerType,
+  ACCOUNT_LABEL, activeEntries, canModifyEntry, EXPENSE_CATEGORIES, entryEffect, formatRate, formatYuan, LEDGER_TYPE_LABEL, monthLabel, monthOf, monthSummary, parseYuan,
+  rateForMonth, reconcileDiff, type ExpenseCategory, type LedgerAccount, type LedgerEntry, type LedgerType, type MonthSummary,
 } from "../utils/ledger";
 
 /**
- * 记账页（TASK_10，docs/TASK_10_ledger.md）：零钱 / 存款余额、本月收支、待转账、记录列表、本月小结、和微信对账。
+ * 记账页（TASK_10，docs/TASK_10_ledger.md）。版式参照常见记账软件（2026-11-24 用户要求“更专业”）：
+ * 顶部总资产卡（零钱 + 存款）→ 本月收入 / 支出 / 结余 → 三个快捷记账按钮 → 待转账 →
+ * 按月分组的流水（每月表头带当月收支；过完的月份默认收起，点开再看）+ 右栏本月支出构成（环形图）与和微信对账。
  * 孩子（iPad）能记支出、存进存款、从存款取出，只能改删当天自己记的；家长（Mac）还能确认转账、设期初余额、对账调整、改利率。
  */
 
 const primaryButton = "min-h-11 rounded-lg bg-primary px-4 text-sm font-bold text-white disabled:opacity-40";
-const secondaryButton = "min-h-11 rounded-lg border border-ink/10 bg-white px-4 text-sm font-semibold text-ink hover:border-primary/40 disabled:opacity-40";
 const inputClass = "min-h-11 w-full rounded-lg border border-ink/15 bg-white px-3.5 text-base text-ink outline-none focus:border-primary";
 const labelClass = "block text-[13px] font-semibold text-muted";
 
-const signedYuan = (cents: number) => (cents > 0 ? `+${formatYuan(cents)}` : formatYuan(cents));
+type IconType = ComponentType<{ className?: string; strokeWidth?: number; style?: CSSProperties }>;
 
-/** 一条记录在列表里显示的金额：对零钱的变化；存进存款 / 利息这类只动存款的，显示存款的变化 */
-function displayEffect(entry: LedgerEntry): { cents: number; account: LedgerAccount } {
+/** 支出分类的图标和颜色（色值取自学科色点一系的柔和色，只用在 36px 圆形图标和构成图上） */
+export const CATEGORY_META: Record<ExpenseCategory, { icon: IconType; color: string }> = {
+  吃的: { icon: Utensils, color: "#E0883A" },
+  文具: { icon: PencilLine, color: "#5868C8" },
+  书: { icon: BookOpen, color: "#9364C7" },
+  玩具: { icon: Puzzle, color: "#D96A52" },
+  礼物: { icon: Gift, color: "#C9567D" },
+  其他: { icon: Ellipsis, color: "#8A948F" },
+};
+
+const TYPE_META: Record<Exclude<LedgerType, "expense">, { icon: IconType; color: string }> = {
+  allowance: { icon: Award, color: "#2B7656" },
+  interest: { icon: TrendingUp, color: "#2B7656" },
+  deposit: { icon: PiggyBank, color: "#3F8F86" },
+  withdraw: { icon: ArrowUpFromLine, color: "#3F8F86" },
+  opening: { icon: Flag, color: "#6E7772" },
+  adjust: { icon: Scale, color: "#6E7772" },
+};
+
+function entryMeta(entry: LedgerEntry) {
+  return entry.type === "expense" ? CATEGORY_META[entry.category ?? "其他"] : TYPE_META[entry.type];
+}
+
+/** 36px 圆形图标：浅色底 + 同色图标 */
+function EntryIcon({ icon: Icon, color, size = "h-9 w-9" }: { icon: IconType; color: string; size?: string }) {
+  return (
+    <span aria-hidden className={`flex shrink-0 items-center justify-center rounded-full ${size}`} style={{ backgroundColor: `${color}1A`, color }}>
+      <Icon className="h-[18px] w-[18px]" strokeWidth={2} />
+    </span>
+  );
+}
+
+/** 列表里显示的金额：变多带“+”、变少带“−”，收入用主色；存取款是自己账户之间挪，不带符号 */
+function amountDisplay(entry: LedgerEntry): { text: string; tone: string; note: string } {
+  if (entry.type === "deposit") return { text: formatYuan(entry.amountCents), tone: "text-ink", note: "零钱 → 存款" };
+  if (entry.type === "withdraw") return { text: formatYuan(entry.amountCents), tone: "text-ink", note: "存款 → 零钱" };
   const effect = entryEffect(entry);
-  if (entry.type === "deposit") return { cents: entry.amountCents, account: "savings" };
-  if (entry.type === "withdraw") return { cents: entry.amountCents, account: "cash" };
-  return effect.savings !== 0 && effect.cash === 0 ? { cents: effect.savings, account: "savings" } : { cents: effect.cash, account: "cash" };
+  const account: LedgerAccount = effect.savings !== 0 && effect.cash === 0 ? "savings" : "cash";
+  const cents = account === "savings" ? effect.savings : effect.cash;
+  // 绿色只给真正的收入（练习奖励、利息）；期初余额、对账调整不算收入，用正文色
+  const income = entry.type === "allowance" || entry.type === "interest";
+  return { text: cents > 0 ? `+${formatYuan(cents)}` : formatYuan(cents), tone: income ? "text-primary" : "text-ink", note: ACCOUNT_LABEL[account] };
 }
 
 function entryTitle(entry: LedgerEntry): string {
   if (entry.type === "expense") return entry.content || "支出";
-  if (entry.type === "adjust") return `对账调整（${ACCOUNT_LABEL[entry.account ?? "cash"]}）`;
-  if (entry.type === "opening") return `期初余额（${ACCOUNT_LABEL[entry.account ?? "cash"]}）`;
+  if (entry.type === "adjust") return `对账调整 · ${ACCOUNT_LABEL[entry.account ?? "cash"]}`;
+  if (entry.type === "opening") return `期初余额 · ${ACCOUNT_LABEL[entry.account ?? "cash"]}`;
   if (entry.type === "allowance") return entry.content || "练习奖励";
   return LEDGER_TYPE_LABEL[entry.type];
 }
 
 function entrySubtitle(entry: LedgerEntry): string | undefined {
-  if (entry.type === "expense") return entry.category;
-  if (entry.type === "interest") return entry.content;
-  if (entry.type === "adjust") return entry.content;
+  if (entry.type === "expense") return entry.category ?? "其他";
+  if (entry.type === "allowance") return "练习奖励";
+  if (entry.type === "interest" || entry.type === "adjust") return entry.content;
   if ((entry.type === "deposit" || entry.type === "withdraw") && entry.content) return entry.content;
   return undefined;
 }
+
+const yearMonthLabel = (month: string) => `${month.slice(0, 4)}年${Number(month.slice(5, 7))}月`;
 
 type Editor = { mode: "new"; type: LedgerType } | { mode: "edit"; entry: LedgerEntry };
 
@@ -53,7 +95,8 @@ export function LedgerPage({ refreshKey, onChanged, notify }: { refreshKey: numb
   const [ctx, setCtx] = useState<LedgerContext | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [dialog, setDialog] = useState<"opening" | "rate" | null>(null);
-  const [showAll, setShowAll] = useState(false);
+  // 每个月的流水展开 / 收起；没点过的按默认：这个月（及以后）展开，过完的月份收起
+  const [openMonths, setOpenMonths] = useState<Record<string, boolean>>({});
   const [busyTransfer, setBusyTransfer] = useState("");
   const parent = isParentDevice();
   const request = useRef(0);
@@ -69,23 +112,36 @@ export function LedgerPage({ refreshKey, onChanged, notify }: { refreshKey: numb
 
   const changed = (message?: string) => { if (message) notify(message); onChanged(); void reload(); };
 
-  const entries = useMemo(() => (ctx ? activeEntries(ctx.entries).sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)) : []), [ctx]);
-  const shown = showAll ? entries : entries.slice(0, 40);
-  const groups = useMemo(() => {
-    const map = new Map<string, LedgerEntry[]>();
-    shown.forEach((entry) => map.set(entry.date, [...(map.get(entry.date) ?? []), entry]));
-    return [...map.entries()];
-  }, [shown]);
+  const months = useMemo(() => {
+    if (!ctx) return [];
+    const sorted = activeEntries(ctx.entries).sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+    const byMonth = new Map<string, Map<string, LedgerEntry[]>>();
+    sorted.forEach((entry) => {
+      const days = byMonth.get(monthOf(entry.date)) ?? new Map<string, LedgerEntry[]>();
+      days.set(entry.date, [...(days.get(entry.date) ?? []), entry]);
+      byMonth.set(monthOf(entry.date), days);
+    });
+    return [...byMonth.entries()].map(([month, days]) => ({ month, days: [...days.entries()], count: [...days.values()].reduce((sum, items) => sum + items.length, 0), summary: monthSummary(ctx.entries, month) }));
+  }, [ctx]);
 
   if (!ctx) return <main className="mx-auto w-full max-w-5xl px-3 pb-content pt-3 sm:px-7 sm:pt-6 lg:px-10"><header className="page-header"><h1 className="page-title">记账</h1></header></main>;
 
   const { balances, month, projected, pending, today } = ctx;
-  const rateNow = rateForMonth(ctx.settings, today.slice(0, 7) < "2026-12" ? "2026-12" : today.slice(0, 7));
+  const currentMonth = monthOf(today);
+  const rateNow = rateForMonth(ctx.settings, currentMonth < "2026-12" ? "2026-12" : currentMonth);
+  const isOpen = (value: string) => openMonths[value] ?? value >= currentMonth;
+  const net = month.incomeCents - month.expenseCents;
 
   const transfer = async (id: string) => {
     setBusyTransfer(id);
     try { await confirmTransfer(id); changed("已入账"); } catch (error) { notify(error instanceof Error ? error.message : "入账失败，请重试"); } finally { setBusyTransfer(""); }
   };
+
+  const quick: { type: LedgerType; label: string; icon: IconType; color: string }[] = [
+    { type: "expense", label: "记一笔支出", icon: Receipt, color: "#E36B4E" },
+    { type: "deposit", label: "存进存款", icon: ArrowDownToLine, color: "#3F8F86" },
+    { type: "withdraw", label: "从存款取出", icon: ArrowUpFromLine, color: "#3F8F86" },
+  ];
 
   return (
     <main className="mx-auto w-full max-w-5xl px-3 pb-content pt-3 sm:px-7 sm:pt-6 lg:px-10">
@@ -97,98 +153,137 @@ export function LedgerPage({ refreshKey, onChanged, notify }: { refreshKey: numb
         </div>}
       </header>
 
-      {/* 顶部：零钱、存款、本月收入、本月支出 */}
-      <section aria-label="余额" className="surface grid grid-cols-2 md:grid-cols-4">
-        <div className="border-b border-r border-ink/[0.07] px-4 py-3.5 md:border-b-0">
-          <p className="text-[13px] font-semibold text-muted">零钱</p>
-          <p className="mt-0.5 text-[28px] font-bold leading-9 tabular-nums text-ink" data-testid="ledger-cash">{formatYuan(balances.cash)}<span className="ml-1 text-sm font-semibold text-muted">元</span></p>
-          <p className="text-[13px] text-muted">可以自由花（微信零钱）</p>
-        </div>
-        <div className="border-b border-ink/[0.07] px-4 py-3.5 md:border-b-0 md:border-r">
-          <p className="text-[13px] font-semibold text-muted">存款</p>
-          <p className="mt-0.5 text-[28px] font-bold leading-9 tabular-nums text-ink" data-testid="ledger-savings">{formatYuan(balances.savings)}<span className="ml-1 text-sm font-semibold text-muted">元</span></p>
-          <p className="text-[13px] leading-5 text-primary" data-testid="projected-interest">
-            {projected ? `这个月不取钱的话，下月 1 日能拿到 ${formatYuan(projected.cents)} 元利息` : "12 月起开始计息，每月 1 日发上个月的利息"}
-          </p>
-        </div>
-        <div className="border-r border-ink/[0.07] px-4 py-3.5">
-          <p className="text-[13px] font-semibold text-muted">{monthLabel(month.month)}收入</p>
-          <p className="mt-0.5 text-xl font-bold tabular-nums text-ink">{formatYuan(month.incomeCents)}<span className="ml-1 text-sm font-semibold text-muted">元</span></p>
-        </div>
-        <div className="px-4 py-3.5">
-          <p className="text-[13px] font-semibold text-muted">{monthLabel(month.month)}支出</p>
-          <p className="mt-0.5 text-xl font-bold tabular-nums text-ink">{formatYuan(month.expenseCents)}<span className="ml-1 text-sm font-semibold text-muted">元</span></p>
-        </div>
-      </section>
-
-      <div className="mt-4 grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
-        <button type="button" onClick={() => setEditor({ mode: "new", type: "expense" })} className="min-h-11 rounded-lg bg-alert px-4 text-sm font-bold text-white hover:bg-[#cf5b40]">记一笔支出</button>
-        <button type="button" onClick={() => setEditor({ mode: "new", type: "deposit" })} className={secondaryButton}>存进存款</button>
-        <button type="button" onClick={() => setEditor({ mode: "new", type: "withdraw" })} className={secondaryButton}>从存款取出</button>
-      </div>
-
-      {pending.length > 0 && (
-        <section aria-label="待转账" className="surface mt-4 border-sun/70">
-          <div className="flex items-center justify-between border-b border-ink/[0.07] bg-sun/15 px-4 py-2.5"><h2 className="text-base font-bold text-ink">待转账</h2><span className="text-[13px] text-muted">{parent ? "转好以后点“已转账”入账" : "妈妈转好后在 Mac 上点“已转账”，就会记上"}</span></div>
-          <ul className="divide-y divide-ink/[0.07]">
-            {pending.map((item) => (
-              <li key={item.id} className="flex items-center gap-3 px-4 py-3" data-testid="pending-transfer">
-                <div className="min-w-0 flex-1">
-                  <p className="text-[15px] font-semibold text-ink">{item.title}<span className="ml-2 text-[13px] font-normal text-muted">→ {item.type === "interest" ? "存款" : "零钱"}</span></p>
-                  {item.detail && <p className="text-[13px] text-muted">{item.detail}</p>}
-                </div>
-                <span className="shrink-0 text-base font-bold tabular-nums text-ink">{formatYuan(item.amountCents)} 元</span>
-                {parent ? <button type="button" disabled={busyTransfer === item.id} onClick={() => void transfer(item.id)} className={primaryButton}>已转账</button>
-                  : <span className="shrink-0 text-[13px] text-muted">等转账</span>}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
-        <section aria-label="记录" className="surface">
-          <div className="flex items-center justify-between border-b border-ink/10 px-4 py-3"><h2 className="text-base font-bold text-ink">记录</h2><span className="text-[13px] tabular-nums text-muted">{entries.length} 条</span></div>
-          {entries.length === 0 ? <p className="px-4 py-6 text-[15px] text-muted">还没有记录。{parent ? "可以先在右上角设好期初余额。" : ""}</p> : (
-            <div>
-              {groups.map(([date, items]) => (
-                <div key={date}>
-                  <p className="border-b border-ink/[0.07] bg-stone-50/70 px-4 py-1.5 text-[13px] font-semibold text-muted">{formatCompactDate(date)}{date === today ? " · 今天" : relativeDayLabel(date, today) === "昨天" ? " · 昨天" : ""}</p>
-                  <ul className="divide-y divide-ink/[0.07]">
-                    {items.map((entry) => {
-                      const effect = displayEffect(entry);
-                      const editable = canModifyEntry(entry, parent, today);
-                      const subtitle = entrySubtitle(entry);
-                      const body = (
-                        <>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[15px] font-semibold text-ink">{entryTitle(entry)}</span>
-                            {subtitle && <span className="block truncate text-[13px] text-muted">{subtitle}</span>}
-                          </span>
-                          <span className={`shrink-0 text-right text-base font-bold tabular-nums ${effect.cents > 0 && entry.type !== "deposit" && entry.type !== "withdraw" ? "text-primary" : "text-ink"}`}>
-                            {entry.type === "deposit" || entry.type === "withdraw" ? formatYuan(entry.amountCents) : signedYuan(effect.cents)}
-                            <span className="block text-[13px] font-normal text-muted">{entry.type === "deposit" ? "零钱 → 存款" : entry.type === "withdraw" ? "存款 → 零钱" : ACCOUNT_LABEL[effect.account]}</span>
-                          </span>
-                        </>
-                      );
-                      return (
-                        <li key={entry.id} data-testid="ledger-row">
-                          {editable
-                            ? <button type="button" onClick={() => setEditor({ mode: "edit", entry })} className="flex min-h-14 w-full items-center gap-3 px-4 py-2 text-left hover:bg-stone-50">{body}</button>
-                            : <div className="flex min-h-14 items-center gap-3 px-4 py-2">{body}</div>}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              ))}
-              {entries.length > shown.length && <button type="button" onClick={() => setShowAll(true)} className="min-h-11 w-full border-t border-ink/[0.07] text-sm font-semibold text-primary hover:bg-stone-50">显示全部 {entries.length} 条</button>}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+        <div className="min-w-0 space-y-4">
+          {/* 总资产卡：零钱 + 存款 */}
+          <section aria-label="余额" className="overflow-hidden rounded-lg bg-primary text-white shadow-sm">
+            <div className="px-5 pb-4 pt-5">
+              <p className="text-[13px] font-semibold text-white/70">总资产（元）</p>
+              <p className="mt-1 text-[34px] font-bold leading-10 tabular-nums tracking-tight" data-testid="ledger-total">{formatYuan(balances.cash + balances.savings)}</p>
             </div>
+            <div className="grid grid-cols-2 border-t border-white/15">
+              <div className="border-r border-white/15 px-5 py-3.5">
+                <p className="flex items-center gap-1.5 text-[13px] font-semibold text-white/70"><span aria-hidden className="h-2 w-2 rounded-full bg-white" />零钱 · 可以自由花</p>
+                <p className="mt-0.5 text-[22px] font-bold leading-8 tabular-nums" data-testid="ledger-cash">{formatYuan(balances.cash)}</p>
+              </div>
+              <div className="px-5 py-3.5">
+                <p className="flex items-center gap-1.5 text-[13px] font-semibold text-white/70"><span aria-hidden className="h-2 w-2 rounded-full bg-sun" />存款 · 零钱通</p>
+                <p className="mt-0.5 text-[22px] font-bold leading-8 tabular-nums" data-testid="ledger-savings">{formatYuan(balances.savings)}</p>
+              </div>
+            </div>
+            <p className="border-t border-white/15 bg-black/10 px-5 py-2.5 text-[13px] leading-5 text-white/90" data-testid="projected-interest">
+              {projected ? <>这个月不取钱的话，下月 1 日能拿到 <span className="font-bold tabular-nums text-sun">{formatYuan(projected.cents)}</span> 元利息</> : "每月 1 日结算上个月的利息"}
+            </p>
+          </section>
+
+          {/* 本月收入 / 支出 / 结余 */}
+          <section aria-label="本月收支" className="surface grid grid-cols-3 divide-x divide-ink/[0.07]">
+            {[
+              { label: `${monthLabel(month.month)}收入`, text: formatYuan(month.incomeCents), tone: "text-primary" },
+              { label: `${monthLabel(month.month)}支出`, text: formatYuan(month.expenseCents), tone: "text-ink" },
+              { label: `${monthLabel(month.month)}结余`, text: formatYuan(net), tone: net < 0 ? "text-alert" : "text-ink" },
+            ].map((item) => (
+              <div key={item.label} className="px-3 py-3 sm:px-4">
+                <p className="text-[13px] text-muted">{item.label}</p>
+                <p className={`mt-0.5 text-lg font-bold tabular-nums sm:text-xl ${item.tone}`}>{item.text}</p>
+              </div>
+            ))}
+          </section>
+
+          {/* 快捷记账 */}
+          <section aria-label="记一笔" className="surface grid grid-cols-3 divide-x divide-ink/[0.07]">
+            {quick.map((item) => (
+              <button key={item.type} type="button" onClick={() => setEditor({ mode: "new", type: item.type })} className="flex min-h-[76px] flex-col items-center justify-center gap-1.5 px-2 py-3 text-sm font-semibold text-ink hover:bg-stone-50">
+                <EntryIcon icon={item.icon} color={item.color} />
+                {item.label}
+              </button>
+            ))}
+          </section>
+
+          {pending.length > 0 && (
+            <section aria-label="待转账" className="surface border-sun/70">
+              <div className="flex items-center justify-between gap-3 border-b border-ink/[0.07] bg-sun/15 px-4 py-2.5"><h2 className="text-base font-bold text-ink">待转账</h2><span className="text-right text-[13px] text-muted">{parent ? "转好以后点“已转账”入账" : "妈妈转好后点“已转账”就会记上"}</span></div>
+              <ul className="divide-y divide-ink/[0.07]">
+                {pending.map((item) => (
+                  <li key={item.id} className="flex items-center gap-3 px-4 py-3" data-testid="pending-transfer">
+                    <EntryIcon icon={item.type === "interest" ? TrendingUp : Award} color="#2B7656" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[15px] font-semibold text-ink">{item.title}</p>
+                      <p className="truncate text-[13px] text-muted">{item.detail ?? "转到零钱"}</p>
+                    </div>
+                    <span className="shrink-0 text-base font-bold tabular-nums text-primary">+{formatYuan(item.amountCents)}</span>
+                    {parent ? <button type="button" disabled={busyTransfer === item.id} onClick={() => void transfer(item.id)} className={primaryButton}>已转账</button>
+                      : <span className="shrink-0 rounded-md bg-stone-100 px-2 py-1 text-[13px] text-muted">等转账</span>}
+                  </li>
+                ))}
+              </ul>
+            </section>
           )}
-        </section>
+
+          {/* 流水：按月分组，过完的月份默认收起 */}
+          <section aria-label="记录" className="surface overflow-hidden">
+            <div className="flex items-center justify-between border-b border-ink/10 px-4 py-3"><h2 className="text-base font-bold text-ink">流水</h2><span className="text-[13px] tabular-nums text-muted">{months.reduce((sum, item) => sum + item.count, 0)} 笔</span></div>
+            {months.length === 0 ? <p className="px-4 py-8 text-center text-[15px] text-muted">还没有记录。{parent ? "可以先在右上角设好期初余额。" : ""}</p> : months.map((group) => {
+              const open = isOpen(group.month);
+              return (
+                <div key={group.month} className="border-b border-ink/[0.07] last:border-b-0" data-testid="ledger-month">
+                  <button type="button" aria-expanded={open} onClick={() => setOpenMonths((current) => ({ ...current, [group.month]: !open }))}
+                    className="flex min-h-12 w-full items-center gap-3 bg-stone-50/80 px-4 py-2 text-left hover:bg-stone-100/70">
+                    <ChevronDown aria-hidden className={`h-4 w-4 shrink-0 text-muted transition-transform ${open ? "" : "-rotate-90"}`} />
+                    <span className="text-[15px] font-bold text-ink">{yearMonthLabel(group.month)}</span>
+                    {!open && <span className="text-[13px] text-muted">{group.count} 笔</span>}
+                    <span className="ml-auto flex shrink-0 gap-3 text-[13px] tabular-nums text-muted">
+                      <span>收入 <span className="font-semibold text-primary">{formatYuan(group.summary.incomeCents)}</span></span>
+                      <span>支出 <span className="font-semibold text-ink">{formatYuan(group.summary.expenseCents)}</span></span>
+                    </span>
+                  </button>
+                  {open && group.days.map(([date, items]) => {
+                    const dayExpense = items.filter((entry) => entry.type === "expense").reduce((sum, entry) => sum + entry.amountCents, 0);
+                    return (
+                      <div key={date}>
+                        <p className="flex items-center justify-between border-t border-ink/[0.05] px-4 pb-1 pt-2.5 text-[13px] text-muted">
+                          <span className="font-semibold">{formatLongDate(date).replace("星期", "周")}{date === today ? " · 今天" : ""}</span>
+                          {dayExpense > 0 && <span className="tabular-nums">支出 {formatYuan(dayExpense)}</span>}
+                        </p>
+                        <ul>
+                          {items.map((entry) => {
+                            const meta = entryMeta(entry);
+                            const amount = amountDisplay(entry);
+                            const subtitle = entrySubtitle(entry);
+                            const editable = canModifyEntry(entry, parent, today);
+                            const body = (
+                              <>
+                                <EntryIcon icon={meta.icon} color={meta.color} />
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-[15px] font-semibold text-ink">{entryTitle(entry)}</span>
+                                  {subtitle && <span className="block truncate text-[13px] text-muted">{subtitle}</span>}
+                                </span>
+                                <span className="shrink-0 text-right">
+                                  <span className={`block text-base font-bold tabular-nums ${amount.tone}`}>{amount.text}</span>
+                                  <span className="block text-[13px] text-muted">{amount.note}</span>
+                                </span>
+                              </>
+                            );
+                            return (
+                              <li key={entry.id} data-testid="ledger-row">
+                                {editable
+                                  ? <button type="button" onClick={() => setEditor({ mode: "edit", entry })} className="flex min-h-14 w-full items-center gap-3 px-4 py-2 text-left hover:bg-stone-50">{body}</button>
+                                  : <div className="flex min-h-14 items-center gap-3 px-4 py-2">{body}</div>}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </section>
+        </div>
 
         <div className="space-y-4">
-          <MonthSummaryCard ctx={ctx} />
+          <ExpenseBreakdown summary={month} />
           <ReconcileCard ctx={ctx} parent={parent} onDone={(count) => changed(`已生成 ${count} 条对账调整`)} />
         </div>
       </div>
@@ -200,25 +295,42 @@ export function LedgerPage({ refreshKey, onChanged, notify }: { refreshKey: numb
   );
 }
 
-function MonthSummaryCard({ ctx }: { ctx: LedgerContext }) {
-  const { month } = ctx;
-  const max = Math.max(1, ...month.byCategory.map((item) => item.cents));
+/** 本月支出构成：环形图 + 分类列表（图标、占比、金额） */
+function ExpenseBreakdown({ summary }: { summary: MonthSummary }) {
+  const total = summary.expenseCents;
+  const radius = 42;
+  const circumference = 2 * Math.PI * radius;
+  let offset = 0;
   return (
-    <section aria-label="本月小结" className="surface">
-      <div className="border-b border-ink/10 px-4 py-3"><h2 className="text-base font-bold text-ink">{monthLabel(month.month)}小结</h2></div>
-      <dl className="grid grid-cols-2 divide-x divide-ink/[0.07] border-b border-ink/[0.07]">
-        <div className="px-4 py-2.5"><dt className="text-[13px] text-muted">收入</dt><dd className="text-base font-bold tabular-nums text-primary">+{formatYuan(month.incomeCents)}</dd></div>
-        <div className="px-4 py-2.5"><dt className="text-[13px] text-muted">支出</dt><dd className="text-base font-bold tabular-nums text-ink">−{formatYuan(month.expenseCents)}</dd></div>
-      </dl>
-      {month.byCategory.length === 0 ? <p className="px-4 py-3 text-[13px] text-muted">这个月还没有支出。</p> : (
-        <ul className="space-y-2.5 px-4 py-3">
-          {month.byCategory.map((item) => (
-            <li key={item.category}>
-              <div className="flex items-baseline justify-between text-sm"><span className="text-ink">{item.category}</span><span className="font-semibold tabular-nums text-ink">{formatYuan(item.cents)} 元</span></div>
-              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-stone-200"><div className="h-full rounded-full bg-primary" style={{ width: `${(item.cents / max) * 100}%` }} /></div>
-            </li>
-          ))}
-        </ul>
+    <section aria-label="本月支出构成" className="surface">
+      <div className="border-b border-ink/10 px-4 py-3"><h2 className="text-base font-bold text-ink">{monthLabel(summary.month)}支出构成</h2></div>
+      {total === 0 ? <p className="px-4 py-6 text-center text-[13px] text-muted">这个月还没有支出。</p> : (
+        <div className="px-4 py-4">
+          <div className="relative mx-auto h-36 w-36">
+            <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90" aria-hidden>
+              <circle cx="50" cy="50" r={radius} fill="none" stroke="#EEECE7" strokeWidth="12" />
+              {summary.byCategory.map((item) => {
+                const length = (item.cents / total) * circumference;
+                const dash = <circle key={item.category} cx="50" cy="50" r={radius} fill="none" stroke={CATEGORY_META[item.category].color} strokeWidth="12" strokeDasharray={`${length} ${circumference - length}`} strokeDashoffset={-offset} />;
+                offset += length;
+                return dash;
+              })}
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-[13px] text-muted">支出</span>
+              <span className="text-lg font-bold tabular-nums text-ink">{formatYuan(total)}</span>
+            </div>
+          </div>
+          <ul className="mt-4 space-y-2.5">
+            {summary.byCategory.map((item) => (
+              <li key={item.category} className="flex items-center gap-3">
+                <EntryIcon icon={CATEGORY_META[item.category].icon} color={CATEGORY_META[item.category].color} size="h-8 w-8" />
+                <span className="min-w-0 flex-1 text-sm text-ink">{item.category}<span className="ml-2 text-[13px] tabular-nums text-muted">{Math.round((item.cents / total) * 100)}%</span></span>
+                <span className="shrink-0 text-sm font-semibold tabular-nums text-ink">{formatYuan(item.cents)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       <p className="border-t border-ink/[0.07] px-4 py-2 text-[13px] text-muted">收入 = 练习奖励 + 利息；存取款只是在零钱和存款之间挪。</p>
     </section>
@@ -319,7 +431,15 @@ function EntryDialog({ ctx, editor, parent, onClose, onSaved }: { ctx: LedgerCon
         {type === "expense" && <>
           <label className={labelClass}>买了什么<input value={content} maxLength={40} onChange={(event) => setContent(event.target.value)} placeholder="例如：买文具" className={`${inputClass} mt-1`} /></label>
           <fieldset><legend className={labelClass}>分类</legend>
-            <div className="mt-1 grid grid-cols-3 gap-1.5">{EXPENSE_CATEGORIES.map((item) => <button key={item} type="button" aria-pressed={category === item} onClick={() => setCategory(item)} className={`min-h-11 rounded-lg text-sm font-semibold ${category === item ? "bg-primary text-white" : "bg-white text-ink ring-1 ring-inset ring-ink/10"}`}>{item}</button>)}</div>
+            <div className="mt-1 grid grid-cols-3 gap-1.5">{EXPENSE_CATEGORIES.map((item) => {
+              const { icon: Icon, color } = CATEGORY_META[item];
+              const selected = category === item;
+              return <button key={item} type="button" aria-pressed={selected} onClick={() => setCategory(item)}
+                className={`flex min-h-12 items-center justify-center gap-1.5 rounded-lg text-sm font-semibold ${selected ? "text-ink" : "bg-white text-ink ring-1 ring-inset ring-ink/10 hover:bg-stone-50"}`}
+                style={selected ? { boxShadow: `inset 0 0 0 2px ${color}`, backgroundColor: `${color}14` } : undefined}>
+                <Icon className="h-4 w-4" strokeWidth={2} style={{ color }} />{item}
+              </button>;
+            })}</div>
           </fieldset>
         </>}
         {(type === "deposit" || type === "withdraw" || type === "allowance" || type === "interest") && <label className={labelClass}>备注（可以不写）<input value={content} maxLength={60} onChange={(event) => setContent(event.target.value)} className={`${inputClass} mt-1`} /></label>}

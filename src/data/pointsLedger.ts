@@ -66,11 +66,37 @@ export function updatePointsLedger(update: (current: PointsLedger) => PointsLedg
   return operation;
 }
 
-// ── 上线时按标题预设分值（只套一次）────────────────────────────────────────
+// ── 按显示名预设分值（只套一次）────────────────────────────────────────────
 
-export const PRACTICE_PRESET_FLAG_KEY = "practice_points_preset_v1";
+/**
+ * 第一版（practice_points_preset_v1）按标题完全相同匹配，线上钢琴（空标题）和小白欧（标题带页码）都没套上。
+ * 第二版换了键，所有设备会再套一次（见 pointsService.applyPracticePresetsOnce）。
+ */
+export const PRACTICE_PRESET_FLAG_KEY = "practice_points_preset_v2";
 
-export interface PresetResult { appliedAt: string; matched: { id: string; title: string; points: number; extraScores: boolean }[]; unmatchedPresets: string[]; unmatchedTasks: string[] }
+export interface PresetMatch {
+  id: string;
+  /** 显示名（空标题的用分类名） */
+  title: string;
+  /** 命中的预设项目 */
+  preset: string;
+  /** 套完以后任务上的分值 */
+  points: number;
+  extraScores: boolean;
+  /** applied = 这次写进了任务；same = 本来就是这个值；kept = 家长手动设过别的值，没覆盖 */
+  action: "applied" | "same" | "kept";
+}
+
+export interface PresetResult {
+  appliedAt: string;
+  matched: PresetMatch[];
+  /** 没有任何练习命中的预设项目 */
+  unmatchedPresets: string[];
+  /** 没命中任何预设的练习（显示名） */
+  unmatchedTasks: string[];
+  /** 同时命中两项以上、没有套的练习 */
+  ambiguousTasks?: string[];
+}
 
 export async function loadPresetResult(): Promise<PresetResult | null> {
   return loadJsonSetting<PresetResult>(PRACTICE_PRESET_FLAG_KEY);

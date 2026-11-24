@@ -99,21 +99,47 @@ describe("结算、预设、庆祝", () => {
     vi.setSystemTime(new Date("2026-11-25T10:00:00+08:00"));
   });
 
-  it("5. 按标题套预设：匹配上的写进任务，手动设过的不覆盖，匹配不到的列出来；只套一次", async () => {
-    const { task: piano } = await taskRepository.create(practice("钢琴练习"));
+  it("5. 按显示名套预设：空标题钢琴、带页码的小白欧都能套上；还是默认值的覆盖，家长手动设过别的不覆盖；匹配不到的列出来；只套一次", async () => {
+    const { task: piano } = await taskRepository.create(practice("")); // 兴趣班·钢琴练习，标题留空
+    const { task: xbo } = await taskRepository.create(practice("小白欧22页-23页", { subCategory: "otherInterest", practicePoints: 1, practiceExtraScores: true, weeklyQuota: { enabled: true, targetCount: 2, unit: "页", isWeeklyRecurring: true, allowAutoDistribute: false, allowRollover: false } }));
     const { task: raz } = await taskRepository.create(practice("RAZ 阅读", { weeklyQuota: { enabled: true, targetCount: 5, unit: "本", isWeeklyRecurring: true, allowAutoDistribute: false, allowRollover: false } }));
     const { task: manual } = await taskRepository.create(practice("FCE阅读", { practicePoints: 5, practiceExtraScores: false }));
+    const { task: poem } = await taskRepository.create(practice("我爱背诗", { practicePoints: 1, practiceExtraScores: true }));
     await taskRepository.create(practice("跳绳"));
+    await taskRepository.create(practice("FCE阅读和听力"));
     const result = await applyPracticePresetsOnce();
-    expect(result?.matched.map((item) => item.title).sort()).toEqual(["FCE阅读", "RAZ 阅读", "钢琴练习"]);
+    expect(result?.matched.map((item) => [item.title, item.preset, item.points, item.extraScores, item.action]).sort()).toEqual([
+      ["FCE阅读", "FCE阅读", 5, false, "kept"],
+      ["RAZ 阅读", "RAZ阅读", 1, false, "applied"],
+      ["小白欧22页-23页", "小白欧", 2, true, "applied"],
+      ["我爱背诗", "我爱背诗", 1, true, "same"],
+      ["钢琴练习", "钢琴练习", 2, true, "applied"],
+    ].sort());
     expect(result?.unmatchedTasks).toEqual(["跳绳"]);
-    expect(result?.unmatchedPresets.sort()).toEqual(["FCE听力", "FCE语用", "小白欧", "我爱背诗", "英语单词听写"].sort());
+    expect(result?.ambiguousTasks).toEqual(["FCE阅读和听力"]);
+    expect(result?.unmatchedPresets.sort()).toEqual(["FCE听力", "FCE语用", "英语单词听写"].sort());
     expect(await taskRepository.getTask(piano.id)).toMatchObject({ practicePoints: 2, practiceExtraScores: true });
+    expect(await taskRepository.getTask(xbo.id)).toMatchObject({ practicePoints: 2, practiceExtraScores: true });
     expect(await taskRepository.getTask(raz.id)).toMatchObject({ practicePoints: 1, practiceExtraScores: false });
     expect(await taskRepository.getTask(manual.id)).toMatchObject({ practicePoints: 5, practiceExtraScores: false });
-    await taskRepository.update(piano.id, { practicePoints: 3 });
+    expect(await taskRepository.getTask(poem.id)).toMatchObject({ practicePoints: 1, practiceExtraScores: true });
+    await taskRepository.update(piano.id, { practicePoints: 1 });
     await applyPracticePresetsOnce();
-    expect((await taskRepository.getTask(piano.id))?.practicePoints).toBe(3);
+    expect((await taskRepository.getTask(piano.id))?.practicePoints).toBe(1);
+  });
+
+  it("5b. 修好匹配后本周已打的勾按正确分值重算：钢琴 3 次、小白欧 3 页", async () => {
+    const piano = await taskRepository.create(practice("", { practicePoints: 1, practiceExtraScores: true, weeklyQuota: { enabled: true, targetCount: 4, unit: "次", isWeeklyRecurring: true, allowAutoDistribute: false, allowRollover: false }, weeklyLog: { "2026-11-23": 1, "2026-11-24": 1, "2026-11-25": 1 } }));
+    await taskRepository.create(practice("小白欧22页-23页", { subCategory: "otherInterest", weeklyQuota: { enabled: true, targetCount: 2, unit: "页", isWeeklyRecurring: true, allowAutoDistribute: false, allowRollover: false }, weeklyLog: { "2026-11-24": 3 } }));
+    const before = await loadPointsContext();
+    // 修复前：都按默认 1 分 → 钢琴 3，小白欧 2 + 达标 2 + 多做 1 = 5
+    expect(before.summary.weekPractice).toBe(8);
+    await applyPracticePresetsOnce();
+    const after = await loadPointsContext();
+    // 修复后：钢琴 3×2 = 6；小白欧 2×2 + 达标 2 + 多做 1×2 = 8
+    expect(after.summary.weekScores.map((item) => [item.title, item.total]).sort()).toEqual([["小白欧22页-23页", 8], ["钢琴练习", 6]]);
+    expect(after.summary.weekPractice).toBe(14);
+    expect(piano.task.id).toBeTruthy();
   });
 
   it("6. 某项本周达标只庆祝一次：取消再勾上不重复弹出", async () => {
@@ -121,7 +147,7 @@ describe("结算、预设、庆祝", () => {
     const prior = { "2026-11-23": 1, "2026-11-24": 1 };
     await taskRepository.writeWeeklyLog(task.id, "2026-11-25", 1);
     const first = await practiceCelebrations(task.id, prior);
-    expect(first.map((item) => item.title)).toEqual(["钢琴练习本周练够了！"]);
+    expect(first.map((item) => item.title)).toEqual(["钢琴本周练够了！"]);
     expect(first[0].detail).toBe("达标奖励 +2。再得 92 分就能换下一朵小红花");
     await taskRepository.writeWeeklyLog(task.id, "2026-11-25", -1);
     await taskRepository.writeWeeklyLog(task.id, "2026-11-25", 1);
@@ -146,7 +172,7 @@ describe("结算、预设、庆祝", () => {
     expect(await homeworkCelebrations(a.id, false)).toEqual([]);
     await taskRepository.setDisplayStatus(b, "done");
     const items = await homeworkCelebrations(b.id, false);
-    expect(items.map((item) => [item.title, item.detail])).toEqual([["哇，全完成了！", "你还可以再做：钢琴练习 +2"]]);
+    expect(items.map((item) => [item.title, item.detail])).toEqual([["哇，全完成了！", "你还可以再做：钢琴 +2"]]);
     expect(await homeworkCelebrations(b.id, false)).toEqual([]);
   });
 });

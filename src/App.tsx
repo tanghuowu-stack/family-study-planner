@@ -20,10 +20,9 @@ import type { Task, TaskDisplay, TaskDraft, TaskStatus } from "./types/task";
 import { fromDateKey, shouldReturnToToday, todayKey, toDateKey } from "./utils/date";
 import { isOccurrenceSchedule, itemSyncKey, taskSyncKey } from "./utils/taskMeta";
 import { CelebrationLayer } from "./components/CelebrationLayer";
-import { ParentConfirmDialog } from "./components/ParentHold";
 import { applyPracticePresetsOnce, homeworkCelebrations, markPointsDataReady, practiceCelebrations, type Celebration } from "./data/pointsService";
 import { supabase } from "./lib/supabase";
-import { taskShortName } from "./utils/taskMeta";
+import { isParentDevice } from "./utils/device";
 import { archiveSidebarMemo, deleteSidebarMemoHistory, loadSidebarMemoState, restoreSidebarMemo, saveSidebarMemo, type MemoHistoryEntry, type SidebarMemoSetting } from "./data/appSettingsRepository";
 
 type Page = "today" | "month" | "tasks" | "stats" | "timetable" | "settings";
@@ -44,9 +43,8 @@ export default function App() {
   const [datePick, setDatePick] = useState<{ title: string; description?: string; initialDate: string; choices: DateChoice[]; note?: { label: string; initial?: string; placeholder?: string }; confirmText: string; onConfirm: (date: string, note: string) => Promise<void> } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [toast, setToast] = useState("");
-  // 积分庆祝队列（中档 / 大档，点一下关掉一个）与家长长按确认（补勾以前的日子）
+  // 积分庆祝队列（中档 / 大档，点一下关掉一个）
   const [celebrations, setCelebrations] = useState<Celebration[]>([]);
-  const [parentConfirm, setParentConfirm] = useState<{ title: string; detail?: string; resolve: (ok: boolean) => void } | null>(null);
   const [syncErrorToast, setSyncErrorToast] = useState("");
   const [cloudMode, setCloudModeState] = useState(false);
   const [cloudInitializing, setCloudInitializing] = useState(true);
@@ -65,10 +63,11 @@ export default function App() {
 
   const refresh = () => setRefreshKey((value) => value + 1);
   const celebrate = (items: Celebration[]) => { if (items.length) setCelebrations((current) => [...current, ...items.filter((item) => !current.some((existing) => existing.id === item.id))]); };
-  const askParent = (title: string, detail?: string) => new Promise<boolean>((resolve) => setParentConfirm({ title, detail, resolve }));
-  const mdLabel = (date: string) => `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日`;
-  /** 在以前的日子上补勾：要家长长按 2 秒确认（2026-11-24）；补勾不放庆祝 */
-  const confirmBackfill = (task: TaskDisplay, date: string) => askParent(`补记 ${mdLabel(date)}：${taskShortName(task)}`, "在以前的日子上补勾，需要家长确认。");
+  /**
+   * 过去日期的补记（打勾或取消）只在 Mac 上有（docs/TASK_09_points.md §7、§8）：iPad / 手机上界面里过去日期的勾选框本来就点不了，
+   * 这里再拦一道。补记不放庆祝。
+   */
+  const blockedBackfill = (date: string | undefined) => !!date && date < todayKey() && !isParentDevice();
   const notify = (text: string) => { setToast(text); setTimeout(() => setToast(""), 2600); };
   // 失败提示独立于成功提示，展示更久，不会被后续操作的成功 toast 覆盖掉
   const notifyFailure = (text: string) => { setSyncErrorToast(text); setTimeout(() => setSyncErrorToast(""), 6000); };
@@ -257,8 +256,7 @@ export default function App() {
   const changeStatus = async (task: TaskDisplay, status: TaskStatus, asOfDate?: string) => {
     const key = taskSyncKey(task);
     const today = todayKey();
-    const backfill = status === "done" && !!asOfDate && asOfDate < today;
-    if (backfill && !(await confirmBackfill(task, asOfDate!))) { refresh(); return; }
+    if (blockedBackfill(asOfDate)) { refresh(); return; }
     const cheer = status === "done" && (asOfDate ?? today) === today;
     const wasDone = task.status === "done";
     // 本地写完立刻刷新界面（进度条、还剩几项、行的位置都跟着变）；云端上传在后台继续，
@@ -280,7 +278,7 @@ export default function App() {
     const done = !task.checklistItems?.find((item) => item.id === itemId)?.done;
     const backdated = done ? backdatedLabel(task, asOfDate) : null;
     const today = todayKey();
-    if (done && asOfDate && asOfDate < today && !(await confirmBackfill(task, asOfDate))) { refresh(); return; }
+    if (blockedBackfill(asOfDate)) { refresh(); return; }
     const cheer = done && (asOfDate ?? today) === today;
     const wasDone = task.status === "done";
     try {
@@ -305,8 +303,8 @@ export default function App() {
   const logWeeklyTime = async (task: TaskDisplay, delta: number, date: string) => {
     const key = taskSyncKey(task);
     const today = todayKey();
-    // 以前的日子补记要家长确认；补记不放庆祝。当天记的：达标 / 攒到小红花时庆祝
-    if (delta > 0 && date < today && !(await confirmBackfill(task, date))) return;
+    // 以前的日子补记只在 Mac 上；补记不放庆祝。当天记的：达标 / 攒到小红花时庆祝
+    if (blockedBackfill(date)) { refresh(); return; }
     const cheer = delta > 0 && date === today;
     const priorLog = task.weeklyLog;
     try {
@@ -398,7 +396,6 @@ export default function App() {
     {form.open && <TaskForm key={form.round ?? 0} task={form.task} initialDate={selectedDate} carry={form.carry} justAdded={form.justAdded} onClose={() => setForm({ open: false })} onSave={saveTask} onContinue={(carry, savedTitle) => setForm((current) => ({ open: true, carry, justAdded: [...(current.justAdded ?? []), savedTitle], round: (current.round ?? 0) + 1 }))} />}
     {extendTarget && <ExtendRecurringDialog task={extendTarget} onClose={() => setExtendTarget(null)} onConfirm={confirmExtend} />}
     {datePick && <DatePickDialog {...datePick} onClose={() => setDatePick(null)} />}
-    {parentConfirm && <ParentConfirmDialog title={parentConfirm.title} detail={parentConfirm.detail} onResult={(ok) => { parentConfirm.resolve(ok); setParentConfirm(null); }} />}
     <CelebrationLayer queue={celebrations} onDismiss={() => setCelebrations((current) => current.slice(1))} />
     {toast && <div className="toast-safe fixed bottom-24 left-1/2 z-[70] -translate-x-1/2 rounded-lg bg-ink px-5 py-2.5 text-sm text-white shadow-xl desk:bottom-8 desk:ml-[7.5rem]">{toast}</div>}
     {syncErrorToast && <div className="toast-safe-above fixed bottom-[8.5rem] left-1/2 z-[71] -translate-x-1/2 rounded-lg bg-sun px-5 py-2.5 text-sm font-medium text-ink shadow-xl desk:bottom-24 desk:ml-[7.5rem]">{syncErrorToast}</div>}

@@ -3,7 +3,7 @@
  * 不保存可修改的总分（R1 权威源）。需要单独保存的东西（家长奖励、愿望、已庆祝、每周结算快照……）
  * 存在 app_settings 的 `points_ledger_v1`，读写见 data/pointsLedger.ts。
  *
- * 规则（用户 2026-11-24 定，写死在这里，不做成设置）：
+ * 规则唯一依据是 docs/TASK_09_points.md（下面是摘要，不一致时以那个文件为准；写死在代码里，不做成设置）：
  * - 只有今日页右栏"每周练习"（timeType = weeklyTimes）计分；学校作业、本周作业、提醒、休闲、旅游都不计分。
  * - 积分从 2026-11-23（周一）这一周开始，之前的周不补算。
  * - 每项练习有两个设置（存在任务上，metadata jsonb）：每次分值 practicePoints（默认 1）、
@@ -22,6 +22,7 @@ import { addDays } from "date-fns";
 import type { Task } from "../types/task";
 import { fromDateKey, getWeekStartKey, toDateKey, toLocalDateKey } from "./date";
 import { weeklyTimesActiveIn } from "./weeklyTimes";
+import { taskShortName } from "./taskMeta";
 
 export const POINTS_START_WEEK = "2026-11-23";
 export const POINTS_PER_FLOWER = 100;
@@ -31,26 +32,52 @@ export const DEFAULT_PRACTICE_EXTRA_SCORES = true;
 export const PRACTICE_POINTS_MAX = 20;
 
 /**
- * 上线时按标题给现有练习预设的分值（用户 2026-11-24 给的表）。只在第一次打开时套一次（applyPracticePresets），
- * 标题去掉空格、不分大小写后完全相同才算匹配，匹配不到的不猜。
+ * 各项练习的分值预设（docs/TASK_09_points.md §3）。
+ *
+ * 2026-11-24 第二版匹配：第一版要求标题去空格后完全相同，线上没套上——
+ * 钢琴练习是"兴趣班·钢琴练习"、标题留空（界面显示的是分类名），小白欧的标题带页码"小白欧22页-23页"。
+ * 现在按"显示名"（taskShortName：标题，空标题用分类名）找关键词；同时命中两项以上的不猜，列出来。
+ * short 是提示里用的短名（"钢琴 +2　背诗 +1　听写 +1"）。
  */
-export const PRACTICE_PRESETS: { title: string; points: number; extraScores: boolean }[] = [
-  { title: "钢琴练习", points: 2, extraScores: true },
-  { title: "我爱背诗", points: 1, extraScores: true },
-  { title: "英语单词听写", points: 1, extraScores: true },
-  { title: "RAZ阅读", points: 1, extraScores: false },
-  { title: "FCE语用", points: 1, extraScores: false },
-  { title: "FCE阅读", points: 2, extraScores: true },
-  { title: "FCE听力", points: 1, extraScores: true },
-  { title: "小白欧", points: 2, extraScores: true },
+export interface PracticePreset { title: string; short: string; points: number; extraScores: boolean; match: RegExp; exclude?: RegExp }
+
+export const PRACTICE_PRESETS: PracticePreset[] = [
+  { title: "钢琴练习", short: "钢琴", points: 2, extraScores: true, match: /钢琴|练琴/ },
+  { title: "我爱背诗", short: "背诗", points: 1, extraScores: true, match: /背诗/ },
+  { title: "英语单词听写", short: "听写", points: 1, extraScores: true, match: /听写/, exclude: /语文|中文|汉字|生字/ },
+  { title: "RAZ阅读", short: "RAZ", points: 1, extraScores: false, match: /RAZ/ },
+  { title: "FCE语用", short: "FCE语用", points: 1, extraScores: false, match: /语用/ },
+  { title: "FCE阅读", short: "FCE阅读", points: 2, extraScores: true, match: /FCE.*(阅读|READING)/ },
+  { title: "FCE听力", short: "FCE听力", points: 1, extraScores: true, match: /FCE.*(听力|LISTENING)/ },
+  { title: "小白欧", short: "小白欧", points: 2, extraScores: true, match: /小白欧/ },
 ];
 
 export const normalizePresetTitle = (title: string) => title.replace(/\s+/g, "").toUpperCase();
 
-export function findPracticePreset(title: string) {
-  const key = normalizePresetTitle(title);
-  return PRACTICE_PRESETS.find((preset) => normalizePresetTitle(preset.title) === key);
+type NamedTask = { title: string; mainCategory?: Task["mainCategory"]; subCategory?: string };
+
+/** 练习的显示名：标题；空标题的兴趣班 / 课外阅读用分类名（与 taskShortName 一致） */
+export function practiceDisplayName(task: NamedTask): string {
+  const title = task.title.trim();
+  if (title || !task.mainCategory) return title;
+  return taskShortName({ mainCategory: task.mainCategory, subCategory: task.subCategory ?? "", title });
 }
+
+/** 显示名命中的所有预设（0 个 = 没匹配上，2 个以上 = 拿不准） */
+export function matchPracticePresets(task: NamedTask | string): PracticePreset[] {
+  const key = normalizePresetTitle(typeof task === "string" ? task : practiceDisplayName(task));
+  if (!key) return [];
+  return PRACTICE_PRESETS.filter((preset) => preset.match.test(key) && !preset.exclude?.test(key));
+}
+
+/** 唯一命中的预设；没命中或命中多项返回 undefined */
+export function findPracticePreset(task: NamedTask | string): PracticePreset | undefined {
+  const found = matchPracticePresets(task);
+  return found.length === 1 ? found[0] : undefined;
+}
+
+/** 提示里用的短名："钢琴""背诗""小白欧"；没匹配上预设的用显示名 */
+export const practiceShortName = (task: NamedTask) => findPracticePreset(task)?.short ?? practiceDisplayName(task);
 
 export interface PracticeSettings { points: number; extraScores: boolean }
 
@@ -59,7 +86,17 @@ export function practiceSettingsOf(task: Pick<Task, "practicePoints" | "practice
   return { points, extraScores: task.practiceExtraScores ?? DEFAULT_PRACTICE_EXTRA_SCORES };
 }
 
-type PracticeTask = Pick<Task, "id" | "title" | "weeklyQuota" | "weeklyLog">;
+/**
+ * 编辑 / 新建任务时显示和保存的分值：任务上设过的用设过的；没设过的按显示名套预设（例如新建一条"小白欧24页-25页"
+ * 自动是每页 2 分）；都没有就是默认的 1 分、多做计分。
+ */
+export function practiceSettingsForForm(task: NamedTask & Pick<Task, "practicePoints" | "practiceExtraScores">): PracticeSettings {
+  if (task.practicePoints !== undefined || task.practiceExtraScores !== undefined) return practiceSettingsOf(task);
+  const preset = findPracticePreset(task);
+  return preset ? { points: preset.points, extraScores: preset.extraScores } : practiceSettingsOf(task);
+}
+
+type PracticeTask = Pick<Task, "id" | "title" | "weeklyQuota" | "weeklyLog"> & Partial<Pick<Task, "mainCategory" | "subCategory">>;
 
 /** 一项练习一周的得分明细 */
 export interface PracticeWeekScore {
@@ -104,7 +141,7 @@ export function scorePracticeWeek(task: PracticeTask & Partial<Pick<Task, "pract
   const target = frozen?.target ?? Math.max(1, task.weeklyQuota?.targetCount ?? 1);
   const settings = frozen ? { points: frozen.points, extraScores: frozen.extraScores } : practiceSettingsOf(task);
   const count = weekDays(weekStart).reduce((sum, day) => sum + countedOnDay(task.weeklyLog?.[day] ?? 0, unit), 0);
-  return { taskId: task.id, title: task.title, unit, target, ...settings, count, ...scoreFromCount(count, target, settings) };
+  return { taskId: task.id, title: practiceDisplayName(task), unit, target, ...settings, count, ...scoreFromCount(count, target, settings) };
 }
 
 const hasLogIn = (task: PracticeTask, weekStart: string) => weekDays(weekStart).some((day) => (task.weeklyLog?.[day] ?? 0) > 0);
@@ -323,13 +360,15 @@ export function computePointsSummary(tasks: Task[], ledger: PointsLedger, today:
 
 // ── 今天还可以再做什么 ───────────────────────────────────────────────────
 
-export interface MoreToDo { taskId: string; title: string; gain: number; reachesTarget: boolean; unit: string }
+export interface MoreToDo { taskId: string; title: string; name: string; gain: number; reachesTarget: boolean; unit: string }
+
+type MoreToDoTask = Pick<Task, "id" | "title" | "weeklyQuota" | "weeklyLog" | "practicePoints" | "practiceExtraScores" | "endDate"> & Partial<Pick<Task, "mainCategory" | "subCategory">>;
 
 /**
  * 今天还能做、且本周还没达标的练习，以及再做一次能得几分（离达标只差一次的含 +2）。
  * "次"的练习今天已经记过就不算"还能做"。
  */
-export function moreToDoToday(tasks: Pick<Task, "id" | "title" | "weeklyQuota" | "weeklyLog" | "practicePoints" | "practiceExtraScores" | "endDate">[], today: string): MoreToDo[] {
+export function moreToDoToday(tasks: MoreToDoTask[], today: string): MoreToDo[] {
   const weekStart = getWeekStartKey(today);
   return tasks.flatMap((task) => {
     if (task.endDate && task.endDate < today) return [];
@@ -337,13 +376,13 @@ export function moreToDoToday(tasks: Pick<Task, "id" | "title" | "weeklyQuota" |
     if (score.reached) return [];
     if (score.unit === "次" && (task.weeklyLog?.[today] ?? 0) > 0) return [];
     const next = scoreFromCount(score.count + 1, score.target, score);
-    return [{ taskId: task.id, title: task.title, gain: next.total - score.total, reachesTarget: next.reached, unit: score.unit }];
+    return [{ taskId: task.id, title: task.title, name: practiceShortName(task), gain: next.total - score.total, reachesTarget: next.reached, unit: score.unit }];
   });
 }
 
-/** "钢琴练习 +2 我爱背诗 +1"；差一次达标的写"钢琴练习再练 1 次 +4" */
+/** "钢琴 +2　背诗 +1　听写 +1"；差一次达标的写"钢琴再练 1 次 +4"（docs/TASK_09_points.md §9.5、§10） */
 export function formatMoreToDo(items: MoreToDo[]): string {
-  return items.map((item) => item.reachesTarget ? `${item.title}再${practiceVerb(item.title)} 1 ${item.unit} +${item.gain}` : `${item.title} +${item.gain}`).join("  ");
+  return items.map((item) => item.reachesTarget ? `${item.name}再${practiceVerb(item.name)} 1 ${item.unit} +${item.gain}` : `${item.name} +${item.gain}`).join("　");
 }
 
 /** 达标提示里的动词：钢琴"练"、阅读"读"，其余"做" */

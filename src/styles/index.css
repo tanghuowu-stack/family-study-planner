@@ -116,10 +116,12 @@ body::before {
   85% { opacity: 1; }
   100% { opacity: 0; transform: translate3d(var(--drift, 0px), 92vh, 0) rotate(var(--spin, 180deg)); }
 }
+/* 打勾得分飘字（docs/TASK_09_points.md §10）：1.5 秒，前面一大半停在那里看得清，最后淡出 */
 @keyframes points-float {
-  0% { opacity: 0; transform: translate(-50%, 4px); }
-  20% { opacity: 1; }
-  100% { opacity: 0; transform: translate(-50%, -22px); }
+  0% { opacity: 0; transform: translate(-50%, 6px) scale(0.9); }
+  12% { opacity: 1; transform: translate(-50%, -6px) scale(1.05); }
+  70% { opacity: 1; transform: translate(-50%, -14px) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -24px) scale(1); }
 }
 
 @media (prefers-reduced-motion: reduce) {

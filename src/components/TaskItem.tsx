@@ -18,7 +18,11 @@ interface Props {
     score?: { points: string; extra?: string };
     /** 记这一下能多得几分：今天打勾时圆点上方飘出"+2"（补记以前的日子不飘） */
     gainFor?: (date: string, delta: number) => number;
+    /** 能不能在过去的日子上补记（只有 Mac 上可以，docs/TASK_09_points.md §7） */
+    allowPast?: boolean;
   };
+  /** 勾选框、小项点不了（iPad / 手机上查看过去的日子：补记只在 Mac 上） */
+  readOnly?: boolean;
   /** 小项默认收起成一行"还有 N 项"，点开再勾（今日页"本周作业"：一周的事不必每天摊开全部小项） */
   collapseChecklist?: boolean;
   /** 截止标签（今日页"本周作业"里的"周五截止"、截止日当天的"今天截止"）：today 红、soon（明天）琥珀、其余主色 */
@@ -95,7 +99,7 @@ function ChecklistRing({ completed, total, done, label }: { completed: number; t
   );
 }
 
-export function TaskItem({ task, compact = false, viewDate, weekly, collapseChecklist, dueLabel, dragHandle, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onExtend, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onDayNoteSave, onRetrySync, onRetryItemSync, onCopy }: Props) {
+export function TaskItem({ task, compact = false, viewDate, readOnly = false, weekly, collapseChecklist, dueLabel, dragHandle, unsynced, unsyncedItemIds, onStatusChange, onEdit, onDelete, onEnd, onExtend, onOccurrenceCancel, onOccurrencePostpone, onChecklistToggle, onDayNoteSave, onRetrySync, onRetryItemSync, onCopy }: Props) {
   const [menu, setMenu] = useState(false);
   const [showEarlier, setShowEarlier] = useState(false);
   const [checklistOpen, setChecklistOpen] = useState(false);
@@ -220,7 +224,7 @@ export function TaskItem({ task, compact = false, viewDate, weekly, collapseChec
         <ChecklistRing completed={completedItems} total={displayItems.length} done={done} />
       ) : (
         // 视觉 28px，点击热区 44px（负外边距抵消，不改变行内排版）
-        <button aria-label={done ? "标记为未完成" : "标记为完成"} onClick={() => handleStatusChange(done ? "todo" : "done")} className="-m-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg">
+        <button aria-label={done ? "标记为未完成" : "标记为完成"} disabled={readOnly} onClick={() => handleStatusChange(done ? "todo" : "done")} className="-m-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg disabled:cursor-default">
           <span className={checkboxClass(checkState, done)}><Check className="h-4 w-4" strokeWidth={3} /></span>
         </button>
       )}
@@ -290,6 +294,7 @@ export function TaskItem({ task, compact = false, viewDate, weekly, collapseChec
               key={item.id}
               item={{ ...item, done: optimisticItemDone }}
               animState={itemAnim[item.id] ?? "idle"}
+              readOnly={readOnly}
               unsynced={unsyncedItemIds?.has(item.id)}
               onToggle={() => handleChecklistToggle(item.id, item.done)}
               onRetrySync={() => onRetryItemSync?.(item.id)}
@@ -367,9 +372,10 @@ export function TaskItem({ task, compact = false, viewDate, weekly, collapseChec
   );
 }
 
-function ChecklistRow({ item, animState, unsynced, onToggle, onRetrySync }: {
+function ChecklistRow({ item, animState, readOnly, unsynced, onToggle, onRetrySync }: {
   item: ChecklistItem;
   animState: AnimState;
+  readOnly?: boolean;
   unsynced?: boolean;
   onToggle: () => void;
   onRetrySync?: () => void;
@@ -377,7 +383,7 @@ function ChecklistRow({ item, animState, unsynced, onToggle, onRetrySync }: {
   return (
     <div className={`flex items-center gap-1 ${item.done ? "text-stone-400" : "text-stone-600"}`}>
       {/* 整行可点；触屏上行高 44px，鼠标设备保持紧凑 */}
-      <button type="button" role="checkbox" aria-checked={item.done} onClick={onToggle} className="flex min-h-8 min-w-0 flex-1 items-center gap-2.5 rounded-md px-1.5 py-1 text-left hover:bg-stone-100/70 [@media(pointer:coarse)]:min-h-11">
+      <button type="button" role="checkbox" aria-checked={item.done} disabled={readOnly} onClick={onToggle} className="flex min-h-8 min-w-0 flex-1 items-center gap-2.5 rounded-md px-1.5 py-1 text-left hover:bg-stone-100/70 disabled:cursor-default disabled:hover:bg-transparent [@media(pointer:coarse)]:min-h-11">
         <span className={checkboxClass(animState, item.done, "sm")}><Check className="h-3.5 w-3.5" strokeWidth={3} /></span>
         <span className={`min-w-0 flex-1 text-[15px] leading-6 ${item.done ? "line-through" : ""}`}>{item.title}</span>
       </button>
@@ -403,9 +409,10 @@ const WEEKDAY_SHORT = ["一", "二", "三", "四", "五", "六", "日"];
 function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly: NonNullable<Props["weekly"]>; viewDate?: string }) {
   const { progress, onLog } = weekly;
   const today = todayKey();
-  const loggable = (date: string) => date <= today && (!task.endDate || date <= task.endDate);
+  // 今天以后、任务结束以后的点不了；以前的日子只有 Mac 上能补记（iPad / 手机上只能记今天）
+  const loggable = (date: string) => date <= today && (weekly.allowPast !== false || date === today) && (!task.endDate || date <= task.endDate);
   const [editing, setEditing] = useState<string>();
-  // 今天打勾得分时圆点上方飘出"+2"，约 1 秒自己消失（不用点）
+  // 今天打勾得分时圆点上方飘出"+2 分"，字号够大，约 1.5 秒自己消失（不用点，docs/TASK_09_points.md §10）
   const [floats, setFloats] = useState<{ id: number; date: string; text: string }[]>([]);
   const floatId = useRef(0);
   const log = (date: string, delta: number) => {
@@ -413,8 +420,8 @@ function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly:
     onLog(date, delta);
     if (gain > 0) {
       const id = ++floatId.current;
-      setFloats((current) => [...current, { id, date, text: `+${gain}` }]);
-      setTimeout(() => setFloats((current) => current.filter((item) => item.id !== id)), 1100);
+      setFloats((current) => [...current, { id, date, text: `+${gain} 分` }]);
+      setTimeout(() => setFloats((current) => current.filter((item) => item.id !== id)), 1600);
     }
   };
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -449,7 +456,7 @@ function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly:
               {day.count > 1 ? day.count : day.count === 1 ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : WEEKDAY_SHORT[index]}
             </button>
             {floats.filter((item) => item.date === day.date).map((item) => (
-              <span key={item.id} aria-hidden className="pointer-events-none absolute -top-3 left-1/2 text-[13px] font-bold text-primary motion-reduce:hidden" style={{ animation: "points-float 1s ease-out forwards" }}>{item.text}</span>
+              <span key={item.id} role="status" data-testid="points-float" className="pointer-events-none absolute -top-4 left-1/2 z-20 whitespace-nowrap rounded-md bg-white/90 px-1.5 text-xl font-extrabold leading-7 text-primary shadow-sm" style={{ animation: "points-float 1500ms ease-out forwards" }}>{item.text}</span>
             ))}
             {editing === day.date && (
               <DayCountEditor label={`${name}做了几${progress.unit}`} initial={day.count} unit={progress.unit}

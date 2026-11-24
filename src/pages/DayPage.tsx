@@ -18,6 +18,7 @@ import { AllDoneCelebration } from "../components/AllDoneCelebration";
 import { ParentBonusRow, PointsBar, practiceScoreLabels } from "../components/PointsPanel";
 import { flowerCelebrations, loadPointsContext, settlePendingWeeks, type Celebration, type PointsContext } from "../data/pointsService";
 import { formatMoreToDo, gainForLog, moreToDoToday, POINTS_START_WEEK } from "../utils/points";
+import { isParentDevice } from "../utils/device";
 import { GroupHeading, NEUTRAL_DOT, SUBJECT_DOT } from "../components/GroupHeading";
 
 /** 刚完成的任务在原位停留多久再收进"已完成"（略长于 400ms 的勾选动画） */
@@ -142,6 +143,13 @@ export function DayPage(props: Props) {
   const schoolToday = daily.filter((task) => task.mainCategory === "school");
   const schoolAllDone = isToday && schoolToday.length > 0 && schoolToday.every(isSettled);
   const moreText = isToday ? formatMoreToDo(moreToDoToday(weeklyTimes, props.date)) : "";
+  // docs/TASK_09_points.md §9.5："今天的作业都做完了。今天还可以做：钢琴 +2　背诗 +1　听写 +1"
+  const moreLine = schoolAllDone && pointsOn
+    ? <p data-testid="more-to-do" className="px-4 py-3 text-[15px] leading-6 text-ink"><span className="font-semibold text-primary">今天的作业都做完了。</span>{moreText ? <>今天还可以做：<span className="whitespace-pre-wrap">{moreText}</span></> : weeklyTimes.every(timesReached) ? "这周的练习也都达标了。" : "今天能做的练习也都做过了。"}</p>
+    : null;
+  // 过去日期的补记（打勾或取消）只在 Mac 上有；iPad / 手机上过去日期的勾选框点不了（§7、§8）
+  const parentDevice = isParentDevice();
+  const pastLocked = !parentDevice && props.date < todayKey();
   const dueLabelFor = (task: TaskDisplay) =>
     task.timeType === "dateRange" && task.mainCategory !== "temporary" && task.endDate && !task.rolledFromDate && task.endDate >= props.date
       ? { text: weekPlanDueLabel(task.endDate, props.date), tone: weekPlanDueTone(task.endDate, props.date) }
@@ -152,7 +160,7 @@ export function DayPage(props: Props) {
     () => move(-1),  // right swipe → prev day
   );
   // 勾选动作带上本页的查看日：过去日补勾记为那天完成（数据层保证不晚于今天）
-  const rowProps = { compact: true, viewDate: props.date, onStatusChange: (task: TaskDisplay, status: TaskStatus) => props.onStatusChange(task, status, props.date), onEdit: props.onEdit, onDelete: props.onDelete, onEnd: props.onEnd, onExtend: props.onExtend, onOccurrenceCancel: props.onOccurrenceCancel, onOccurrencePostpone: props.onOccurrencePostpone, onChecklistToggle: (task: TaskDisplay, itemId: string) => props.onChecklistToggle(task, itemId, props.date), onDayNoteSave: (task: TaskDisplay, text: string) => props.onDayNoteSave(task, text, props.date), onCopy: props.onCopy };
+  const rowProps = { compact: true, viewDate: props.date, readOnly: pastLocked, onStatusChange: (task: TaskDisplay, status: TaskStatus) => props.onStatusChange(task, status, props.date), onEdit: props.onEdit, onDelete: props.onDelete, onEnd: props.onEnd, onExtend: props.onExtend, onOccurrenceCancel: props.onOccurrenceCancel, onOccurrencePostpone: props.onOccurrencePostpone, onChecklistToggle: (task: TaskDisplay, itemId: string) => props.onChecklistToggle(task, itemId, props.date), onDayNoteSave: (task: TaskDisplay, text: string) => props.onDayNoteSave(task, text, props.date), onCopy: props.onCopy };
   const annotation = getCalendarAnnotation(props.date);
   const annotationLabels = [...annotation.solarTerms, ...annotation.festivals];
   const [dateLabel, weekdayLabel] = formatFullDate(props.date).split(" ");
@@ -161,7 +169,7 @@ export function DayPage(props: Props) {
     key={dayTaskKey(task)}
     dragHandle={dragHandle}
     dueLabel={dueLabelFor(task)}
-    weekly={task.timeType === "weeklyTimes" ? { progress: weeklyTimesProgress(task, props.date), onLog: (date, delta) => props.onWeeklyLog(task, delta, date), score: pointsOn && weeklyTimesProgress(task, props.date).weekStart === points?.summary.weekStart ? practiceScoreLabels(scoreById.get(task.id)) : undefined, gainFor: pointsOn ? (date, delta) => gainForLog(task, date, delta) : undefined } : undefined}
+    weekly={task.timeType === "weeklyTimes" ? { progress: weeklyTimesProgress(task, props.date), onLog: (date, delta) => props.onWeeklyLog(task, delta, date), score: pointsOn && weeklyTimesProgress(task, props.date).weekStart === points?.summary.weekStart ? practiceScoreLabels(scoreById.get(task.id)) : undefined, gainFor: pointsOn ? (date, delta) => gainForLog(task, date, delta) : undefined, allowPast: parentDevice } : undefined}
     task={task}
     unsynced={props.unsyncedTasks?.has(taskSyncKey(task))}
     unsyncedItemIds={props.unsyncedItems && task.checklistItems ? new Set(task.checklistItems.filter((item) => props.unsyncedItems!.has(itemSyncKey(task.id, item.id))).map((item) => item.id)) : undefined}
@@ -188,14 +196,14 @@ export function DayPage(props: Props) {
         <section className="surface order-2 overflow-visible lg:order-none lg:flex-1">
           <div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">{isToday ? "今日任务" : "当日任务"}</h2><ProgressMeter completed={progress.completed} total={progress.total} />{progress.total > 0 && <span className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${remaining === 0 ? "text-primary" : "text-ink"}`}>{remaining === 0 ? "全部完成" : `还剩 ${remaining} 项`}</span>}</div>
           {pending.length > 0 && <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} onTaskReorder={reorderTasks} />}
-          {schoolAllDone && pointsOn && leftPending > 0
-            ? <p className={`px-4 py-3 text-[15px] leading-6 text-ink ${pending.length > 0 ? "border-t border-ink/[0.07]" : ""}`}><span className="font-semibold text-primary">学校作业都做完了</span>{moreText ? <>，还可以再做：<span className="whitespace-pre-wrap">{moreText}</span></> : weeklyTimes.every(timesReached) ? "，这周的练习也都达标了" : "，今天能做的练习也都做过了"}</p>
+          {moreLine && leftPending > 0
+            ? <div className={pending.length > 0 ? "border-t border-ink/[0.07]" : ""}>{moreLine}</div>
             : pending.length === 0 && weekPending.length > 0 && done.length > 0 && <p className="px-4 py-3 text-[15px] font-semibold text-primary">{isToday ? "今天" : "这一天"}的作业都做完了</p>}
           {weekPending.length > 0 && <div className={pending.length > 0 || done.length > 0 ? "border-t border-ink/[0.07]" : ""}>
             <GroupHeading label="本周作业" dot={NEUTRAL_DOT} count={weekPending.length} />
             <SortableTaskList tasks={weekPending} renderTask={renderTask} onReorder={reorderTasks} />
           </div>}
-          {leftPending === 0 && (isToday && allDone.length > 0 && overdueShown.length === 0 ? <AllDoneCelebration count={allDone.length} /> : allDone.length > 0 ? <p className="px-4 py-4 text-[15px] font-semibold text-primary">这一天的事都做完了</p> : <div className="p-3"><EmptyState compact /></div>)}
+          {leftPending === 0 && (isToday && allDone.length > 0 && overdueShown.length === 0 ? <>{<AllDoneCelebration count={allDone.length} />}{moreLine && moreText && <div className="border-t border-ink/[0.07]">{moreLine}</div>}</> : allDone.length > 0 ? <p className="px-4 py-4 text-[15px] font-semibold text-primary">这一天的事都做完了</p> : <div className="p-3"><EmptyState compact /></div>)}
         </section>
         {allDone.length > 0 && <section className="surface order-4 overflow-visible lg:order-none"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-3 py-2.5 text-left sm:px-4"><span className="flex items-center gap-2 text-base font-bold text-ink"><CheckCircle2 className="h-4 w-4 text-primary" />已完成 <span className="text-[13px] font-medium text-muted">{allDone.length}</span></span><ChevronDown className={`h-4 w-4 text-muted transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <div className="border-t border-ink/10">{allDone.map((task) => renderTask(task))}</div>}</section>}
       </div>

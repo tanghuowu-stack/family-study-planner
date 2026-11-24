@@ -7,8 +7,8 @@ process.env.TZ = "Asia/Shanghai";
 import { describe, expect, it } from "vitest";
 import type { Task, WeeklyQuota } from "../../types/task";
 import {
-  buildWeekSnapshot, computePointsSummary, emptyLedger, findPracticePreset, formatMoreToDo, gainForLog, isEarlyCompleted, moreToDoToday,
-  pendingEarlyItems, scorePracticeWeek, weeksNeedingSnapshot, type BonusEntry, type PointsLedger, type Wish,
+  buildWeekSnapshot, computePointsSummary, emptyLedger, findPracticePreset, formatMoreToDo, gainForLog, isEarlyCompleted, matchPracticePresets, moreToDoToday,
+  pendingEarlyItems, practiceDisplayName, practiceSettingsForForm, practiceShortName, scorePracticeWeek, weeksNeedingSnapshot, type BonusEntry, type PointsLedger, type Wish,
 } from "../points";
 import { mergeLedgers } from "../../data/pointsLedger";
 
@@ -197,7 +197,7 @@ describe("还可以再做 / 打勾能得几分", () => {
     ];
     const more = moreToDoToday(tasks, today);
     expect(more.map((item) => [item.title, item.gain, item.reachesTarget])).toEqual([["钢琴练习", 2, false], ["我爱背诗", 3, true]]);
-    expect(formatMoreToDo(more)).toBe("钢琴练习 +2  我爱背诗再背 1 次 +3");
+    expect(formatMoreToDo(more)).toBe("钢琴 +2　背诗再背 1 次 +3");
   });
   it("打勾能得的分：达标那一下含 +2；不计分的多做为 0", () => {
     const piano = practice("p", "钢琴练习", 2, "次", { [day(W1, 0)]: 1 }, { practicePoints: 2 });
@@ -207,12 +207,56 @@ describe("还可以再做 / 打勾能得几分", () => {
   });
 });
 
-describe("预设分值按标题匹配", () => {
-  it("去掉空格、不分大小写后完全相同才算", () => {
+describe("预设分值按显示名匹配（第二版，2026-11-24 线上钢琴 / 小白欧没套上后修正）", () => {
+  it("钢琴练习：标题留空的兴趣班·钢琴练习按分类名匹配；带别的字也能匹配", () => {
+    expect(findPracticePreset({ title: "", mainCategory: "interestClass", subCategory: "pianoPractice" })).toMatchObject({ title: "钢琴练习", points: 2, extraScores: true });
     expect(findPracticePreset("钢琴练习")?.points).toBe(2);
-    expect(findPracticePreset("raz 阅读")).toMatchObject({ points: 1, extraScores: false });
-    expect(findPracticePreset("钢琴")).toBeUndefined();
+    expect(findPracticePreset("钢琴")?.points).toBe(2);
+    expect(findPracticePreset("练琴 20 分钟")?.points).toBe(2);
+    expect(practiceDisplayName({ title: "", mainCategory: "interestClass", subCategory: "pianoPractice" })).toBe("钢琴练习");
+  });
+
+  it("小白欧：标题带页码也匹配，每页 2 分、多做计分", () => {
+    expect(findPracticePreset("小白欧22页-23页")).toMatchObject({ title: "小白欧", points: 2, extraScores: true });
+    expect(findPracticePreset("小白欧 24-25页")?.points).toBe(2);
     expect(findPracticePreset("小白鸥")).toBeUndefined();
+  });
+
+  it("其余各项；RAZ、FCE 语用多做不计分；听写不匹配语文听写", () => {
+    expect(findPracticePreset("我爱背诗")).toMatchObject({ points: 1, extraScores: true });
+    expect(findPracticePreset("英语单词听写")).toMatchObject({ points: 1, extraScores: true });
+    expect(findPracticePreset("单词听写")?.title).toBe("英语单词听写");
+    expect(findPracticePreset("语文听写")).toBeUndefined();
+    expect(findPracticePreset("raz 阅读")).toMatchObject({ title: "RAZ阅读", points: 1, extraScores: false });
+    expect(findPracticePreset("FCE语用")).toMatchObject({ points: 1, extraScores: false });
+    expect(findPracticePreset("FCE 阅读")).toMatchObject({ title: "FCE阅读", points: 2, extraScores: true });
+    expect(findPracticePreset("FCE听力")).toMatchObject({ title: "FCE听力", points: 1, extraScores: true });
+    expect(findPracticePreset("跳绳")).toBeUndefined();
+  });
+
+  it("同时命中两项的不猜", () => {
+    expect(matchPracticePresets("FCE阅读和听力").map((preset) => preset.title).sort()).toEqual(["FCE听力", "FCE阅读"]);
+    expect(findPracticePreset("FCE阅读和听力")).toBeUndefined();
+  });
+
+  it("提示里用短名：钢琴、背诗、听写、小白欧", () => {
+    expect(practiceShortName({ title: "", mainCategory: "interestClass", subCategory: "pianoPractice" })).toBe("钢琴");
+    expect(practiceShortName({ title: "我爱背诗" })).toBe("背诗");
+    expect(practiceShortName({ title: "英语单词听写" })).toBe("听写");
+    expect(practiceShortName({ title: "小白欧22页-23页" })).toBe("小白欧");
+    expect(practiceShortName({ title: "跳绳" })).toBe("跳绳");
+  });
+
+  it("编辑 / 新建表单：设过的用设过的，没设过的按显示名套预设，都没有用默认 1 分计分", () => {
+    expect(practiceSettingsForForm({ title: "小白欧24页-25页" })).toEqual({ points: 2, extraScores: true });
+    expect(practiceSettingsForForm({ title: "RAZ阅读" })).toEqual({ points: 1, extraScores: false });
+    expect(practiceSettingsForForm({ title: "钢琴练习", practicePoints: 3, practiceExtraScores: true })).toEqual({ points: 3, extraScores: true });
+    expect(practiceSettingsForForm({ title: "跳绳" })).toEqual({ points: 1, extraScores: true });
+  });
+
+  it("空标题的钢琴练习，得分明细里显示分类名", () => {
+    const piano = practice("p", "", 4, "次", { [day(W1, 0)]: 1 }, { practicePoints: 2 });
+    expect(scorePracticeWeek(piano, W1)).toMatchObject({ title: "钢琴练习", total: 2 });
   });
 });
 

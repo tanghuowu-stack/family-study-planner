@@ -4,14 +4,14 @@
 import { db } from "./db";
 import { getRepository } from "./repositoryProvider";
 import { taskRepository } from "./taskRepository";
-import { loadPointsLedger, loadPresetResult, savePresetResult, updatePointsLedger, type PresetResult } from "./pointsLedger";
+import { loadPointsLedger, loadPresetResult, savePresetResult, updatePointsLedger, type PresetMatch, type PresetResult } from "./pointsLedger";
 import type { Task } from "../types/task";
 import { getWeekStartKey, todayKey, toLocalDateKey } from "../utils/date";
 import { isWeekPlanTask } from "../utils/taskGrouping";
-import { taskShortName } from "../utils/taskMeta";
 import {
-  buildWeekSnapshot, computePointsSummary, findPracticePreset, flowersFor, formatMoreToDo, isEarlyCompleted, moreToDoToday,
-  practiceVerb, PRACTICE_PRESETS, scorePracticeWeek, weeksNeedingSnapshot, type PointsLedger, type PointsSummary, type Wish,
+  buildWeekSnapshot, computePointsSummary, DEFAULT_PRACTICE_EXTRA_SCORES, DEFAULT_PRACTICE_POINTS, flowersFor, formatMoreToDo, isEarlyCompleted,
+  matchPracticePresets, moreToDoToday, POINTS_START_WEEK, practiceDisplayName, practiceSettingsOf, practiceShortName, practiceVerb, PRACTICE_PRESETS,
+  scorePracticeWeek, weeksNeedingSnapshot, type PointsLedger, type PointsSummary, type Wish,
 } from "../utils/points";
 
 export interface PointsContext { tasks: Task[]; ledger: PointsLedger; summary: PointsSummary }
@@ -40,29 +40,46 @@ export async function settlePendingWeeks(context: PointsContext, today = todayKe
 }
 
 /**
- * 上线时按标题给现有每周练习设分值（只套一次，结果记在 app_settings，跨设备只做一次）。
- * 已经手动设过分值的任务不覆盖。返回这次（或以前那次）的匹配结果。
+ * 按显示名给现有每周练习套分值预设（docs/TASK_09_points.md §3）。只套一次，结果记在 app_settings，跨设备只做一次。
+ * - 没设过分值的，或者还是默认值（1 分、多做计分）的 → 套预设。第一版没匹配上时，新建 / 编辑保存会把默认 1 分
+ *   明确写进任务，所以"等于默认值"也当作没设过。
+ * - 家长手动设成别的值的 → 不覆盖（记为 kept）。
+ * - 同时命中两项以上的不猜，列在 ambiguousTasks。
+ * 返回这次（或以前那次）的结果。
  */
 export async function applyPracticePresetsOnce(): Promise<PresetResult | null> {
   if (!dataReady) return null;
   const existing = await loadPresetResult();
   if (existing) return existing;
-  const tasks = (await db.tasks.toArray()).filter((task) => task.timeType === "weeklyTimes" && !task.deletedAt && task.status !== "cancelled");
-  const matched: PresetResult["matched"] = [];
+  const tasks = (await db.tasks.toArray()).filter((task) => task.timeType === "weeklyTimes" && !task.deletedAt && task.status !== "cancelled" && task.mainCategory !== "readingPlan"
+    && (!task.endDate || task.endDate >= POINTS_START_WEEK));
+  const matched: PresetMatch[] = [];
+  const unmatchedTasks: string[] = [];
+  const ambiguousTasks: string[] = [];
   for (const task of tasks) {
-    const preset = findPracticePreset(task.title);
-    if (!preset) continue;
-    if (task.practicePoints === undefined && task.practiceExtraScores === undefined) {
+    const name = practiceDisplayName(task);
+    const hits = matchPracticePresets(task);
+    if (hits.length === 0) { unmatchedTasks.push(name); continue; }
+    if (hits.length > 1) { ambiguousTasks.push(name); continue; }
+    const preset = hits[0];
+    const pointsDefault = task.practicePoints === undefined || task.practicePoints === DEFAULT_PRACTICE_POINTS;
+    const extraDefault = task.practiceExtraScores === undefined || task.practiceExtraScores === DEFAULT_PRACTICE_EXTRA_SCORES;
+    const same = task.practicePoints === preset.points && task.practiceExtraScores === preset.extraScores;
+    let action: PresetMatch["action"] = same ? "same" : "kept";
+    if (!same && pointsDefault && extraDefault) {
       await getRepository().update(task.id, { practicePoints: preset.points, practiceExtraScores: preset.extraScores });
+      action = "applied";
     }
-    matched.push({ id: task.id, title: task.title, points: preset.points, extraScores: preset.extraScores });
+    const final = action === "kept" ? practiceSettingsOf(task) : { points: preset.points, extraScores: preset.extraScores };
+    matched.push({ id: task.id, title: name, preset: preset.title, points: final.points, extraScores: final.extraScores, action });
   }
-  const matchedTitles = new Set(matched.map((item) => findPracticePreset(item.title)?.title));
+  const hitPresets = new Set(matched.map((item) => item.preset));
   const result: PresetResult = {
     appliedAt: new Date().toISOString(),
     matched,
-    unmatchedPresets: PRACTICE_PRESETS.filter((preset) => !matchedTitles.has(preset.title)).map((preset) => preset.title),
-    unmatchedTasks: tasks.filter((task) => !findPracticePreset(task.title)).map((task) => task.title),
+    unmatchedPresets: PRACTICE_PRESETS.filter((preset) => !hitPresets.has(preset.title)).map((preset) => preset.title),
+    unmatchedTasks,
+    ambiguousTasks,
   };
   await savePresetResult(result);
   return result;
@@ -105,7 +122,7 @@ export async function practiceCelebrations(taskId: string, priorLog: Record<stri
   if (now.reached && !was.reached) {
     const key = `reach:${weekStart}:${taskId}`;
     keys.push(key);
-    const name = taskShortName(taskAfter);
+    const name = practiceShortName(taskAfter);
     result.push({ id: key, level: "medium", title: `${name}本周${practiceVerb(name)}够了！`, detail: `达标奖励 +2。再得 ${after.summary.toNextFlower} 分就能换下一朵小红花` });
   }
   for (let n = flowersFor(cumulativeBefore) + 1; n <= flowersFor(after.summary.cumulative); n += 1) keys.push(`flower:${n}`);

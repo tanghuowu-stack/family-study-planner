@@ -9,8 +9,8 @@ import type { Task } from "../types/task";
 import { getWeekStartKey, todayKey, toLocalDateKey } from "../utils/date";
 import { isWeekPlanTask } from "../utils/taskGrouping";
 import {
-  activeBonuses, buildWeekSnapshot, computePointsSummary, DEFAULT_PRACTICE_EXTRA_SCORES, DEFAULT_PRACTICE_POINTS, formatMoreToDo, isEarlyCompleted, isSettleTime,
-  matchPracticePresets, moreToDoToday, POINTS_START_WEEK, practiceDisplayName, practiceSettingsOf, practiceShortName, practiceVerb, PRACTICE_PRESETS,
+  activeBonuses, buildWeekSnapshot, computePointsSummary, DEFAULT_PRACTICE_EXTRA_SCORES, DEFAULT_PRACTICE_POINTS, isEarlyCompleted, isSettleTime,
+  matchPracticePresets, POINTS_START_WEEK, practiceDisplayName, practiceSettingsOf, practiceShortName, practiceVerb, PRACTICE_PRESETS,
   scorePracticeWeek, weeksNeedingSnapshot, type PointsLedger, type PointsSummary,
 } from "../utils/points";
 
@@ -133,12 +133,6 @@ export async function schoolHomeworkState(date: string): Promise<{ ids: string[]
   return { ids: tasks.map((task) => task.id), allDone: tasks.length > 0 && tasks.every((task) => task.status === "done" || task.status === "cancelled") };
 }
 
-/** "还可以再做：钢琴练习 +2 我爱背诗 +1"；没有可做的返回空串 */
-export async function moreToDoText(today = todayKey()): Promise<string> {
-  const practice = await taskRepository.getWeeklyTimes(today);
-  return formatMoreToDo(moreToDoToday(practice, today));
-}
-
 /**
  * 当天打勾（不是补记）之后：本周作业提前完成 → 中档；当天学校作业刚全部做完 → 中档。
  * "刚全部做完"：这一项是今天的学校作业、勾之前没完成、勾之后今天的学校作业全完成了（只有这一项变了，所以之前一定没全完成）。
@@ -152,8 +146,8 @@ export async function homeworkCelebrations(taskId: string, wasDone: boolean, tod
   }
   const school = await schoolHomeworkState(today);
   if (school.allDone && school.ids.includes(taskId)) {
-    const more = await moreToDoText(today);
-    result.push({ id: `school:${today}`, title: "哇，全完成了！", detail: more ? `你还可以再做：${more}` : undefined });
+    // 2026-11-24 用户：不再写"你还可以再做：…"，右栏每周练习就能看到
+    result.push({ id: `school:${today}`, title: "哇，全完成了！" });
   }
   const fresh = await claimCelebrations(result.map((item) => item.id));
   return result.filter((item) => fresh.has(item.id));

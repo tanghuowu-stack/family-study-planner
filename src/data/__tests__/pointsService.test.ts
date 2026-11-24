@@ -174,7 +174,7 @@ describe("结算、预设、庆祝", () => {
     expect(items.map((item) => [item.title, item.detail])).toEqual([["钢琴本周练够了！", "达标奖励 +2。本周已挣 108 元"]]);
   });
 
-  it("8. 当天学校作业全部做完 → 中档，带“还可以再做”；只看学校作业", async () => {
+  it("8. 当天学校作业全部做完 → 中档，不带“还可以再做”；只看学校作业", async () => {
     const school = (title: string): TaskDraft => ({ title, mainCategory: "school", subCategory: "chinese", timeType: "singleDate", date: "2026-11-25", status: "todo", rolloverMode: "autoNextDay", allowRollover: true, childVisible: true } as TaskDraft);
     const { task: a } = await taskRepository.create(school("语文家庭作业"));
     const { task: b } = await taskRepository.create(school("数学家庭作业"));
@@ -184,7 +184,7 @@ describe("结算、预设、庆祝", () => {
     expect(await homeworkCelebrations(a.id, false)).toEqual([]);
     await taskRepository.setDisplayStatus(b, "done");
     const items = await homeworkCelebrations(b.id, false);
-    expect(items.map((item) => [item.title, item.detail])).toEqual([["哇，全完成了！", "你还可以再做：钢琴 +2"]]);
+    expect(items.map((item) => [item.title, item.detail])).toEqual([["哇，全完成了！", undefined]]);
     expect(await homeworkCelebrations(b.id, false)).toEqual([]);
   });
 });

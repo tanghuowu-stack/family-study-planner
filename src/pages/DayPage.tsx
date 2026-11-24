@@ -1,5 +1,5 @@
 import { addDays } from "date-fns";
-import { CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, GripVertical, Plus } from "lucide-react";
+import { CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, GripVertical, Plus, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSwipe } from "../hooks/useSwipe";
 import { EmptyState } from "../components/EmptyState";
@@ -151,7 +151,7 @@ export function DayPage(props: Props) {
   const moreText = isToday ? formatMoreToDo(moreToDoToday(weeklyTimes, props.date)) : "";
   // docs/TASK_09_points.md §9.5：还有能做的练习时只写"今天的作业做完了，快去赚积分吧！"（能做哪些看右栏每周练习，不再列）
   const moreLine = schoolAllDone && pointsOn
-    ? <p data-testid="more-to-do" className="px-4 py-3 text-[15px] leading-6 text-ink">{moreText ? <span className="font-semibold text-primary">今天的作业做完了，快去赚积分吧！</span> : <><span className="font-semibold text-primary">今天的作业都做完了。</span>{weeklyTimes.every(timesReached) ? "这周的练习也都达标了。" : "今天能做的练习也都做过了。"}</>}</p>
+    ? <div className="px-3 py-3 sm:px-4"><p data-testid="more-to-do" className="flex items-center gap-2.5 rounded-lg bg-mint/70 px-3.5 py-3 text-[17px] font-bold leading-6 text-primary"><Sparkles aria-hidden className="h-5 w-5 shrink-0" strokeWidth={2.25} /><span>{moreText ? "今天的作业做完了，快去赚积分吧！" : <>今天的作业都做完了。<span className="font-medium text-ink">{weeklyTimes.every(timesReached) ? "这周的练习也都达标了。" : "今天能做的练习也都做过了。"}</span></>}</span></p></div>
     : null;
   // 过去日期的补记（打勾或取消）只在 Mac 上有；iPad / 手机上过去日期的勾选框点不了（§7、§8）
   const parentDevice = isParentDevice();

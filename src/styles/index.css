@@ -141,9 +141,10 @@ body::before {
 }
 
 @keyframes points-spark {
-  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.2); }
-  20% { opacity: 1; transform: translate(calc(-50% + var(--dx) * 0.45), calc(-50% + var(--dy) * 0.45)) scale(1.2); }
-  100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy) + 24px)) scale(0.6); }
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.2) rotate(0deg); }
+  18% { opacity: 1; transform: translate(calc(-50% + var(--dx) * 0.5), calc(-50% + var(--dy) * 0.5)) scale(1.15) rotate(calc(var(--spin) * 0.3)); }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy) + 60px)) scale(0.8) rotate(var(--spin)); }
 }
 
 @media (prefers-reduced-motion: reduce) {

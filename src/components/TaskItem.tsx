@@ -63,12 +63,27 @@ function UnsyncedBadge({ onRetry }: { onRetry?: () => void }) {
 
 type AnimState = "idle" | "checking" | "unchecking";
 
-/** 打勾得分弹窗周围散开的小圆点：[横向位移, 纵向位移, 直径 px, 颜色]，14 颗大小不一绕一圈 */
-const POINT_SPARKS: [number, number, number, string][] = Array.from({ length: 14 }, (_, index) => {
-  const angle = (index / 14) * Math.PI * 2 + (index % 2 ? 0.18 : -0.1);
-  const distance = index % 3 === 0 ? 210 : index % 3 === 1 ? 165 : 130;
-  const colors = ["bg-sun", "bg-primary", "bg-alert", "bg-primary/60"];
-  return [Math.round(Math.cos(angle) * distance * 1.25), Math.round(Math.sin(angle) * distance * 0.8), index % 3 === 0 ? 14 : index % 3 === 1 ? 10 : 7, colors[index % 4]];
+/**
+ * 打勾得分弹窗周围炸开的彩色散花（2026-11-24 用户要求颜色丰富些、散花大些）：
+ * 26 片，圆点 / 花瓣 / 彩条三种形状，12–24px，绕一圈往外飞再往下落着转着淡出。
+ */
+const SPARK_COLORS = ["#F4A3B5", "#FFB347", "#7FC8F8", "#B39DDB", "#EFC66A", "#E36B4E", "#2B7656", "#8BD3A8", "#FF8FA3"];
+const SPARK_RADIUS = ["9999px", "60% 0 60% 0", "4px"];
+const POINT_SPARKS = Array.from({ length: 26 }, (_, index) => {
+  const angle = (index / 26) * Math.PI * 2 + (index % 2 ? 0.12 : -0.08);
+  const distance = [300, 230, 170][index % 3];
+  const shape = index % 3;
+  const size = [24, 16, 20, 13, 22, 18, 12][index % 7];
+  return {
+    dx: Math.round(Math.cos(angle) * distance * 1.15),
+    dy: Math.round(Math.sin(angle) * distance * 0.8),
+    width: shape === 2 ? Math.round(size * 0.55) : size,
+    height: shape === 2 ? Math.round(size * 1.3) : size,
+    radius: SPARK_RADIUS[shape],
+    color: SPARK_COLORS[index % SPARK_COLORS.length],
+    spin: `${(index % 2 ? 1 : -1) * (180 + (index % 5) * 60)}deg`,
+    delay: 60 + (index % 6) * 25,
+  };
 });
 const DUE_TONE = { today: "bg-alert/10 text-alert", soon: "bg-amber-100 text-amber-800", normal: "bg-primary/10 text-primary" } as const;
 
@@ -420,7 +435,7 @@ function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly:
   // 今天以后、任务结束以后的点不了；以前的日子只有 Mac 上能补记（iPad / 手机上只能记今天）
   const loggable = (date: string) => date <= today && (weekly.allowPast !== false || date === today) && (!task.endDate || date <= task.endDate);
   const [editing, setEditing] = useState<string>();
-  // 今天打勾得分时屏幕正中弹出"+2 分"小胶囊：数字从下往上弹出、周围散几颗小圆点，约 1.5 秒上浮淡出（不用点，docs/TASK_09_points.md §10）
+  // 今天打勾得分时屏幕正中弹出"+2 分"小胶囊：数字从下往上弹出、后面炸开一圈彩色散花，约 1.6 秒上浮淡出（不用点，docs/TASK_09_points.md §10）
   const [floats, setFloats] = useState<{ id: number; gain: number }[]>([]);
   const floatId = useRef(0);
   const log = (date: string, delta: number) => {
@@ -429,7 +444,7 @@ function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly:
     if (gain > 0) {
       const id = ++floatId.current;
       setFloats((current) => [...current, { id, gain }]);
-      setTimeout(() => setFloats((current) => current.filter((item) => item.id !== id)), 1700);
+      setTimeout(() => setFloats((current) => current.filter((item) => item.id !== id)), 1800);
     }
   };
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -444,14 +459,14 @@ function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly:
           <div key={lastFloat.id} role="status" aria-label={`加 ${lastFloat.gain} 分`} data-testid="points-float"
             className="points-float relative" style={{ animation: "points-pop 1600ms cubic-bezier(.22,.8,.3,1) forwards" }}>
             {/* 小圆点和波纹垫在胶囊下面，从胶囊后面炸出来 */}
-            <span aria-hidden="true" className="absolute inset-0 rounded-full border-[3px] border-primary/40" style={{ animation: "points-ring 700ms ease-out 60ms both" }} />
-            {POINT_SPARKS.map(([dx, dy, size, color], index) => (
-              <span key={index} aria-hidden="true" className={`absolute left-1/2 top-1/2 rounded-full ${color}`}
-                style={{ width: size, height: size, "--dx": `${dx}px`, "--dy": `${dy}px`, animation: `points-spark 850ms cubic-bezier(.15,.7,.3,1) ${70 + (index % 5) * 30}ms both` } as CSSProperties} />
+            <span aria-hidden="true" className="absolute inset-0 rounded-full border-[3px] border-[#F4A3B5]/70" style={{ animation: "points-ring 700ms ease-out 60ms both" }} />
+            {POINT_SPARKS.map((spark, index) => (
+              <span key={index} aria-hidden="true" className="absolute left-1/2 top-1/2"
+                style={{ width: spark.width, height: spark.height, borderRadius: spark.radius, background: spark.color, "--dx": `${spark.dx}px`, "--dy": `${spark.dy}px`, "--spin": spark.spin, animation: `points-spark 1000ms cubic-bezier(.15,.7,.3,1) ${spark.delay}ms both` } as CSSProperties} />
             ))}
-            <div className="relative flex items-baseline gap-2 rounded-full bg-white/95 px-12 py-5 text-primary shadow-[0_20px_50px_-14px_rgba(43,118,86,0.5)] ring-1 ring-primary/10">
-              <span aria-hidden="true" className="inline-block text-[5.5rem] font-semibold leading-none tabular-nums tracking-tight" style={{ animation: "points-rise 620ms cubic-bezier(.2,.9,.3,1.45) 60ms both" }}>+{lastFloat.gain}</span>
-              <span aria-hidden="true" className="inline-block text-3xl font-medium text-primary/60" style={{ animation: "points-rise 620ms cubic-bezier(.2,.9,.3,1.45) 180ms both" }}>分</span>
+            <div className="relative flex items-baseline gap-1 rounded-full bg-white/95 px-7 py-3 text-primary shadow-[0_16px_40px_-12px_rgba(43,118,86,0.5)] ring-1 ring-primary/10">
+              <span aria-hidden="true" className="inline-block text-5xl font-medium leading-none tabular-nums tracking-tight" style={{ animation: "points-rise 620ms cubic-bezier(.2,.9,.3,1.45) 60ms both" }}>+{lastFloat.gain}</span>
+              <span aria-hidden="true" className="inline-block text-xl font-normal text-primary/60" style={{ animation: "points-rise 620ms cubic-bezier(.2,.9,.3,1.45) 180ms both" }}>分</span>
             </div>
           </div>
         </div>,

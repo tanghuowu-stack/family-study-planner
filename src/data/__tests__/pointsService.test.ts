@@ -20,7 +20,7 @@ import { db } from "../db";
 import { taskRepository } from "../taskRepository";
 import type { Task, TaskDraft } from "../../types/task";
 import {
-  addBonus, addWish, applyPracticePresetsOnce, confirmWish, homeworkCelebrations, loadPointsContext, markPointsDataReady, practiceCelebrations,
+  addBonus, addWish, applyPracticePresetsOnce, confirmWish, flowerCelebrations, homeworkCelebrations, loadPointsContext, markPointsDataReady, practiceCelebrations,
   redeemWish, revokeBonus, settlePendingWeeks, skipEarly,
 } from "../pointsService";
 import { loadPointsLedger } from "../pointsLedger";
@@ -76,7 +76,7 @@ describe("愿望与兑换", () => {
     expect(wish).toMatchObject({ text: "周末去游乐场", status: "pending", cost: 1 });
     await confirmWish(wish.id, 2);
     await expect(redeemWish(wish.id)).rejects.toThrow("不够");
-    await addBonus(230, "测试：攒够两朵");
+    await addBonus(130, "测试：攒够两朵");
     context = await loadPointsContext();
     expect(context.summary.flowers).toBe(2);
     await redeemWish(wish.id);
@@ -148,18 +148,22 @@ describe("结算、预设、庆祝", () => {
     await taskRepository.writeWeeklyLog(task.id, "2026-11-25", 1);
     const first = await practiceCelebrations(task.id, prior);
     expect(first.map((item) => item.title)).toEqual(["钢琴本周练够了！"]);
-    expect(first[0].detail).toBe("达标奖励 +2。再得 92 分就能换下一朵小红花");
+    expect(first[0].detail).toBe("达标奖励 +2。再得 52 分就能换下一朵小红花");
     await taskRepository.writeWeeklyLog(task.id, "2026-11-25", -1);
     await taskRepository.writeWeeklyLog(task.id, "2026-11-25", 1);
     expect(await practiceCelebrations(task.id, prior)).toEqual([]);
   });
 
-  it("7. 累计刚跨过 100 → 大档（攒到一朵小红花）", async () => {
-    await addBonus(95, "测试");
+  it("7. 累计刚跨过 60 → 大档（攒到一朵小红花）；没跨过不弹", async () => {
+    await addBonus(54, "测试");
     const { task } = await taskRepository.create(practice("钢琴练习", { practicePoints: 2, weeklyQuota: { enabled: true, targetCount: 5, unit: "次", isWeeklyRecurring: true, allowAutoDistribute: false, allowRollover: false }, weeklyLog: { "2026-11-23": 1, "2026-11-24": 1 } }));
+    // 54 + 钢琴 2×2 = 58；今天再勾一次 → 60，刚好满 60
     await taskRepository.writeWeeklyLog(task.id, "2026-11-25", 1);
     const items = await practiceCelebrations(task.id, { "2026-11-23": 1, "2026-11-24": 1 });
     expect(items.map((item) => [item.level, item.title, item.detail])).toEqual([["big", "攒到一朵小红花！", "现在有 1 朵"]]);
+    // 60 → 65 没跨过下一个 60 的整数倍（120），不弹
+    await addBonus(5, "测试");
+    expect(await flowerCelebrations(60)).toEqual([]);
   });
 
   it("8. 当天学校作业全部做完 → 中档，带“还可以再做”；只看学校作业", async () => {

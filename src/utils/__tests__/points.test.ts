@@ -101,18 +101,18 @@ describe("累计、小红花、家长奖励、兑换", () => {
     expect(summary.weekBonuses).toHaveLength(3); // 列表里仍显示被撤回的那笔（划掉）
   });
 
-  it("分数跨周累积；每满 100 分一朵小红花", () => {
-    // 第一周：60 分家长奖励；第二周：钢琴 4 次 ×2 + 达标 2 = 10 分，再加 35 分奖励 → 累计 105
+  it("分数跨周累积；每满 60 分一朵小红花", () => {
+    // 第一周：50 分家长奖励；第二周：钢琴 4 次 ×2 + 达标 2 = 10 分，再加 35 分奖励 → 累计 95
     const piano = practice("p", "钢琴练习", 4, "次", Object.fromEntries([0, 1, 2, 3].map((i) => [day(W2, i), 1])), { practicePoints: 2 });
-    const ledger = ledgerWith({ bonuses: [bonus("a", day(W1, 2), 60), bonus("b", day(W2, 4), 35)] });
+    const ledger = ledgerWith({ bonuses: [bonus("a", day(W1, 2), 50), bonus("b", day(W2, 4), 35)] });
     const summary = computePointsSummary([piano], ledger, day(W2, 5));
-    expect(summary.history.map((week) => [week.weekStart, week.total, week.cumulativeAfter, week.flowersEarned])).toEqual([[W1, 60, 60, 0], [W2, 45, 105, 1]]);
-    expect(summary).toMatchObject({ weekTotal: 45, cumulative: 105, flowersEarned: 1, flowers: 1, progress: 5, toNextFlower: 95 });
+    expect(summary.history.map((week) => [week.weekStart, week.total, week.cumulativeAfter, week.flowersEarned])).toEqual([[W1, 50, 50, 0], [W2, 45, 95, 1]]);
+    expect(summary).toMatchObject({ weekTotal: 45, cumulative: 95, flowersEarned: 1, flowers: 1, progress: 35, toNextFlower: 25 });
   });
 
   it("兑换扣除小红花：数量 = 累计得到的 − 已兑换的", () => {
     const wish = (id: string, status: Wish["status"], cost: number): Wish => ({ id, text: id, status, cost, createdAt: "2026-11-24T00:00:00.000Z", updatedAt: "2026-11-24T00:00:00.000Z" });
-    const ledger = ledgerWith({ bonuses: [bonus("a", day(W1, 1), 250)], wishes: [wish("乐高", "redeemed", 2), wish("游乐场", "confirmed", 3)] });
+    const ledger = ledgerWith({ bonuses: [bonus("a", day(W1, 1), 150)], wishes: [wish("乐高", "redeemed", 2), wish("游乐场", "confirmed", 3)] });
     const summary = computePointsSummary([], ledger, day(W1, 2));
     expect(summary).toMatchObject({ flowersEarned: 2, flowersRedeemed: 2, flowers: 0 });
     expect(summary.wish?.text).toBe("游乐场");

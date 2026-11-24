@@ -1,4 +1,4 @@
-import { CalendarPlus, CalendarX, Check, ChevronDown, Copy, MoreHorizontal, NotebookPen, Pencil, Trash2, TriangleAlert } from "lucide-react";
+import { CalendarPlus, CalendarX, Check, ChevronDown, Copy, MoreHorizontal, NotebookPen, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { ChecklistItem, TaskDisplay, TaskStatus } from "../types/task";
@@ -413,7 +413,7 @@ function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly:
   // 今天以后、任务结束以后的点不了；以前的日子只有 Mac 上能补记（iPad / 手机上只能记今天）
   const loggable = (date: string) => date <= today && (weekly.allowPast !== false || date === today) && (!task.endDate || date <= task.endDate);
   const [editing, setEditing] = useState<string>();
-  // 今天打勾得分时屏幕正中弹出大大的"➕2 分"，约 1.5 秒自己消失（不用点，docs/TASK_09_points.md §10）
+  // 今天打勾得分时屏幕正中弹出大大的"⊕ 2 分"（主色圆底白加号 + 圆体大数字），约 1.5 秒自己消失（不用点，docs/TASK_09_points.md §10）
   const [floats, setFloats] = useState<{ id: number; gain: number }[]>([]);
   const floatId = useRef(0);
   const log = (date: string, delta: number) => {
@@ -435,11 +435,16 @@ function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly:
       {lastFloat && createPortal(
         <div className="pointer-events-none fixed inset-0 z-[70] flex items-center justify-center">
           <div key={lastFloat.id} role="status" aria-label={`加 ${lastFloat.gain} 分`} data-testid="points-float"
-            className="flex items-center gap-2 rounded-3xl bg-white/95 px-8 py-5 text-primary shadow-2xl ring-1 ring-primary/15"
-            style={{ animation: "points-float 1500ms ease-out forwards" }}>
-            <span aria-hidden="true" className="text-5xl leading-none">➕</span>
-            <span aria-hidden="true" className="text-6xl font-extrabold leading-none tabular-nums">{lastFloat.gain}</span>
-            <span aria-hidden="true" className="self-end pb-1 text-3xl font-bold leading-none">分</span>
+            className="points-float flex items-center gap-4 rounded-[2rem] bg-white/95 py-4 pl-4 pr-7 text-primary shadow-[0_18px_50px_-12px_rgba(0,0,0,0.28)] ring-1 ring-black/5 backdrop-blur"
+            style={{ animation: "points-float 1500ms cubic-bezier(.2,.8,.2,1) forwards" }}>
+            <span aria-hidden="true" className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-[inset_0_-3px_0_rgba(0,0,0,0.12)]">
+              <span className="absolute inset-0 rounded-full border-2 border-primary" style={{ animation: "points-ring 900ms ease-out 120ms both" }} />
+              <Plus className="h-9 w-9" strokeWidth={3.25} />
+            </span>
+            <span aria-hidden="true" className="flex items-baseline gap-1.5 leading-none">
+              <span className="text-[4.5rem] font-black tabular-nums tracking-tight">{lastFloat.gain}</span>
+              <span className="text-[1.75rem] font-bold text-primary/70">分</span>
+            </span>
           </div>
         </div>,
         document.body,

@@ -13,7 +13,7 @@
  *   不计分的不得分（界面只提示"多读了 N 本"）；没达标做多少得多少，不扣分。
  * - 只看本周内的记录，不结转到下周。
  * - 家长奖励可加可减、必须写原因、可撤回（撤回的不算）。
- * - 分数跨周累积不清零；小红花 = 累计总分每满 100 得 1 朵，减去已兑换的。
+ * - 分数跨周累积不清零；小红花 = 累计总分每满 60 得 1 朵，减去已兑换的（2026-11-24 由 100 改为 60，以后固定不变）。
  * - 每周日结束后把那周固定成快照（结算时的分值、目标、多做设置）；之后再改分值或目标，已结算的周不受影响。
  *   结算后家长在那周补勾 / 撤销某次打勾，仍按快照里的设置重算（分数跟着完成记录走）；
  *   任务被删掉的，那周按快照里记下的分数算。
@@ -25,7 +25,7 @@ import { weeklyTimesActiveIn } from "./weeklyTimes";
 import { taskShortName } from "./taskMeta";
 
 export const POINTS_START_WEEK = "2026-11-23";
-export const POINTS_PER_FLOWER = 100;
+export const POINTS_PER_FLOWER = 60;
 export const REACH_BONUS = 2;
 export const DEFAULT_PRACTICE_POINTS = 1;
 export const DEFAULT_PRACTICE_EXTRA_SCORES = true;

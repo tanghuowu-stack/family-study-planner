@@ -117,6 +117,14 @@ body::before {
   100% { opacity: 0; transform: translate3d(var(--drift, 0px), 92vh, 0) rotate(var(--spin, 180deg)); }
 }
 /* 打勾得分飘字（docs/TASK_09_points.md §10）：1.5 秒，前面一大半停在那里看得清，最后淡出 */
+/* 打勾得分弹窗：圆体数字（Apple 设备上是 SF Pro Rounded），没有就退回系统字体 */
+.points-float { font-family: ui-rounded, "SF Pro Rounded", "Nunito", system-ui, -apple-system, sans-serif; }
+
+@keyframes points-ring {
+  0% { opacity: 0.55; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.7); }
+}
+
 @keyframes points-float {
   0% { opacity: 0; transform: scale(0.5); }
   14% { opacity: 1; transform: scale(1.12); }

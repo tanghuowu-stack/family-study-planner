@@ -106,7 +106,7 @@ async function claimCelebrations(keys: string[]): Promise<Set<string>> {
 const flowerCelebration = (flowers: number): Celebration => ({ id: `flower:${flowers}`, level: "big", title: "攒到一朵小红花！", detail: `现在有 ${flowers} 朵` });
 
 /**
- * 每周练习当天记了一次之后：某项本周刚达标 → 中档；累计分刚跨过 100 的整数倍 → 大档。补记（过去日期）不调用。
+ * 每周练习当天记了一次之后：某项本周刚达标 → 中档；累计分刚跨过 60（POINTS_PER_FLOWER）的整数倍 → 大档。补记（过去日期）不调用。
  * priorLog 是记之前界面上的那份记录，用它还原"记之前"的分数（不用在写入前多读一次库）。
  */
 export async function practiceCelebrations(taskId: string, priorLog: Record<string, number> | undefined, today = todayKey()): Promise<Celebration[]> {
@@ -132,7 +132,7 @@ export async function practiceCelebrations(taskId: string, priorLog: Record<stri
   return out;
 }
 
-/** 家长加了奖励之后：累计分刚跨过 100 的整数倍 → 大档 */
+/** 家长加了奖励之后：累计分刚跨过 60（POINTS_PER_FLOWER）的整数倍 → 大档 */
 export async function flowerCelebrations(cumulativeBefore: number, today = todayKey()): Promise<Celebration[]> {
   const after = await loadPointsContext(today);
   const keys: string[] = [];

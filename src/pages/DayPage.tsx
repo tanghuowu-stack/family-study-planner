@@ -26,9 +26,24 @@ import { GroupHeading, NEUTRAL_DOT, RewardHint, SUBJECT_DOT } from "../component
 /** 刚完成的任务在原位停留多久再收进"已完成"（略长于 400ms 的勾选动画） */
 const COMPLETED_HOLD_MS = 700;
 
-function ProgressMeter({ completed, total }: { completed: number; total: number }) {
-  const percentage = total === 0 ? 0 : (completed / total) * 100;
-  return <div className="flex min-w-0 w-24 flex-1 items-center gap-1.5 sm:w-32 sm:max-w-40" role="meter" aria-label={`清单进度，已完成 ${completed}/${total}`} aria-valuemin={0} aria-valuemax={total} aria-valuenow={completed}><div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-stone-200"><div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${percentage}%` }} /></div></div>;
+/**
+ * 两栏卡片的表头（2026-11-25 用户嫌原来"标题 + 细进度条 + 右边小字"挤在一行太死板）：
+ * 第一行 17px 粗体标题、可选提示胶囊、右边一个圆角小标签；第二行一条通栏进度条。
+ */
+function CardHeader({ title, hint, badge, badgeDone, completed, total }: { title: string; hint?: ReactNode; badge?: ReactNode; badgeDone?: boolean; completed: number; total: number }) {
+  const percentage = total === 0 ? 0 : Math.min(100, (completed / total) * 100);
+  return (
+    <div className="border-b border-ink/10 px-3 pb-3 pt-3.5 sm:px-4">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <h2 className="shrink-0 text-[17px] font-bold leading-6 text-ink">{title}</h2>
+        {hint}
+        {badge !== undefined && <span className={`ml-auto shrink-0 rounded-full px-2.5 py-0.5 text-[13px] font-semibold tabular-nums ${badgeDone ? "bg-primary/10 text-primary" : "bg-stone-100 text-ink"}`}>{badge}</span>}
+      </div>
+      {total > 0 && <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-stone-200/80" role="meter" aria-label={`${title}进度，已完成 ${completed}/${total}`} aria-valuemin={0} aria-valuemax={total} aria-valuenow={completed}>
+        <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${percentage}%` }} />
+      </div>}
+    </div>
+  );
 }
 
 interface Props {
@@ -192,15 +207,16 @@ export function DayPage(props: Props) {
       </div>
     </header>
     {!isToday && <div role="status" className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-sun/60 bg-sun/20 px-3 py-2 sm:px-4"><p className="min-w-0 text-sm font-semibold text-ink">正在看 {formatCompactDate(props.date)}（{relativeDayLabel(props.date)}），不是今天</p><button onClick={() => props.onDateChange(todayKey())} className="h-9 shrink-0 rounded-lg bg-primary px-3 text-sm font-bold text-white [@media(pointer:coarse)]:h-11">回到今天</button></div>}
-    {/* Mac / iPad 横屏：左右两栏等宽等高。左栏是作业（逾期 / 今日任务〔今天的 + 本周作业〕/ 已完成），
+    {/* Mac / iPad 横屏：左右两栏等宽等高。左栏是作业（逾期 / 家庭作业〔今天的 + 本周课外作业〕/ 已完成），
         右栏是每周练习（每周几次）；两栏底边对齐，短的一栏主卡片拉长。
-        窄屏依次排下来：逾期、今日任务、每周练习、已完成——两栏外壳在窄屏是 display:contents，靠 order 排序 */}
+        窄屏依次排下来：逾期、家庭作业、每周练习、已完成——两栏外壳在窄屏是 display:contents，靠 order 排序 */}
     {pointsOn && points && <PointsBar ctx={points} balances={balances} onChanged={() => void reloadPoints()} onOpenLedger={() => props.onOpenLedger?.()} />}
     <div ref={swipeRef} className={`flex flex-col gap-4 ${hasPractice ? "lg:grid lg:grid-cols-2 lg:items-stretch" : ""}`}>
       <div className={`contents ${hasPractice ? "lg:flex lg:min-w-0 lg:flex-col lg:gap-4" : ""}`}>
         {overdueShown.length > 0 && <section className="surface overflow-visible border-alert/35 order-1 lg:order-none"><div className="flex items-center justify-between border-b border-alert/20 bg-alert/[0.06] px-3 py-2.5 sm:px-4"><h2 className="text-base font-bold text-alert">逾期未完成</h2><span className="text-[13px] font-semibold tabular-nums text-alert">{overdue.length}</span></div>{overdueShown.map((task) => renderTask(task))}</section>}
         <section className="surface order-2 overflow-visible lg:order-none lg:flex-1">
-          <div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">{isToday ? "今日任务" : "当日任务"}</h2><ProgressMeter completed={progress.completed} total={progress.total} />{progress.total > 0 && <span className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${remaining === 0 ? "text-primary" : "text-ink"}`}>{remaining === 0 ? "全部完成" : `还剩 ${remaining} 项`}</span>}</div>
+          {/* 2026-11-25 用户："今日任务"改名"家庭作业"（看别的日子也叫"家庭作业"） */}
+          <CardHeader title="家庭作业" completed={progress.completed} total={progress.total} badge={progress.total > 0 ? (remaining === 0 ? "全部完成" : `还剩 ${remaining} 项`) : undefined} badgeDone={remaining === 0} />
           {pending.length > 0 && <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} onTaskReorder={reorderTasks} />}
           {moreLine && leftPending > 0
             ? <div className={pending.length > 0 ? "border-t border-ink/[0.07]" : ""}>{moreLine}</div>
@@ -215,7 +231,8 @@ export function DayPage(props: Props) {
       </div>
       {hasPractice && <div className="contents lg:flex lg:min-w-0 lg:flex-col">
         <section aria-label="每周练习" className="surface order-3 overflow-visible lg:order-none lg:flex-1">
-          <div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">每周练习</h2>{pointsOn && <RewardHint text="全部完成有奖励！" />}<ProgressMeter completed={practice.done} total={practice.target} />{pointsOn && points ? <span title={`本周已做 ${practice.done}/${practice.target} 次`} className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${practiceAllDone ? "text-primary" : "text-ink"}`}>本周 {points.summary.weekTotal} 分</span> : <span title="本周已做次数 / 本周目标次数（各项加起来）" className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${practiceAllDone ? "text-primary" : "text-ink"}`}>{practiceAllDone ? `本周都做够了 ${practice.done}/${practice.target}` : `已做 ${practice.done}/${practice.target} 次`}</span>}</div>
+          <CardHeader title="每周练习" hint={pointsOn ? <RewardHint text="全部完成有奖励！" /> : undefined} completed={practice.done} total={practice.target} badgeDone={practiceAllDone}
+            badge={pointsOn && points ? <span title={`本周已做 ${practice.done}/${practice.target} 次`}>本周 {points.summary.weekTotal} 分</span> : <span title="本周已做次数 / 本周目标次数（各项加起来）">{practiceAllDone ? `本周都做够了 ${practice.done}/${practice.target}` : `已做 ${practice.done}/${practice.target} 次`}</span>} />
           <SortableTaskList tasks={timesPending} renderTask={renderTask} onReorder={reorderTasks} />
           {timesPending.length === 0 && <p className="px-4 py-3 text-[15px] font-semibold text-primary">这周的练习都做够了</p>}
           {timesDone.length > 0 && <>

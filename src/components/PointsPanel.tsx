@@ -1,3 +1,4 @@
+import { ChevronRight, PiggyBank, Star, Wallet } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { addBonus, revokeBonus, skipEarly, type PointsContext } from "../data/pointsService";
 import { formatCompactDate, getWeekStartKey, todayKey } from "../utils/date";
@@ -47,25 +48,39 @@ export function PointsBar({ ctx, balances, onChanged, onOpenLedger }: { ctx: Poi
   const { summary } = ctx;
   const weekSummary = weekSummaryFor(ctx, new Date());
   const showSummary = !!weekSummary && dismissed !== weekSummary.key;
-  const money = (label: string, cents: number | undefined) => (
-    <button type="button" onClick={onOpenLedger} className="-mx-1.5 min-h-9 shrink-0 rounded-md px-1.5 text-left text-[15px] text-muted hover:bg-stone-100/70" data-testid={`bar-${label}`}>
-      {label} <span className="font-bold tabular-nums text-ink">{cents === undefined ? "–" : formatYuan(cents)}</span> 元
+  // 2026-11-25 用户：原来一行字“本周 N 分｜零钱｜存款”太死板 → 三张小卡片：本周积分（实心主色底、白字大数字，同记账页总资产卡）、零钱、存款（点进记账页）
+  const tile = "group flex min-h-[4.5rem] min-w-0 items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors sm:min-h-20 sm:px-4";
+  const icon = (Icon: typeof Star, bg: string, fg: string) => (
+    <span aria-hidden className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full sm:flex" style={{ background: bg, color: fg }}><Icon className="h-5 w-5" strokeWidth={2.25} /></span>
+  );
+  const money = (label: string, note: string, cents: number | undefined, Icon: typeof Star, color: string) => (
+    <button type="button" onClick={onOpenLedger} className={`${tile} border-ink/10 bg-white hover:border-ink/20 hover:bg-stone-50`} data-testid={`bar-${label}`}>
+      {icon(Icon, `${color}1A`, color)}
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] font-medium leading-4 text-muted">{label}<span className="hidden lg:inline"> · {note}</span></span>
+        <span className="mt-1 block truncate leading-7 text-ink"><span className="text-[20px] font-bold tabular-nums sm:text-[22px]">{cents === undefined ? "–" : formatYuan(cents)}</span> <span className="text-[13px] text-muted">元</span></span>
+      </span>
+      <ChevronRight aria-hidden className="hidden h-4 w-4 shrink-0 text-stone-300 group-hover:text-muted sm:block" />
     </button>
   );
   return (
-    <section aria-label="积分与零花钱" className="surface mb-4 overflow-visible">
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-3 py-2.5 sm:px-4">
-        <button type="button" onClick={() => setDetail(true)} className="-mx-1.5 min-h-9 shrink-0 rounded-md px-1.5 text-left text-[15px] font-semibold text-ink hover:bg-stone-100/70">
-          本周 <span className="text-base font-bold tabular-nums">{summary.weekTotal}</span> 分<span className="font-normal text-muted">（= {summary.weekAllowance} 元）</span>
+    <section aria-label="积分与零花钱" className="mb-4">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <button type="button" onClick={() => setDetail(true)} className={`${tile} border-primary bg-primary shadow-[0_8px_20px_-12px_rgba(43,118,86,0.7)] hover:bg-[#256a4d]`} data-testid="bar-points">
+          {icon(Star, "rgba(255,255,255,0.16)", "#EFC66A")}
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13px] font-medium leading-4 text-white/75">本周积分</span>
+            <span className="mt-1 block truncate leading-7 text-white"><span className="text-[24px] font-bold tabular-nums sm:text-[26px]">{summary.weekTotal}</span> <span className="text-[13px] font-semibold">分</span><span className="ml-1.5 hidden text-[13px] font-medium text-white/75 sm:inline">= {summary.weekAllowance} 元</span></span>
+          </span>
+          <ChevronRight aria-hidden className="hidden h-4 w-4 shrink-0 text-white/50 group-hover:text-white sm:block" />
         </button>
-        <span aria-hidden className="hidden h-4 w-px bg-ink/10 sm:block" />
-        {money("零钱", balances?.cash)}
-        {money("存款", balances?.savings)}
+        {money("零钱", "可以自由花", balances?.cash, Wallet, "#2B7656")}
+        {money("存款", "零钱通", balances?.savings, PiggyBank, "#3F8F86")}
       </div>
       {showSummary && weekSummary && (
         <button type="button" onClick={() => { localStorage.setItem(SUMMARY_DISMISS_KEY, weekSummary.key); setDismissed(weekSummary.key); }}
-          className="block w-full border-t border-ink/[0.07] px-3 py-2 text-left text-[13px] leading-5 text-ink/80 hover:bg-stone-50 sm:px-4" title="点一下收起">
-          {weekSummary.text}
+          className="mt-2 flex w-full items-center gap-2 rounded-lg border border-sun/50 bg-sun/15 px-3 py-2 text-left text-[13px] font-medium leading-5 text-ink/85 hover:bg-sun/25 sm:px-4" title="点一下收起">
+          <span aria-hidden>🎉</span>{weekSummary.text}
         </button>
       )}
       {detail && <PointsDetailDialog ctx={ctx} onClose={() => setDetail(false)} />}

@@ -1,5 +1,6 @@
 import { CalendarPlus, CalendarX, Check, ChevronDown, Copy, MoreHorizontal, NotebookPen, Pencil, Trash2, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import type { ChecklistItem, TaskDisplay, TaskStatus } from "../types/task";
 import { WEEKLY_LOG_DAY_MAX, type WeeklyTimesProgress } from "../utils/weeklyTimes";
 import { STATUS_META, canEndRecurring, canExtendRecurring, isOccurrenceSchedule, taskShortName } from "../utils/taskMeta";
@@ -412,15 +413,15 @@ function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly:
   // 今天以后、任务结束以后的点不了；以前的日子只有 Mac 上能补记（iPad / 手机上只能记今天）
   const loggable = (date: string) => date <= today && (weekly.allowPast !== false || date === today) && (!task.endDate || date <= task.endDate);
   const [editing, setEditing] = useState<string>();
-  // 今天打勾得分时圆点上方飘出"+2 分"，字号够大，约 1.5 秒自己消失（不用点，docs/TASK_09_points.md §10）
-  const [floats, setFloats] = useState<{ id: number; date: string; text: string }[]>([]);
+  // 今天打勾得分时屏幕正中弹出大大的"➕2 分"，约 1.5 秒自己消失（不用点，docs/TASK_09_points.md §10）
+  const [floats, setFloats] = useState<{ id: number; gain: number }[]>([]);
   const floatId = useRef(0);
   const log = (date: string, delta: number) => {
     const gain = delta > 0 && date === today ? weekly.gainFor?.(date, delta) ?? 0 : 0;
     onLog(date, delta);
     if (gain > 0) {
       const id = ++floatId.current;
-      setFloats((current) => [...current, { id, date, text: `+${gain} 分` }]);
+      setFloats((current) => [...current, { id, gain }]);
       setTimeout(() => setFloats((current) => current.filter((item) => item.id !== id)), 1600);
     }
   };
@@ -428,8 +429,21 @@ function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly:
   const longPressed = useRef(false);
   const clearPress = () => { if (pressTimer.current) clearTimeout(pressTimer.current); pressTimer.current = null; };
   useEffect(() => clearPress, []);
+  const lastFloat = floats[floats.length - 1];
   return (
     <ol className="mt-1 flex items-center gap-1" aria-label="本周每天的记录">
+      {lastFloat && createPortal(
+        <div className="pointer-events-none fixed inset-0 z-[70] flex items-center justify-center">
+          <div key={lastFloat.id} role="status" aria-label={`加 ${lastFloat.gain} 分`} data-testid="points-float"
+            className="flex items-center gap-2 rounded-3xl bg-white/95 px-8 py-5 text-primary shadow-2xl ring-1 ring-primary/15"
+            style={{ animation: "points-float 1500ms ease-out forwards" }}>
+            <span aria-hidden="true" className="text-5xl leading-none">➕</span>
+            <span aria-hidden="true" className="text-6xl font-extrabold leading-none tabular-nums">{lastFloat.gain}</span>
+            <span aria-hidden="true" className="self-end pb-1 text-3xl font-bold leading-none">分</span>
+          </div>
+        </div>,
+        document.body,
+      )}
       {progress.days.map((day, index) => {
         const can = loggable(day.date);
         const name = `周${WEEKDAY_SHORT[index]}`;
@@ -455,9 +469,6 @@ function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly:
               className={`flex h-7 w-7 select-none items-center justify-center rounded-full text-[12px] font-semibold tabular-nums transition-colors [-webkit-touch-callout:none] disabled:cursor-default [@media(pointer:coarse)]:h-8 [@media(pointer:coarse)]:w-8 ${tone} ${day.date === viewDate ? "ring-2 ring-primary/35 ring-offset-1" : ""}`}>
               {day.count > 1 ? day.count : day.count === 1 ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : WEEKDAY_SHORT[index]}
             </button>
-            {floats.filter((item) => item.date === day.date).map((item) => (
-              <span key={item.id} role="status" data-testid="points-float" className="pointer-events-none absolute -top-4 left-1/2 z-20 whitespace-nowrap rounded-md bg-white/90 px-1.5 text-xl font-extrabold leading-7 text-primary shadow-sm" style={{ animation: "points-float 1500ms ease-out forwards" }}>{item.text}</span>
-            ))}
             {editing === day.date && (
               <DayCountEditor label={`${name}做了几${progress.unit}`} initial={day.count} unit={progress.unit}
                 onClose={(value) => {

@@ -20,6 +20,8 @@ interface Props {
   label: string;
   /** 跟在标题后的说明，如"作业"；颜色更浅 */
   suffix?: string;
+  /** 主色小字提示（今日页“本周课外作业”后面的“提前完成有奖励！”） */
+  hint?: string;
   count?: number;
   dot?: string;
   /** 拖拽手柄的事件与样式（来自 useSortableList.handleProps）；传了就在最右侧显示可拖的手柄 */
@@ -31,12 +33,13 @@ interface Props {
 }
 
 /** 分组小标题：13px 半粗、无底色，靠色点与留白分区 */
-export function GroupHeading({ label, suffix, count, dot, handle, highlight, action }: Props) {
+export function GroupHeading({ label, suffix, hint, count, dot, handle, highlight, action }: Props) {
   return (
     <h3 className={`flex items-center gap-2 px-3 pb-1 pt-3 text-[13px] font-semibold transition-colors sm:px-4 ${highlight ? "bg-mint/60" : ""}`}>
       {dot && <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: dot }} />}
       <span className="text-ink">{label}</span>
       {suffix && <span className="font-medium text-muted">{suffix}</span>}
+      {hint && <span className="min-w-0 truncate font-medium text-primary">{hint}</span>}
       {count !== undefined && <span className="ml-auto font-medium tabular-nums text-muted">{count}</span>}
       {action && <span className={count === undefined ? "ml-auto" : ""}>{action}</span>}
       {/* 手柄放最右侧：放左侧会让有手柄和没手柄的分组色点对不齐；只在电脑上显示（2026-11-18） */}

@@ -149,9 +149,9 @@ export function DayPage(props: Props) {
   const schoolToday = daily.filter((task) => task.mainCategory === "school");
   const schoolAllDone = isToday && schoolToday.length > 0 && schoolToday.every(isSettled);
   const moreText = isToday ? formatMoreToDo(moreToDoToday(weeklyTimes, props.date)) : "";
-  // docs/TASK_09_points.md §9.5："今天的作业做完了，快去赚积分吧！今天还可以做：钢琴 +2　背诗 +1　听写 +1"
+  // docs/TASK_09_points.md §9.5：还有能做的练习时只写"今天的作业做完了，快去赚积分吧！"（能做哪些看右栏每周练习，不再列）
   const moreLine = schoolAllDone && pointsOn
-    ? <p data-testid="more-to-do" className="px-4 py-3 text-[15px] leading-6 text-ink">{moreText ? <><span className="font-semibold text-primary">今天的作业做完了，快去赚积分吧！</span>今天还可以做：<span className="whitespace-pre-wrap">{moreText}</span></> : <><span className="font-semibold text-primary">今天的作业都做完了。</span>{weeklyTimes.every(timesReached) ? "这周的练习也都达标了。" : "今天能做的练习也都做过了。"}</>}</p>
+    ? <p data-testid="more-to-do" className="px-4 py-3 text-[15px] leading-6 text-ink">{moreText ? <span className="font-semibold text-primary">今天的作业做完了，快去赚积分吧！</span> : <><span className="font-semibold text-primary">今天的作业都做完了。</span>{weeklyTimes.every(timesReached) ? "这周的练习也都达标了。" : "今天能做的练习也都做过了。"}</>}</p>
     : null;
   // 过去日期的补记（打勾或取消）只在 Mac 上有；iPad / 手机上过去日期的勾选框点不了（§7、§8）
   const parentDevice = isParentDevice();
@@ -206,7 +206,7 @@ export function DayPage(props: Props) {
             ? <div className={pending.length > 0 ? "border-t border-ink/[0.07]" : ""}>{moreLine}</div>
             : pending.length === 0 && weekPending.length > 0 && done.length > 0 && <p className="px-4 py-3 text-[15px] font-semibold text-primary">{isToday ? "今天" : "这一天"}的作业都做完了</p>}
           {weekPending.length > 0 && <div className={pending.length > 0 || done.length > 0 ? "border-t border-ink/[0.07]" : ""}>
-            <GroupHeading label="本周作业" dot={NEUTRAL_DOT} count={weekPending.length} />
+            <GroupHeading label="本周课外作业" hint={pointsOn ? "提前完成有奖励！" : undefined} dot={NEUTRAL_DOT} count={weekPending.length} />
             <SortableTaskList tasks={weekPending} renderTask={renderTask} onReorder={reorderTasks} />
           </div>}
           {leftPending === 0 && (isToday && allDone.length > 0 && overdueShown.length === 0 ? <>{<AllDoneCelebration count={allDone.length} />}{moreLine && moreText && <div className="border-t border-ink/[0.07]">{moreLine}</div>}</> : allDone.length > 0 ? <p className="px-4 py-4 text-[15px] font-semibold text-primary">这一天的事都做完了</p> : <div className="p-3"><EmptyState compact /></div>)}

@@ -1,5 +1,5 @@
-import { CalendarPlus, CalendarX, Check, ChevronDown, Copy, MoreHorizontal, NotebookPen, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { CalendarPlus, CalendarX, Check, ChevronDown, Copy, MoreHorizontal, NotebookPen, Pencil, Trash2, TriangleAlert } from "lucide-react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { ChecklistItem, TaskDisplay, TaskStatus } from "../types/task";
 import { WEEKLY_LOG_DAY_MAX, type WeeklyTimesProgress } from "../utils/weeklyTimes";
@@ -63,6 +63,11 @@ function UnsyncedBadge({ onRetry }: { onRetry?: () => void }) {
 
 type AnimState = "idle" | "checking" | "unchecking";
 
+/** 打勾得分弹窗周围散开的小圆点：[横向位移, 纵向位移, 颜色] */
+const POINT_SPARKS: [number, number, string][] = [
+  [-118, -34, "bg-sun"], [-104, 30, "bg-primary/60"], [-52, -62, "bg-alert/80"], [8, -70, "bg-primary"],
+  [64, -60, "bg-sun"], [118, -22, "bg-primary/60"], [100, 38, "bg-alert/80"], [-20, 62, "bg-sun"],
+];
 const DUE_TONE = { today: "bg-alert/10 text-alert", soon: "bg-amber-100 text-amber-800", normal: "bg-primary/10 text-primary" } as const;
 
 /** 写入结束后，界面数据仍未跟上乐观值时，多久之后放弃乐观值、如实显示库内状态 */
@@ -413,7 +418,7 @@ function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly:
   // 今天以后、任务结束以后的点不了；以前的日子只有 Mac 上能补记（iPad / 手机上只能记今天）
   const loggable = (date: string) => date <= today && (weekly.allowPast !== false || date === today) && (!task.endDate || date <= task.endDate);
   const [editing, setEditing] = useState<string>();
-  // 今天打勾得分时屏幕正中弹出大大的"⊕ 2 分"（主色圆底白加号 + 圆体大数字），约 1.5 秒自己消失（不用点，docs/TASK_09_points.md §10）
+  // 今天打勾得分时屏幕正中弹出"+2 分"小胶囊：数字从下往上弹出、周围散几颗小圆点，约 1.5 秒上浮淡出（不用点，docs/TASK_09_points.md §10）
   const [floats, setFloats] = useState<{ id: number; gain: number }[]>([]);
   const floatId = useRef(0);
   const log = (date: string, delta: number) => {
@@ -435,16 +440,14 @@ function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly:
       {lastFloat && createPortal(
         <div className="pointer-events-none fixed inset-0 z-[70] flex items-center justify-center">
           <div key={lastFloat.id} role="status" aria-label={`加 ${lastFloat.gain} 分`} data-testid="points-float"
-            className="points-float flex items-center gap-4 rounded-[2rem] bg-white/95 py-4 pl-4 pr-7 text-primary shadow-[0_18px_50px_-12px_rgba(0,0,0,0.28)] ring-1 ring-black/5 backdrop-blur"
-            style={{ animation: "points-float 1500ms cubic-bezier(.2,.8,.2,1) forwards" }}>
-            <span aria-hidden="true" className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-[inset_0_-3px_0_rgba(0,0,0,0.12)]">
-              <span className="absolute inset-0 rounded-full border-2 border-primary" style={{ animation: "points-ring 900ms ease-out 120ms both" }} />
-              <Plus className="h-9 w-9" strokeWidth={3.25} />
-            </span>
-            <span aria-hidden="true" className="flex items-baseline gap-1.5 leading-none">
-              <span className="text-[4.5rem] font-black tabular-nums tracking-tight">{lastFloat.gain}</span>
-              <span className="text-[1.75rem] font-bold text-primary/70">分</span>
-            </span>
+            className="points-float relative flex items-baseline gap-1 rounded-full bg-white/90 px-7 py-3 text-primary shadow-[0_12px_32px_-12px_rgba(43,118,86,0.45)] ring-1 ring-primary/10 backdrop-blur-sm"
+            style={{ animation: "points-pop 1500ms cubic-bezier(.22,.8,.3,1) forwards" }}>
+            {POINT_SPARKS.map(([dx, dy, color], index) => (
+              <span key={index} aria-hidden="true" className={`absolute left-1/2 top-1/2 h-2 w-2 rounded-full ${color}`}
+                style={{ "--dx": `${dx}px`, "--dy": `${dy}px`, animation: `points-spark 750ms ease-out ${90 + index * 25}ms both` } as CSSProperties} />
+            ))}
+            <span aria-hidden="true" className="inline-block text-5xl font-medium leading-none tabular-nums tracking-tight" style={{ animation: "points-rise 520ms cubic-bezier(.2,.9,.3,1.25) 40ms both" }}>+{lastFloat.gain}</span>
+            <span aria-hidden="true" className="inline-block text-xl font-normal text-primary/60" style={{ animation: "points-rise 520ms cubic-bezier(.2,.9,.3,1.25) 150ms both" }}>分</span>
           </div>
         </div>,
         document.body,

@@ -20,7 +20,7 @@ import { db } from "../db";
 import { taskRepository } from "../taskRepository";
 import type { Task, TaskDraft } from "../../types/task";
 import {
-  addBonus, applyPracticePresetsOnce, homeworkCelebrations, loadPointsContext, markPointsDataReady, practiceCelebrations,
+  addBonus, applyPracticePresetsOnce, HOMEWORK_DONE_BAND, homeworkCelebrations, loadPointsContext, markPointsDataReady, practiceCelebrations,
   revokeBonus, settlePendingWeeks, skipEarly,
 } from "../pointsService";
 import { loadPointsLedger } from "../pointsLedger";
@@ -174,7 +174,7 @@ describe("结算、预设、庆祝", () => {
     expect(items.map((item) => [item.title, item.detail])).toEqual([["钢琴本周练够了！", "达标奖励 +2。本周已挣 108 元"]]);
   });
 
-  it("8. 当天学校作业全部做完 → 中档，不带“还可以再做”；只看学校作业", async () => {
+  it("8. 当天学校作业全部做完 → 卡片“今天的作业做完了，快去赚积分吧！”，飞到今日页那一条；不限次数；只看学校作业", async () => {
     const school = (title: string): TaskDraft => ({ title, mainCategory: "school", subCategory: "chinese", timeType: "singleDate", date: "2026-11-25", status: "todo", rolloverMode: "autoNextDay", allowRollover: true, childVisible: true } as TaskDraft);
     const { task: a } = await taskRepository.create(school("语文家庭作业"));
     const { task: b } = await taskRepository.create(school("数学家庭作业"));
@@ -184,7 +184,33 @@ describe("结算、预设、庆祝", () => {
     expect(await homeworkCelebrations(a.id, false)).toEqual([]);
     await taskRepository.setDisplayStatus(b, "done");
     const items = await homeworkCelebrations(b.id, false);
-    expect(items.map((item) => [item.title, item.detail])).toEqual([["哇，全完成了！", undefined]]);
-    expect(await homeworkCelebrations(b.id, false)).toEqual([]);
+    expect(items.map((item) => [item.title, item.detail, item.flyTo])).toEqual([["今天的作业做完了，快去赚积分吧！", undefined, HOMEWORK_DONE_BAND]]);
+    // 取消再勾上也再庆祝一次（2026-11-24 用户：做完了都要有庆祝）
+    expect((await homeworkCelebrations(b.id, false)).map((item) => item.title)).toEqual(["今天的作业做完了，快去赚积分吧！"]);
+    // 已经是完成状态再触发（wasDone）不庆祝
+    expect(await homeworkCelebrations(b.id, true)).toEqual([]);
+  });
+
+  it("9. 练习都做过了：作业做完的卡片不写“快去赚积分”", async () => {
+    const { task } = await taskRepository.create({ title: "语文家庭作业", mainCategory: "school", subCategory: "chinese", timeType: "singleDate", date: "2026-11-25", status: "todo", rolloverMode: "autoNextDay", allowRollover: true, childVisible: true } as TaskDraft);
+    await taskRepository.setDisplayStatus(task, "done");
+    expect((await homeworkCelebrations(task.id, false)).map((item) => item.title)).toEqual(["今天的作业都做完了！"]);
+  });
+
+  it("10. 本周课外作业：勾一小项 → mini 散花；整项做完（截止日之前）→ 提前完成卡片；不限次数", async () => {
+    const { task } = await taskRepository.create({
+      title: "FCE家庭作业", mainCategory: "extraHomework", subCategory: "english", timeType: "dateRange", startDate: "2026-11-23", endDate: "2026-11-29",
+      status: "todo", rolloverMode: "keepOverdue", allowRollover: false, childVisible: true,
+      checklistItems: [{ id: "i1", title: "FCE作文一篇", done: false }, { id: "i2", title: "背诵上周作文", done: false }],
+    } as TaskDraft);
+    await taskRepository.toggleChecklistItem(task.id, "i1", undefined, { done: true });
+    const first = await homeworkCelebrations(task.id, false, "2026-11-25", true);
+    expect(first.map((item) => [item.kind, item.title])).toEqual([["mini", "做完了"]]);
+    await taskRepository.toggleChecklistItem(task.id, "i2", undefined, { done: true });
+    const done = await homeworkCelebrations(task.id, false, "2026-11-25", true);
+    expect(done.map((item) => [item.kind, item.title, item.detail])).toEqual([[undefined, "提前完成了！", "拿给妈妈检查，通过了有奖励"]]);
+    await taskRepository.toggleChecklistItem(task.id, "i2", undefined, { done: false });
+    await taskRepository.toggleChecklistItem(task.id, "i2", undefined, { done: true });
+    expect((await homeworkCelebrations(task.id, false, "2026-11-25", true)).map((item) => item.title)).toEqual(["提前完成了！"]);
   });
 });

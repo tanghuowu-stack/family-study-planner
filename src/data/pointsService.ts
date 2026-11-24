@@ -10,7 +10,7 @@ import { getWeekStartKey, todayKey, toLocalDateKey } from "../utils/date";
 import { isWeekPlanTask } from "../utils/taskGrouping";
 import {
   activeBonuses, buildWeekSnapshot, computePointsSummary, DEFAULT_PRACTICE_EXTRA_SCORES, DEFAULT_PRACTICE_POINTS, isEarlyCompleted, isSettleTime,
-  matchPracticePresets, POINTS_START_WEEK, practiceDisplayName, practiceSettingsOf, practiceShortName, practiceVerb, PRACTICE_PRESETS,
+  matchPracticePresets, moreToDoToday, POINTS_START_WEEK, practiceDisplayName, practiceSettingsOf, practiceShortName, practiceVerb, PRACTICE_PRESETS,
   scorePracticeWeek, weeksNeedingSnapshot, type PointsLedger, type PointsSummary,
 } from "../utils/points";
 
@@ -93,7 +93,11 @@ export async function applyPracticePresetsOnce(): Promise<PresetResult | null> {
 // ── 庆祝 ─────────────────────────────────────────────────────────────────
 
 /** 中档庆祝：少量散花 + 一句提示，点一下消失（"攒到一朵小红花"的大档已随小红花取消） */
-export interface Celebration { id: string; title: string; detail?: string }
+/**
+ * 庆祝：card = 屏幕中间的卡片 + 大散花（停 4.5 秒）；mini = 只炸一小圈散花和"✓ 做完了"小胶囊（1.6 秒，不挡点击）。
+ * flyTo：卡片收起时飞到页面上这个元素的位置（CSS 选择器），找不到就原地淡出。
+ */
+export interface Celebration { id: string; title: string; detail?: string; kind?: "card" | "mini"; flyTo?: string }
 
 /** 记下"已庆祝"，返回其中这次真正第一次庆祝的 key（另一台设备已经庆祝过的不再弹） */
 async function claimCelebrations(keys: string[]): Promise<Set<string>> {
@@ -133,24 +137,34 @@ export async function schoolHomeworkState(date: string): Promise<{ ids: string[]
   return { ids: tasks.map((task) => task.id), allDone: tasks.length > 0 && tasks.every((task) => task.status === "done" || task.status === "cancelled") };
 }
 
+/** 今日页“今天的作业做完了，快去赚积分吧！”那一条（庆祝卡片收起时飞到这里） */
+export const HOMEWORK_DONE_BAND = '[data-testid="more-to-do"]';
+
 /**
- * 当天打勾（不是补记）之后：本周作业提前完成 → 中档；当天学校作业刚全部做完 → 中档。
- * "刚全部做完"：这一项是今天的学校作业、勾之前没完成、勾之后今天的学校作业全完成了（只有这一项变了，所以之前一定没全完成）。
+ * 当天打勾（不是补记）之后的作业庆祝。2026-11-24 用户："只要某一项做完了，都要有庆祝的礼花和奖励"——
+ * - 本周课外作业整项做完（截止日之前，就是提前完成）→ 卡片"提前完成了！拿给妈妈检查，通过了有奖励"；
+ * - 本周课外作业勾掉其中一小项、整项还没完 → mini 散花"✓ 做完了"；
+ * - 当天学校作业刚全部做完 → 卡片"今天的作业做完了，快去赚积分吧！"（练习都做过了写"今天的作业都做完了！"），
+ *   收起时飞到今日页左上角那一条。
+ * 作业庆祝**不限次数**（取消再勾上也会再庆祝；原来每项 / 每天只庆祝一次，用户试的时候没弹出来）。
+ * subItem：这次勾的是小项。
  */
-export async function homeworkCelebrations(taskId: string, wasDone: boolean, today = todayKey()): Promise<Celebration[]> {
+export async function homeworkCelebrations(taskId: string, wasDone: boolean, today = todayKey(), subItem = false): Promise<Celebration[]> {
   if (wasDone) return [];
   const result: Celebration[] = [];
+  const stamp = Date.now();
   const task = await taskRepository.getTask(taskId);
   if (task && isEarlyCompleted(task) && toLocalDateKey(task.completedAt!) === today) {
-    result.push({ id: `early:${task.id}`, title: "提前完成了！", detail: "拿给妈妈检查，通过了有奖励" });
+    result.push({ id: `early:${task.id}:${stamp}`, title: "提前完成了！", detail: "拿给妈妈检查，通过了有奖励" });
+  } else if (task && subItem && task.status !== "done" && isWeekPlanTask(task, today)) {
+    result.push({ id: `item:${task.id}:${stamp}`, title: "做完了", kind: "mini" });
   }
   const school = await schoolHomeworkState(today);
   if (school.allDone && school.ids.includes(taskId)) {
-    // 2026-11-24 用户：不再写"你还可以再做：…"，右栏每周练习就能看到
-    result.push({ id: `school:${today}`, title: "哇，全完成了！" });
+    const more = moreToDoToday(await taskRepository.getWeeklyTimes(today), today).length > 0;
+    result.push({ id: `school:${today}:${stamp}`, title: more ? "今天的作业做完了，快去赚积分吧！" : "今天的作业都做完了！", flyTo: HOMEWORK_DONE_BAND });
   }
-  const fresh = await claimCelebrations(result.map((item) => item.id));
-  return result.filter((item) => fresh.has(item.id));
+  return result;
 }
 
 // ── 家长操作 ──────────────────────────────────────────────────────────────

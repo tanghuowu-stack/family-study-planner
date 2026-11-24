@@ -287,7 +287,7 @@ export default function App() {
       const result = await repo().toggleChecklistItem(task.id, itemId, task.occurrenceDate, { asOfDate, done }, () => {
         refresh();
         if (backdated) notify(backdated);
-        if (cheer) void homeworkCelebrations(task.id, wasDone, today).then(celebrate).catch(() => {});
+        if (cheer) void homeworkCelebrations(task.id, wasDone, today, true).then(celebrate).catch(() => {});
       });
       if (result.synced) clearUnsynced(setUnsyncedItems, key);
       else { markUnsynced(setUnsyncedItems, key); notifyFailure("⚠️ 未同步到云端，点击小项旁的标记可重试"); }

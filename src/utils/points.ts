@@ -1,7 +1,7 @@
 /**
- * 每周练习积分 + 小红花 + 愿望（2026-11-24）。这里只放纯函数：分数一律由完成记录（task.weeklyLog）算出，
- * 不保存可修改的总分（R1 权威源）。需要单独保存的东西（家长奖励、愿望、已庆祝、每周结算快照……）
- * 存在 app_settings 的 `points_ledger_v1`，读写见 data/pointsLedger.ts。
+ * 每周练习积分 → 零花钱（2026-11-24）。这里只放纯函数：分数一律由完成记录（task.weeklyLog）算出，
+ * 不保存可修改的总分（R1 权威源）。需要单独保存的东西（家长奖励、已庆祝、每周结算快照……）
+ * 存在 app_settings 的 `points_ledger_v1`，读写见 data/pointsLedger.ts。零花钱怎么入账见 utils/ledger.ts。
  *
  * 规则唯一依据是 docs/TASK_09_points.md（下面是摘要，不一致时以那个文件为准；写死在代码里，不做成设置）：
  * - 只有今日页右栏"每周练习"（timeType = weeklyTimes）计分；学校作业、本周作业、提醒、休闲、旅游都不计分。
@@ -13,8 +13,10 @@
  *   不计分的不得分（界面只提示"多读了 N 本"）；没达标做多少得多少，不扣分。
  * - 只看本周内的记录，不结转到下周。
  * - 家长奖励可加可减、必须写原因、可撤回（撤回的不算）。
- * - 分数跨周累积不清零；小红花 = 累计总分每满 60 得 1 朵，减去已兑换的（2026-11-24 由 100 改为 60，以后固定不变）。
- * - 每周日结束后把那周固定成快照（结算时的分值、目标、多做设置）；之后再改分值或目标，已结算的周不受影响。
+ * - 1 分 = 1 元：每周结算后，那周得分（练习 + 家长奖励，不低于 0）就是那周的零花钱，记在快照的 allowance 里，
+ *   之后再补勾、撤回奖励都不改已经结算的零花钱。小红花、愿望已取消（2026-11-24）。
+ * - 每周日晚上 8 点起（SETTLE_HOUR）结算这一周，那周没打开过应用的，下次打开时补算。快照记下结算时的分值、
+ *   目标、多做设置；之后再改分值或目标，已结算的周不受影响。
  *   结算后家长在那周补勾 / 撤销某次打勾，仍按快照里的设置重算（分数跟着完成记录走）；
  *   任务被删掉的，那周按快照里记下的分数算。
  */
@@ -25,7 +27,10 @@ import { weeklyTimesActiveIn } from "./weeklyTimes";
 import { taskShortName } from "./taskMeta";
 
 export const POINTS_START_WEEK = "2026-11-23";
-export const POINTS_PER_FLOWER = 60;
+/** 1 分 = 1 元 */
+export const YUAN_PER_POINT = 1;
+/** 周日几点起结算这一周（之前打开只显示，不结算） */
+export const SETTLE_HOUR = 20;
 export const REACH_BONUS = 2;
 export const DEFAULT_PRACTICE_POINTS = 1;
 export const DEFAULT_PRACTICE_EXTRA_SCORES = true;
@@ -159,14 +164,26 @@ export interface WeekSnapshot {
   settledAt: string;
   /** 结算时每项的设置和得分；之后按这里的目标 / 单位 / 分值重算 */
   items: PracticeWeekScore[];
+  /** 练习分合计 */
   total: number;
   reachedCount: number;
+  /** 结算时这周的家长奖励合计（可负） */
+  bonus?: number;
+  /** 这周的零花钱（元）= 练习 + 家长奖励，不低于 0。结算后固定，"待转账"金额就取这个 */
+  allowance?: number;
 }
 
-export function buildWeekSnapshot(tasks: Task[], weekStart: string, settledAt: string): WeekSnapshot {
+/** 那周的零花钱（元）：得分（含家长奖励和扣分）不低于 0 */
+export const allowanceFor = (weekTotal: number) => Math.max(0, weekTotal) * YUAN_PER_POINT;
+
+export function buildWeekSnapshot(tasks: Task[], weekStart: string, settledAt: string, bonus = 0): WeekSnapshot {
   const items = practiceTasksForWeek(tasks, weekStart).map((task) => scorePracticeWeek(task, weekStart));
-  return { weekStart, settledAt, items, total: items.reduce((sum, item) => sum + item.total, 0), reachedCount: items.filter((item) => item.reached).length };
+  const total = items.reduce((sum, item) => sum + item.total, 0);
+  return { weekStart, settledAt, items, total, reachedCount: items.filter((item) => item.reached).length, bonus, allowance: allowanceFor(total + bonus) };
 }
+
+/** 周日晚上 8 点以后：这一周可以结算了 */
+export const isSettleTime = (now: Date) => now.getDay() === 0 && now.getHours() >= SETTLE_HOUR;
 
 /** 某周每项的得分：没结算的按现在的设置算；结算过的按快照设置重算，任务已删的用快照里的分数 */
 export function weekPracticeScores(tasks: Task[], weekStart: string, snapshot?: WeekSnapshot): PracticeWeekScore[] {
@@ -194,13 +211,14 @@ export function weekStartsFrom(startWeek: string, untilWeekStart: string): strin
   return result;
 }
 
-/** 已经结束（周日过完）但还没有快照的周：下次打开时补算 */
-export function weeksNeedingSnapshot(today: string, snapshots: Record<string, WeekSnapshot>): string[] {
-  const lastSettled = toDateKey(addDays(fromDateKey(getWeekStartKey(today)), -7));
+/** 该结算还没有快照的周：已经过完的周，加上（周日晚 8 点后的）这一周。下次打开时补算 */
+export function weeksNeedingSnapshot(today: string, snapshots: Record<string, WeekSnapshot>, includeCurrentWeek = false): string[] {
+  const thisWeek = getWeekStartKey(today);
+  const lastSettled = includeCurrentWeek ? thisWeek : toDateKey(addDays(fromDateKey(thisWeek), -7));
   return weekStartsFrom(POINTS_START_WEEK, lastSettled).filter((week) => !snapshots[week]);
 }
 
-// ── 家长奖励、提前完成、愿望 ───────────────────────────────────────────────
+// ── 家长奖励、提前完成 ─────────────────────────────────────────────────────
 
 export interface BonusEntry {
   id: string;
@@ -223,33 +241,22 @@ export interface EarlyDecision {
   updatedAt: string;
 }
 
-export type WishStatus = "pending" | "confirmed" | "redeemed";
-
-export interface Wish {
-  id: string;
-  text: string;
-  status: WishStatus;
-  /** 需要几朵小红花（家长确认时设定，默认 1） */
-  cost: number;
-  createdAt: string;
-  updatedAt: string;
-  confirmedAt?: string;
-  redeemedAt?: string;
-  deletedAt?: string;
-}
-
 export interface PointsLedger {
   version: 1;
   bonuses: BonusEntry[];
   /** 键是作业任务 id */
   earlyDecisions: Record<string, EarlyDecision>;
-  wishes: Wish[];
-  /** 已庆祝过的事：reach:周一:任务id / early:任务id / school:日期 / flower:第几朵 → 时间 */
+  /** 已庆祝过的事：reach:周一:任务id / early:任务id / school:日期 → 时间 */
   celebrated: Record<string, string>;
   snapshots: Record<string, WeekSnapshot>;
+  /**
+   * 代码已经不用、但不能丢的旧字段（例如已取消的愿望 wishes），读进来原样带着，写回时原样写回，
+   * 这样 app_settings 里已有的数据不动（2026-11-24 取消小红花和愿望）。
+   */
+  legacy?: Record<string, unknown>;
 }
 
-export const emptyLedger = (): PointsLedger => ({ version: 1, bonuses: [], earlyDecisions: {}, wishes: [], celebrated: {}, snapshots: {} });
+export const emptyLedger = (): PointsLedger => ({ version: 1, bonuses: [], earlyDecisions: {}, celebrated: {}, snapshots: {} });
 
 export const activeBonuses = (ledger: PointsLedger) => ledger.bonuses.filter((bonus) => !bonus.revokedAt);
 
@@ -273,11 +280,6 @@ export function pendingEarlyItems(tasks: Task[], ledger: PointsLedger): PendingE
     .sort((a, b) => a.completedDate.localeCompare(b.completedDate));
 }
 
-export const flowersRedeemed = (ledger: PointsLedger) => ledger.wishes.filter((wish) => wish.status === "redeemed").reduce((sum, wish) => sum + wish.cost, 0);
-
-/** 当前愿望：最早写的、还没兑换的（没删的） */
-export const currentWish = (ledger: PointsLedger) => ledger.wishes.filter((wish) => !wish.deletedAt && wish.status !== "redeemed").sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
-
 // ── 汇总 ──────────────────────────────────────────────────────────────────
 
 export interface WeekHistory {
@@ -287,8 +289,8 @@ export interface WeekHistory {
   total: number;
   reachedCount: number;
   settled: boolean;
-  cumulativeAfter: number;
-  flowersEarned: number;
+  /** 那周的零花钱（元）：结算过的取快照里固定的金额，没结算的按现在的得分算 */
+  allowance: number;
 }
 
 export interface PointsSummary {
@@ -298,19 +300,11 @@ export interface PointsSummary {
   weekBonus: number;
   weekTotal: number;
   weekBonuses: BonusEntry[];
+  /** 本周挣的零花钱（元）= 本周得分，不低于 0 */
+  weekAllowance: number;
   history: WeekHistory[];
-  cumulative: number;
-  flowersEarned: number;
-  flowersRedeemed: number;
-  flowers: number;
-  /** 当前这朵攒了多少（0–99） */
-  progress: number;
-  toNextFlower: number;
   pendingEarly: PendingEarly[];
-  wish?: Wish;
 }
-
-export const flowersFor = (cumulative: number) => Math.max(0, Math.floor(cumulative / POINTS_PER_FLOWER));
 
 export function computePointsSummary(tasks: Task[], ledger: PointsLedger, today: string): PointsSummary {
   const weekStart = getWeekStartKey(today);
@@ -320,25 +314,19 @@ export function computePointsSummary(tasks: Task[], ledger: PointsLedger, today:
     bonusesByWeek.set(week, [...(bonusesByWeek.get(week) ?? []), bonus]);
   });
   const weeks = weekStart >= POINTS_START_WEEK ? weekStartsFrom(POINTS_START_WEEK, weekStart) : [];
-  let cumulative = 0;
-  let previousFlowers = 0;
   let weekScores: PracticeWeekScore[] = [];
   const history: WeekHistory[] = weeks.map((week) => {
+    // 这一周在周日晚上结算以后也有快照，但本周的分数仍按现在的设置实时算（快照只固定零花钱）
     const snapshot = week < weekStart ? ledger.snapshots[week] : undefined;
     const scores = weekPracticeScores(tasks, week, snapshot);
     if (week === weekStart) weekScores = scores;
     const practice = scores.reduce((sum, item) => sum + item.total, 0);
     const bonus = (bonusesByWeek.get(week) ?? []).reduce((sum, item) => sum + item.points, 0);
-    cumulative += practice + bonus;
-    const flowersNow = flowersFor(cumulative);
-    const entry = { weekStart: week, practice, bonus, total: practice + bonus, reachedCount: scores.filter((item) => item.reached).length, settled: !!snapshot, cumulativeAfter: cumulative, flowersEarned: Math.max(0, flowersNow - previousFlowers) };
-    previousFlowers = Math.max(previousFlowers, flowersNow);
-    return entry;
+    const settledSnapshot = ledger.snapshots[week];
+    const allowance = settledSnapshot?.allowance ?? allowanceFor(practice + bonus);
+    return { weekStart: week, practice, bonus, total: practice + bonus, reachedCount: scores.filter((item) => item.reached).length, settled: !!settledSnapshot, allowance };
   });
   const current = history[history.length - 1];
-  const earned = flowersFor(cumulative);
-  const redeemed = flowersRedeemed(ledger);
-  const progress = cumulative <= 0 ? 0 : cumulative % POINTS_PER_FLOWER;
   return {
     weekStart,
     weekScores,
@@ -346,15 +334,9 @@ export function computePointsSummary(tasks: Task[], ledger: PointsLedger, today:
     weekBonus: current?.bonus ?? 0,
     weekTotal: current?.total ?? 0,
     weekBonuses: ledger.bonuses.filter((bonus) => getWeekStartKey(bonus.date) === weekStart).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    weekAllowance: allowanceFor(current?.total ?? 0),
     history,
-    cumulative,
-    flowersEarned: earned,
-    flowersRedeemed: redeemed,
-    flowers: Math.max(0, earned - redeemed),
-    progress,
-    toNextFlower: POINTS_PER_FLOWER - progress,
     pendingEarly: pendingEarlyItems(tasks, ledger),
-    wish: currentWish(ledger),
   };
 }
 

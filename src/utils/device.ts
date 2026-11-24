@@ -9,5 +9,5 @@ export function isTouchDevice(nav: { maxTouchPoints?: number } | undefined = typ
   return (nav?.maxTouchPoints ?? 0) > 0;
 }
 
-/** 这台设备能不能做家长操作（补记过去日期、家长奖励、确认 / 兑换愿望、改练习分值） */
+/** 这台设备能不能做家长操作（补记过去日期、家长奖励、改练习分值、记账里的确认转账 / 期初余额 / 对账调整 / 改利率） */
 export const isParentDevice = () => !isTouchDevice();

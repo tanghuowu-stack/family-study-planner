@@ -16,7 +16,9 @@ import { itemSyncKey, taskSyncKey } from "../utils/taskMeta";
 import { sumWeeklyTimes, weeklyTimesProgress } from "../utils/weeklyTimes";
 import { AllDoneCelebration } from "../components/AllDoneCelebration";
 import { ParentBonusRow, PointsBar, practiceScoreLabels } from "../components/PointsPanel";
-import { flowerCelebrations, loadPointsContext, settlePendingWeeks, type Celebration, type PointsContext } from "../data/pointsService";
+import { loadPointsContext, settlePendingWeeks, type Celebration, type PointsContext } from "../data/pointsService";
+import { loadBalances } from "../data/ledgerService";
+import type { Balances } from "../utils/ledger";
 import { formatMoreToDo, gainForLog, moreToDoToday, POINTS_START_WEEK } from "../utils/points";
 import { isParentDevice } from "../utils/device";
 import { GroupHeading, NEUTRAL_DOT, SUBJECT_DOT } from "../components/GroupHeading";
@@ -38,8 +40,10 @@ interface Props {
   onWeeklyLog: (task: TaskDisplay, delta: number, date: string) => void | Promise<void>;
   onCopy: (task: TaskDisplay) => void; onOpenMonth: () => void;
   onAddTask: () => void;
-  /** 积分庆祝（家长加奖励跨过 100 的整数倍时） */
+  /** 积分庆祝（达标等，中档） */
   onCelebrate?: (items: Celebration[]) => void;
+  /** 积分条上点零钱 / 存款 → 记账页 */
+  onOpenLedger?: () => void;
   unsyncedTasks?: Set<string>; unsyncedItems?: Set<string>;
   onRetrySync?: (task: TaskDisplay) => void; onRetryItemSync?: (task: TaskDisplay, itemId: string) => void;
 }
@@ -54,15 +58,17 @@ export function DayPage(props: Props) {
   const weeklyReachedRef = useRef<{ date: string; reached: Set<string> } | null>(null);
   const [showDone, setShowDone] = useState(true);
   const [showWeekDone, setShowWeekDone] = useState(false);
-  // 积分（2026-11-24）：分数由完成记录算出，账本（奖励、愿望、快照…）在 app_settings
+  // 积分（2026-11-24）：分数由完成记录算出，账本（奖励、快照…）在 app_settings；零钱 / 存款余额由记账记录算出
   const [points, setPoints] = useState<PointsContext | null>(null);
+  const [balances, setBalances] = useState<Balances | null>(null);
   const pointsRequest = useRef(0);
   const reloadPoints = () => {
     const request = ++pointsRequest.current;
+    void loadBalances().then((value) => { if (request === pointsRequest.current) setBalances(value); }).catch(() => {});
     return loadPointsContext().then(async (context) => {
       if (request !== pointsRequest.current) return;
       setPoints(context);
-      // 上周（及以前没打开过的周）结束了还没结算的，补一份快照
+      // 上周（及以前没打开过的周）结束了还没结算的、周日晚 8 点后的这一周，补一份快照（固定那周的零花钱）
       if (await settlePendingWeeks(context)) { const next = await loadPointsContext(); if (request === pointsRequest.current) setPoints(next); }
     }).catch((error) => console.warn("[points] load", error));
   };
@@ -189,7 +195,7 @@ export function DayPage(props: Props) {
     {/* Mac / iPad 横屏：左右两栏等宽等高。左栏是作业（逾期 / 今日任务〔今天的 + 本周作业〕/ 已完成），
         右栏是每周练习（每周几次）；两栏底边对齐，短的一栏主卡片拉长。
         窄屏依次排下来：逾期、今日任务、每周练习、已完成——两栏外壳在窄屏是 display:contents，靠 order 排序 */}
-    {pointsOn && points && <PointsBar ctx={points} onChanged={() => void reloadPoints()} />}
+    {pointsOn && points && <PointsBar ctx={points} balances={balances} onChanged={() => void reloadPoints()} onOpenLedger={() => props.onOpenLedger?.()} />}
     <div ref={swipeRef} className={`flex flex-col gap-4 ${hasPractice ? "lg:grid lg:grid-cols-2 lg:items-stretch" : ""}`}>
       <div className={`contents ${hasPractice ? "lg:flex lg:min-w-0 lg:flex-col lg:gap-4" : ""}`}>
         {overdueShown.length > 0 && <section className="surface overflow-visible border-alert/35 order-1 lg:order-none"><div className="flex items-center justify-between border-b border-alert/20 bg-alert/[0.06] px-3 py-2.5 sm:px-4"><h2 className="text-base font-bold text-alert">逾期未完成</h2><span className="text-[13px] font-semibold tabular-nums text-alert">{overdue.length}</span></div>{overdueShown.map((task) => renderTask(task))}</section>}
@@ -216,7 +222,7 @@ export function DayPage(props: Props) {
             <button onClick={() => setShowWeekDone(!showWeekDone)} aria-expanded={showWeekDone} className="flex min-h-11 w-full items-center justify-between border-t border-ink/[0.07] px-3 text-left text-[13px] font-semibold text-muted sm:px-4"><span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-primary" />已做够 {timesDone.length}</span><ChevronDown className={`h-4 w-4 transition ${showWeekDone ? "rotate-180" : ""}`} /></button>
             {showWeekDone && <div className="border-t border-ink/[0.07]">{timesDone.map((task) => renderTask(task))}</div>}
           </>}
-          {pointsOn && points && <ParentBonusRow ctx={points} onChanged={() => void reloadPoints()} onBonusAdded={(before) => { void reloadPoints(); void flowerCelebrations(before).then((items) => items.length && props.onCelebrate?.(items)); }} />}
+          {pointsOn && points && <ParentBonusRow ctx={points} onChanged={() => void reloadPoints()} />}
         </section>
       </div>}
     </div>

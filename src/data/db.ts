@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable } from "dexie";
 import type { ActivityLog, Course, MainCategory, PlanPeriod, ReadingLog, Task, TaskOccurrenceStatus } from "../types/task";
+import type { LedgerEntry } from "../utils/ledger";
 
 type LegacyTask = Record<string, unknown> & { category?: string; subType?: string; courseType?: string };
 
@@ -24,6 +25,7 @@ export class PlannerDatabase extends Dexie {
   activityLogs!: EntityTable<ActivityLog, "id">;
   readingLogs!: EntityTable<ReadingLog, "id">;
   courses!: EntityTable<Course, "id">;
+  ledgerEntries!: EntityTable<LedgerEntry, "id">;
 
   constructor() {
     super("familyLearningPlanner");
@@ -151,6 +153,16 @@ export class PlannerDatabase extends Dexie {
       await transaction.table("tasks").toCollection().modify((task: Record<string, unknown>) => {
         if (task.timeType !== "recurring") task.schedulePattern = "singleDate";
       });
+    });
+    // 版本 10：记账（TASK_10），新增 ledgerEntries 表。仅加表，不迁移现有数据。
+    this.version(10).stores({
+      tasks: "id, timeType, mainCategory, subCategory, extraContentType, calendarVisibility, date, startDate, endDate, weekStart, month, status, parentTaskId, allocationWeekStart, planPeriodId, courseId, deletedAt, updatedAt",
+      taskOccurrenceStatuses: "id, taskId, occurrenceDate, overrideDate, [taskId+occurrenceDate], status",
+      planPeriods: "id, type, startDate, endDate, isActive, updatedAt",
+      activityLogs: "id, actionType, entityType, entityId, createdAt",
+      readingLogs: "id, taskId, weekStart, date, [taskId+weekStart], createdAt",
+      courses: "id, mainCategory, subCategory, status, sortOrder, updatedAt",
+      ledgerEntries: "id, date, type, deletedAt, updatedAt",
     });
   }
 }

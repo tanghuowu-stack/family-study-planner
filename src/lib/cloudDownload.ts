@@ -2,12 +2,14 @@ import { supabase } from "./supabase";
 import { db } from "../data/db";
 import type { Task, TaskOccurrenceStatus, PlanPeriod } from "../types/task";
 import { rowToChecklistItem, rowToTask } from "./cloudRead";
+import { LEDGER_TABLE, rowToLedgerEntry } from "./ledgerRows";
 
 export interface DownloadResult {
   tasks: number;
   checklistItems: number;
   occurrenceStatuses: number;
   planPeriods: number;
+  ledgerEntries: number;
 }
 
 export async function downloadCloudDataToLocal(familyId: string): Promise<DownloadResult> {
@@ -18,18 +20,23 @@ export async function downloadCloudDataToLocal(familyId: string): Promise<Downlo
     { data: tasksData, error: tasksError },
     { data: checklistData, error: checklistError },
     { data: occurrencesData, error: occurrencesError },
-    { data: periodsData, error: periodsError }
+    { data: periodsData, error: periodsError },
+    { data: ledgerData, error: ledgerError },
   ] = await Promise.all([
     supabase.from("tasks").select("*").eq("family_id", familyId),
     supabase.from("task_checklist_items").select("*").eq("family_id", familyId).order('sort_order', { ascending: true }),
     supabase.from("task_occurrence_statuses").select("*").eq("family_id", familyId),
     supabase.from("plan_periods").select("*").eq("family_id", familyId),
+    supabase.from(LEDGER_TABLE).select("*").eq("family_id", familyId),
   ]);
 
   if (tasksError) throw new Error(`读取云端任务失败: ${tasksError.message}`);
   if (checklistError) throw new Error(`读取云端清单失败: ${checklistError.message}`);
   if (occurrencesError) throw new Error(`读取云端单次状态失败: ${occurrencesError.message}`);
   if (periodsError) throw new Error(`读取云端假期阶段失败: ${periodsError.message}`);
+  // 记账表（TASK_10）读取失败不挡其他数据的下载
+  if (ledgerError) console.warn("[cloudDownload] 读取云端记账记录失败", ledgerError.message);
+  const ledgerEntries = (ledgerData || []).map(rowToLedgerEntry);
 
   // 2. 映射 tasks 和 checklistItems
   const tasks = (tasksData || []).map(rowToTask);
@@ -78,7 +85,7 @@ export async function downloadCloudDataToLocal(familyId: string): Promise<Downlo
   // 5. 强制覆盖写入 IndexedDB：云端有的记录一律以云端为准（不比较 updatedAt），
   //    本机还没同步上去的修改会被云端旧值覆盖——界面上点按钮前必须先确认（CloudLoginPanel.handleDownload）。
   //    日常同步走 cloudRepository.refreshFromCloud（按 LWW 合并），不走这里。
-  await db.transaction("rw", db.tasks, db.taskOccurrenceStatuses, db.planPeriods, async () => {
+  await db.transaction("rw", [db.tasks, db.taskOccurrenceStatuses, db.planPeriods, db.ledgerEntries], async () => {
     if (tasks.length > 0) {
       await db.tasks.bulkPut(tasks);
     }
@@ -88,6 +95,9 @@ export async function downloadCloudDataToLocal(familyId: string): Promise<Downlo
     if (planPeriods.length > 0) {
       await db.planPeriods.bulkPut(planPeriods);
     }
+    if (ledgerEntries.length > 0) {
+      await db.ledgerEntries.bulkPut(ledgerEntries);
+    }
   });
 
   return {
@@ -95,5 +105,6 @@ export async function downloadCloudDataToLocal(familyId: string): Promise<Downlo
     checklistItems: checklistItems.length,
     occurrenceStatuses: occurrenceStatuses.length,
     planPeriods: planPeriods.length,
+    ledgerEntries: ledgerEntries.length,
   };
 }

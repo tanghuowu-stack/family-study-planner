@@ -1,4 +1,4 @@
-import { BarChart3, CalendarDays, Cloud, ClipboardList, Home, Plus, Settings, Table2 } from "lucide-react";
+import { BarChart3, CalendarDays, Cloud, ClipboardList, Home, Plus, Settings, Table2, Wallet } from "lucide-react";
 import { addDays } from "date-fns";
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { TaskForm } from "./components/TaskForm";
@@ -16,6 +16,7 @@ import { DayPage } from "./pages/DayPage";
 import { MonthPage } from "./pages/MonthPage";
 import { TaskManagementPage } from "./pages/TaskManagementPage";
 import { TimetablePage } from "./pages/TimetablePage";
+import { LedgerPage } from "./pages/LedgerPage";
 import type { Task, TaskDisplay, TaskDraft, TaskStatus } from "./types/task";
 import { fromDateKey, shouldReturnToToday, todayKey, toDateKey } from "./utils/date";
 import { isOccurrenceSchedule, itemSyncKey, taskSyncKey } from "./utils/taskMeta";
@@ -25,12 +26,13 @@ import { supabase } from "./lib/supabase";
 import { isParentDevice } from "./utils/device";
 import { archiveSidebarMemo, deleteSidebarMemoHistory, loadSidebarMemoState, restoreSidebarMemo, saveSidebarMemo, type MemoHistoryEntry, type SidebarMemoSetting } from "./data/appSettingsRepository";
 
-type Page = "today" | "month" | "tasks" | "stats" | "timetable" | "settings";
+type Page = "today" | "month" | "tasks" | "stats" | "timetable" | "ledger" | "settings";
 const navItems = [
   { page: "today" as const, label: "今日", icon: Home },
   { page: "month" as const, label: "月视图", icon: CalendarDays }, { page: "tasks" as const, label: "任务管理", icon: ClipboardList },
   { page: "stats" as const, label: "周计划及打卡", icon: BarChart3 },
   { page: "timetable" as const, label: "课表", icon: Table2 },
+  { page: "ledger" as const, label: "记账", icon: Wallet },
 ];
 
 export default function App() {
@@ -43,7 +45,7 @@ export default function App() {
   const [datePick, setDatePick] = useState<{ title: string; description?: string; initialDate: string; choices: DateChoice[]; note?: { label: string; initial?: string; placeholder?: string }; confirmText: string; onConfirm: (date: string, note: string) => Promise<void> } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [toast, setToast] = useState("");
-  // 积分庆祝队列（中档 / 大档，点一下关掉一个）
+  // 积分庆祝队列（中档，点一下关掉一个）
   const [celebrations, setCelebrations] = useState<Celebration[]>([]);
   const [syncErrorToast, setSyncErrorToast] = useState("");
   const [cloudMode, setCloudModeState] = useState(false);
@@ -303,7 +305,7 @@ export default function App() {
   const logWeeklyTime = async (task: TaskDisplay, delta: number, date: string) => {
     const key = taskSyncKey(task);
     const today = todayKey();
-    // 以前的日子补记只在 Mac 上；补记不放庆祝。当天记的：达标 / 攒到小红花时庆祝
+    // 以前的日子补记只在 Mac 上；补记不放庆祝。当天记的：某项刚达标时庆祝
     if (blockedBackfill(date)) { refresh(); return; }
     const cheer = delta > 0 && date === today;
     const priorLog = task.weeklyLog;
@@ -385,14 +387,15 @@ export default function App() {
     </aside>
     <header className="pt-safe sticky top-0 z-40 border-b border-ink/10 bg-paper/95 backdrop-blur-xl desk:hidden"><div className="flex h-14 items-center justify-between px-4"><button onClick={() => setPage("today")} className="flex items-center gap-2.5"><img src="/favicon.svg" alt="" className="h-8 w-8 rounded-lg" /><span className="text-left text-base font-bold">小步计划</span></button><div className="flex items-center gap-2">{!cloudInitializing && <span title={cloudMode ? "云端已连接" : "本地模式"} className={`h-2 w-2 rounded-full ${cloudMode ? "bg-emerald-500" : "bg-stone-300"}`} />}<button type="button" aria-label="设置" title="设置" onClick={() => setPage("settings")} className={`flex h-11 w-11 items-center justify-center rounded-lg border ${page === "settings" ? "border-primary/30 bg-primary/10 text-primary" : "border-ink/10 bg-white text-muted hover:text-primary"}`}><Settings className="h-5 w-5" /></button><button aria-label="添加任务" onClick={() => setForm({ open: true })} className="flex h-11 w-11 items-center justify-center rounded-lg bg-alert text-white"><Plus className="h-4 w-4" /></button></div></div></header>
     <div className="app-content">
-      {page === "today" && <DayPage date={selectedDate} refreshKey={refreshKey} onCelebrate={celebrate} onDateChange={setSelectedDate} onOpenMonth={() => setPage("month")} onAddTask={() => setForm({ open: true })} {...actions} />}
+      {page === "today" && <DayPage date={selectedDate} refreshKey={refreshKey} onCelebrate={celebrate} onOpenLedger={() => setPage("ledger")} onDateChange={setSelectedDate} onOpenMonth={() => setPage("month")} onAddTask={() => setForm({ open: true })} {...actions} />}
       {page === "month" && <MonthPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenDay={openDay} onAddTask={(date) => { setSelectedDate(date); setForm({ open: true }); }} />}
       {page === "tasks" && <TaskManagementPage refreshKey={refreshKey} onRefresh={refresh} notify={notify} onEdit={(task) => setForm({ open: true, task })} onDelete={deleteTask} onEnd={endTask} onExtend={extendTask} onCopy={copyTask} />}
       {page === "stats" && <StatsPage refreshKey={refreshKey} onOpenDay={openDay} />}
       {page === "settings" && <SettingsPage refreshKey={refreshKey} onImported={refresh} notify={notify} cloudMode={cloudMode} onAuthChange={syncCloudSession} memoHistory={memoHistory} memoBusy={memoBusy} onRestoreMemo={(id) => updateMemoHistory(() => restoreSidebarMemo(id), "已恢复到当前备忘，有原内容时会追加")} onDeleteMemo={(id) => updateMemoHistory(() => deleteSidebarMemoHistory(id), "历史备忘已永久删除")} />}
       {page === "timetable" && <TimetablePage />}
+      {page === "ledger" && <LedgerPage refreshKey={refreshKey} onChanged={refresh} notify={notify} />}
     </div>
-    <nav className="bottom-nav-safe fixed inset-x-0 bottom-0 z-40 border-t border-ink/10 bg-white/95 backdrop-blur desk:hidden"><div className="mx-auto grid max-w-2xl grid-cols-5 px-2 pt-1">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`relative flex min-w-0 flex-col items-center gap-0.5 px-1 py-1.5 text-[10px] ${page === value ? "text-primary" : "text-muted"}`}>{page === value && <span className="absolute -top-1 h-0.5 w-8 bg-alert" />}<Icon className="h-5 w-5" /><span className="truncate">{label}</span></button>)}</div></nav>
+    <nav className="bottom-nav-safe fixed inset-x-0 bottom-0 z-40 border-t border-ink/10 bg-white/95 backdrop-blur desk:hidden"><div className="mx-auto grid max-w-2xl grid-cols-6 px-1 pt-1">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`relative flex min-w-0 flex-col items-center gap-0.5 px-1 py-1.5 text-[10px] ${page === value ? "text-primary" : "text-muted"}`}>{page === value && <span className="absolute -top-1 h-0.5 w-8 bg-alert" />}<Icon className="h-5 w-5" /><span className="truncate">{label}</span></button>)}</div></nav>
     {form.open && <TaskForm key={form.round ?? 0} task={form.task} initialDate={selectedDate} carry={form.carry} justAdded={form.justAdded} onClose={() => setForm({ open: false })} onSave={saveTask} onContinue={(carry, savedTitle) => setForm((current) => ({ open: true, carry, justAdded: [...(current.justAdded ?? []), savedTitle], round: (current.round ?? 0) + 1 }))} />}
     {extendTarget && <ExtendRecurringDialog task={extendTarget} onClose={() => setExtendTarget(null)} onConfirm={confirmExtend} />}
     {datePick && <DatePickDialog {...datePick} onClose={() => setDatePick(null)} />}

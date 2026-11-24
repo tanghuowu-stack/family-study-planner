@@ -1,5 +1,5 @@
 /**
- * 每周练习积分 + 小红花 + 愿望（2026-11-24）：纯函数规则（utils/points.ts）与账本合并（data/pointsLedger.ts）。
+ * 每周练习积分 → 零花钱（2026-11-24）：纯函数规则（utils/points.ts）与账本合并（data/pointsLedger.ts）。
  * 积分第一周 = 2026-11-23（周一）。时区按 Asia/Shanghai（完成时间换算本地日期）。
  */
 declare const process: { env: Record<string, string | undefined> };
@@ -7,10 +7,10 @@ process.env.TZ = "Asia/Shanghai";
 import { describe, expect, it } from "vitest";
 import type { Task, WeeklyQuota } from "../../types/task";
 import {
-  buildWeekSnapshot, computePointsSummary, emptyLedger, findPracticePreset, formatMoreToDo, gainForLog, isEarlyCompleted, matchPracticePresets, moreToDoToday,
-  pendingEarlyItems, practiceDisplayName, practiceSettingsForForm, practiceShortName, scorePracticeWeek, weeksNeedingSnapshot, type BonusEntry, type PointsLedger, type Wish,
+  allowanceFor, buildWeekSnapshot, computePointsSummary, emptyLedger, findPracticePreset, formatMoreToDo, gainForLog, isEarlyCompleted, isSettleTime, matchPracticePresets, moreToDoToday,
+  pendingEarlyItems, practiceDisplayName, practiceSettingsForForm, practiceShortName, scorePracticeWeek, weeksNeedingSnapshot, type BonusEntry, type PointsLedger,
 } from "../points";
-import { mergeLedgers } from "../../data/pointsLedger";
+import { mergeLedgers, normalizeLedger, serializeLedger } from "../../data/pointsLedger";
 
 const W1 = "2026-11-23"; // 积分第一周（周一）
 const W0 = "2026-11-16"; // 积分开始之前的一周
@@ -79,18 +79,18 @@ describe("一项练习一周的得分", () => {
   });
 });
 
-describe("累计、小红花、家长奖励、兑换", () => {
+describe("零花钱（1 分 = 1 元）、家长奖励", () => {
   it("积分开始那周之前的记录不计分", () => {
     const piano = practice("p", "钢琴练习", 1, "次", { [day(W0, 0)]: 1, [day(W0, 1)]: 1 }, { practicePoints: 2 });
     const summary = computePointsSummary([piano], emptyLedger(), day(W1, 1));
-    expect(summary.cumulative).toBe(0);
+    expect(summary.weekTotal).toBe(0);
     expect(summary.history.map((week) => week.weekStart)).toEqual([W1]);
   });
 
   it("今天还在积分开始之前：什么都不算", () => {
     const summary = computePointsSummary([practice("p", "钢琴练习", 1, "次", { [day(W0, 0)]: 1 })], emptyLedger(), day(W0, 3));
     expect(summary.history).toEqual([]);
-    expect(summary.cumulative).toBe(0);
+    expect(summary.weekAllowance).toBe(0);
   });
 
   it("家长奖励可加可减，撤回的不算", () => {
@@ -101,26 +101,30 @@ describe("累计、小红花、家长奖励、兑换", () => {
     expect(summary.weekBonuses).toHaveLength(3); // 列表里仍显示被撤回的那笔（划掉）
   });
 
-  it("分数跨周累积；每满 60 分一朵小红花", () => {
-    // 第一周：50 分家长奖励；第二周：钢琴 4 次 ×2 + 达标 2 = 10 分，再加 35 分奖励 → 累计 95
+  it("每周得分（含家长奖励和扣分）就是那周的零花钱；每周分开算，不跨周累积", () => {
+    // 第一周：50 分家长奖励 → 50 元；第二周：钢琴 4 次 ×2 + 达标 2 = 10 分，再加 35 分奖励 → 45 元
     const piano = practice("p", "钢琴练习", 4, "次", Object.fromEntries([0, 1, 2, 3].map((i) => [day(W2, i), 1])), { practicePoints: 2 });
     const ledger = ledgerWith({ bonuses: [bonus("a", day(W1, 2), 50), bonus("b", day(W2, 4), 35)] });
     const summary = computePointsSummary([piano], ledger, day(W2, 5));
-    expect(summary.history.map((week) => [week.weekStart, week.total, week.cumulativeAfter, week.flowersEarned])).toEqual([[W1, 50, 50, 0], [W2, 45, 95, 1]]);
-    expect(summary).toMatchObject({ weekTotal: 45, cumulative: 95, flowersEarned: 1, flowers: 1, progress: 35, toNextFlower: 25 });
+    expect(summary.history.map((week) => [week.weekStart, week.total, week.allowance])).toEqual([[W1, 50, 50], [W2, 45, 45]]);
+    expect(summary).toMatchObject({ weekTotal: 45, weekAllowance: 45 });
   });
 
-  it("兑换扣除小红花：数量 = 累计得到的 − 已兑换的", () => {
-    const wish = (id: string, status: Wish["status"], cost: number): Wish => ({ id, text: id, status, cost, createdAt: "2026-11-24T00:00:00.000Z", updatedAt: "2026-11-24T00:00:00.000Z" });
-    const ledger = ledgerWith({ bonuses: [bonus("a", day(W1, 1), 150)], wishes: [wish("乐高", "redeemed", 2), wish("游乐场", "confirmed", 3)] });
-    const summary = computePointsSummary([], ledger, day(W1, 2));
-    expect(summary).toMatchObject({ flowersEarned: 2, flowersRedeemed: 2, flowers: 0 });
-    expect(summary.wish?.text).toBe("游乐场");
-  });
-
-  it("减分让累计回落时小红花不会变成负数", () => {
+  it("扣分扣成负数时，那周零花钱是 0，不倒扣", () => {
     const summary = computePointsSummary([], ledgerWith({ bonuses: [bonus("a", day(W1, 1), -5)] }), day(W1, 2));
-    expect(summary).toMatchObject({ cumulative: -5, flowers: 0, progress: 0 });
+    expect(summary).toMatchObject({ weekTotal: -5, weekAllowance: 0 });
+    expect(allowanceFor(-5)).toBe(0);
+    expect(allowanceFor(12)).toBe(12);
+  });
+
+  it("结算快照固定那周的零花钱：之后补勾、撤回奖励都不改已结算的金额（分数显示照样跟着记录走）", () => {
+    const piano = (log: Record<string, number>) => practice("p", "钢琴练习", 3, "次", log, { practicePoints: 2 });
+    const log = { [day(W1, 0)]: 1, [day(W1, 2)]: 1, [day(W1, 4)]: 1 };
+    const snapshot = buildWeekSnapshot([piano(log)], W1, "2026-11-29T12:30:00.000Z", 3);
+    expect(snapshot).toMatchObject({ total: 8, bonus: 3, allowance: 11 });
+    const undone = piano({ [day(W1, 0)]: 1, [day(W1, 2)]: 1 });
+    const summary = computePointsSummary([undone], ledgerWith({ snapshots: { [W1]: snapshot } }), day(W2, 1));
+    expect(summary.history[0]).toMatchObject({ practice: 4, allowance: 11, settled: true });
   });
 });
 
@@ -128,10 +132,14 @@ describe("每周结算快照", () => {
   const piano = (log: Record<string, number>, extra: Partial<Task> = {}) => practice("p", "钢琴练习", 3, "次", log, { practicePoints: 2, ...extra });
   const w1Log = { [day(W1, 0)]: 1, [day(W1, 2)]: 1, [day(W1, 4)]: 1 };
 
-  it("周日过完才需要结算；那周没打开过，下次打开时补算", () => {
+  it("周日晚上 8 点起结算这一周；那周没打开过，下次打开时补算", () => {
     expect(weeksNeedingSnapshot(day(W1, 6), {})).toEqual([]);
+    expect(weeksNeedingSnapshot(day(W1, 6), {}, true)).toEqual([W1]);
     expect(weeksNeedingSnapshot(day(W2, 0), {})).toEqual([W1]);
     expect(weeksNeedingSnapshot(day(W2, 8), {})).toEqual([W1, W2]);
+    expect(isSettleTime(new Date("2026-11-29T20:00:00+08:00"))).toBe(true);
+    expect(isSettleTime(new Date("2026-11-29T19:59:00+08:00"))).toBe(false);
+    expect(isSettleTime(new Date("2026-11-30T09:00:00+08:00"))).toBe(false);
   });
 
   it("结算之后再改分值或目标，已结算的周不受影响；没结算的本周按新设置算", () => {
@@ -278,6 +286,14 @@ describe("账本跨设备合并", () => {
     expect(merged.snapshots[W1].total).toBe(5);
   });
   it("坏数据不会让账本整体失效", () => {
-    expect(mergeLedgers(null, { bonuses: [{ id: 1 }], wishes: "x" })).toEqual(emptyLedger());
+    expect(mergeLedgers(null, { bonuses: [{ id: 1 }] })).toEqual(emptyLedger());
+  });
+  it("已取消的小红花 / 愿望数据代码不读，但写回时原样带上，app_settings 里已有的不动", () => {
+    const wishes = [{ id: "w1", text: "去动物园", status: "confirmed", cost: 1, createdAt: "2026-11-24T00:00:00.000Z", updatedAt: "2026-11-24T00:00:00.000Z" }];
+    const stored = { version: 1, bonuses: [], earlyDecisions: {}, celebrated: { "flower:1": "2026-11-24T00:00:00.000Z" }, snapshots: {}, wishes };
+    const ledger = normalizeLedger(stored);
+    expect(Object.keys(ledger)).not.toContain("wishes");
+    expect(serializeLedger(ledger)).toEqual(stored);
+    expect(serializeLedger(mergeLedgers(null, stored))).toEqual(stored);
   });
 });

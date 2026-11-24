@@ -8,6 +8,7 @@ import { db } from "../data/db";
 import type { Task, TaskOccurrenceStatus, PlanPeriod, Course, ActivityLog } from "../types/task";
 import { isOccurrenceSchedule } from "../utils/taskMeta";
 import { supabase } from "./supabase";
+import { LEDGER_TABLE, ledgerEntryToRow } from "./ledgerRows";
 
 export interface UploadResult {
   tasks: number;
@@ -15,6 +16,7 @@ export interface UploadResult {
   occurrenceStatuses: number;
   planPeriods: number;
   courses: number;
+  ledgerEntries: number;
   activityLogs: number;
   skippedTasks: number;
   skippedOccurrenceStatuses: number;
@@ -127,12 +129,13 @@ export async function uploadLocalDataToCloud(familyId: string): Promise<UploadRe
   if (!supabase) throw new Error("Supabase 未配置");
 
   // ── 1. 读取本地数据 ─────────────────────────────────────────────
-  const [tasks, occurrenceStatuses, planPeriods, courses, activityLogs] = await Promise.all([
+  const [tasks, occurrenceStatuses, planPeriods, courses, activityLogs, ledgerEntries] = await Promise.all([
     db.tasks.toArray(),
     db.taskOccurrenceStatuses.toArray(),
     db.planPeriods.toArray(),
     db.courses.toArray(),
     db.activityLogs.toArray(),
+    db.ledgerEntries.toArray(),
   ]);
 
   const result: UploadResult = {
@@ -141,6 +144,7 @@ export async function uploadLocalDataToCloud(familyId: string): Promise<UploadRe
     occurrenceStatuses: 0,
     planPeriods: 0,
     courses: 0,
+    ledgerEntries: 0,
     activityLogs: 0,
     skippedTasks: 0,
     skippedOccurrenceStatuses: 0,
@@ -291,6 +295,9 @@ export async function uploadLocalDataToCloud(familyId: string): Promise<UploadRe
     updated_at: toTimestampOrNull(c.updatedAt) ?? new Date().toISOString(),
   }));
   result.courses = await upsertChunked("courses", courseRows, "id");
+
+  // ── 5.6 上传 ledger_entries（记账，TASK_10）：映射与日常写入共用 lib/ledgerRows ──
+  result.ledgerEntries = await upsertChunked(LEDGER_TABLE, ledgerEntries.map((entry) => ledgerEntryToRow(entry, familyId)), "id");
 
   // ── 6. 上传 activity_logs ──────────────────────────────────────
   // 2026-08-12 启用：改用 ignoreDuplicates（ON CONFLICT DO NOTHING），不再依赖

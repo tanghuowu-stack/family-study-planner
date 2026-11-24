@@ -9,6 +9,7 @@ import { supabase } from "../lib/supabase";
 import { db } from "./db";
 import { rowToChecklistItem, rowToTask } from "../lib/cloudRead";
 import { uploadLocalDataToCloud } from "../lib/cloudUpload";
+import { LEDGER_TABLE, ledgerEntryToRow, rowToLedgerEntry } from "../lib/ledgerRows";
 import type {
   Task,
   TaskDraft,
@@ -86,6 +87,14 @@ function endCloudWrite(keys: string[]): void {
 export function createPullGuard(): (id: string) => boolean {
   const seqAtFetchStart = writeSeq;
   return (id) => inflightWrites.has(id) || (lastWriteSeq.get(id) ?? 0) > seqAtFetchStart;
+}
+
+/**
+ * 一次普通（不排队）的云端写入，写的过程中这些 id 受拉取保护（见 createPullGuard）。记账记录用它。
+ */
+export async function guardedCloudWrite<T>(keys: string[], job: () => Promise<T>): Promise<T> {
+  beginCloudWrite(keys);
+  try { return await job(); } finally { endCloudWrite(keys); }
 }
 
 /**
@@ -492,6 +501,31 @@ async function fetchOccurrences(familyId: string): Promise<TaskOccurrenceStatus[
   return statuses;
 }
 
+/**
+ * 记账记录（TASK_10）：按 updatedAt 做 LWW 合并进本地（软删除跟着 deletedAt 走）；
+ * 本地有、云端没有的（上次上传失败的新记录）顺手补传。只补"云端没有"的，不补"本地更新"的——
+ * 云端触发器会把 updated_at 改成服务器时间，设备时钟快一点就会每次拉取都重传、触发 Realtime 回声循环。
+ * 表还没建（迁移没执行）时只打警告，不影响其他数据。
+ */
+async function fetchLedgerEntries(familyId: string): Promise<void> {
+  if (!supabase) return;
+  const beingWritten = createPullGuard();
+  const { data, error } = await supabase.from(LEDGER_TABLE).select("*").eq("family_id", familyId);
+  if (error || !data) {
+    if (error) console.warn("[cloudRepository] 读取云端记账记录失败", error.message);
+    return;
+  }
+  const remote = data.map(rowToLedgerEntry);
+  await lwwMerge(db.ledgerEntries, remote, beingWritten).catch(() => {});
+  const remoteIds = new Set(remote.map((entry) => entry.id));
+  const missing = (await db.ledgerEntries.toArray()).filter((entry) => !remoteIds.has(entry.id) && !beingWritten(entry.id));
+  if (missing.length === 0) return;
+  await guardedCloudWrite(missing.map((entry) => entry.id), async () => {
+    const { error: upsertError } = await supabase!.from(LEDGER_TABLE).upsert(missing.map((entry) => ledgerEntryToRow(entry, familyId)), { onConflict: "id" });
+    if (upsertError) console.warn("[cloudRepository] 补传记账记录失败", upsertError.message);
+  });
+}
+
 // ─── cloudRepository object ──────────────────────────────────────────────────
 
 let _familyId: string | null = null;
@@ -577,6 +611,8 @@ export const cloudRepository = {
         await db.courses.clear().catch(() => {});
         if (courses.length > 0) await db.courses.bulkPut(courses).catch(() => {});
       }
+
+      await fetchLedgerEntries(_familyId);
     }
   },
 

@@ -9,9 +9,9 @@ import type { Task } from "../types/task";
 import { getWeekStartKey, todayKey, toLocalDateKey } from "../utils/date";
 import { isWeekPlanTask } from "../utils/taskGrouping";
 import {
-  buildWeekSnapshot, computePointsSummary, DEFAULT_PRACTICE_EXTRA_SCORES, DEFAULT_PRACTICE_POINTS, flowersFor, formatMoreToDo, isEarlyCompleted,
+  activeBonuses, buildWeekSnapshot, computePointsSummary, DEFAULT_PRACTICE_EXTRA_SCORES, DEFAULT_PRACTICE_POINTS, formatMoreToDo, isEarlyCompleted, isSettleTime,
   matchPracticePresets, moreToDoToday, POINTS_START_WEEK, practiceDisplayName, practiceSettingsOf, practiceShortName, practiceVerb, PRACTICE_PRESETS,
-  scorePracticeWeek, weeksNeedingSnapshot, type PointsLedger, type PointsSummary, type Wish,
+  scorePracticeWeek, weeksNeedingSnapshot, type PointsLedger, type PointsSummary,
 } from "../utils/points";
 
 export interface PointsContext { tasks: Task[]; ledger: PointsLedger; summary: PointsSummary }
@@ -25,15 +25,20 @@ export async function loadPointsContext(today = todayKey()): Promise<PointsConte
 let dataReady = false;
 export const markPointsDataReady = () => { dataReady = true; };
 
-/** 补上已经结束、还没结算的周的快照（每周日过完固定一次；那周没打开过应用的，下次打开时补） */
-export async function settlePendingWeeks(context: PointsContext, today = todayKey()): Promise<boolean> {
+/**
+ * 补上该结算、还没结算的周的快照：已经过完的周，以及周日晚上 8 点以后的这一周；那周没打开过应用的，下次打开时补。
+ * 快照固定那周的零花钱（练习 + 家长奖励，不低于 0），记账页的"待转账"金额就取它（docs/TASK_10_ledger.md）。
+ */
+export async function settlePendingWeeks(context: PointsContext, today = todayKey(), now = new Date()): Promise<boolean> {
   if (!dataReady) return false;
-  const missing = weeksNeedingSnapshot(today, context.ledger.snapshots);
+  const includeCurrent = isSettleTime(now) && getWeekStartKey(now) === getWeekStartKey(today);
+  const missing = weeksNeedingSnapshot(today, context.ledger.snapshots, includeCurrent);
   if (missing.length === 0) return false;
-  const now = new Date().toISOString();
+  const settledAt = now.toISOString();
   await updatePointsLedger((current) => {
     const snapshots = { ...current.snapshots };
-    missing.forEach((week) => { if (!snapshots[week]) snapshots[week] = buildWeekSnapshot(context.tasks, week, now); });
+    const bonusOf = (week: string) => activeBonuses(current).filter((bonus) => getWeekStartKey(bonus.date) === week).reduce((sum, bonus) => sum + bonus.points, 0);
+    missing.forEach((week) => { if (!snapshots[week]) snapshots[week] = buildWeekSnapshot(context.tasks, week, settledAt, bonusOf(week)); });
     return { ...current, snapshots };
   });
   return true;
@@ -87,8 +92,8 @@ export async function applyPracticePresetsOnce(): Promise<PresetResult | null> {
 
 // ── 庆祝 ─────────────────────────────────────────────────────────────────
 
-export type CelebrationLevel = "medium" | "big";
-export interface Celebration { id: string; level: CelebrationLevel; title: string; detail?: string }
+/** 中档庆祝：少量散花 + 一句提示，点一下消失（"攒到一朵小红花"的大档已随小红花取消） */
+export interface Celebration { id: string; title: string; detail?: string }
 
 /** 记下"已庆祝"，返回其中这次真正第一次庆祝的 key（另一台设备已经庆祝过的不再弹） */
 async function claimCelebrations(keys: string[]): Promise<Set<string>> {
@@ -103,11 +108,9 @@ async function claimCelebrations(keys: string[]): Promise<Set<string>> {
   return fresh;
 }
 
-const flowerCelebration = (flowers: number): Celebration => ({ id: `flower:${flowers}`, level: "big", title: "攒到一朵小红花！", detail: `现在有 ${flowers} 朵` });
-
 /**
- * 每周练习当天记了一次之后：某项本周刚达标 → 中档；累计分刚跨过 60（POINTS_PER_FLOWER）的整数倍 → 大档。补记（过去日期）不调用。
- * priorLog 是记之前界面上的那份记录，用它还原"记之前"的分数（不用在写入前多读一次库）。
+ * 每周练习当天记了一次之后：某项本周刚达标 → 中档庆祝"钢琴本周练够了！达标奖励 +2。本周已挣 N 元"。补记（过去日期）不调用。
+ * priorLog 是记之前界面上的那份记录，用它判断"刚达标"（不用在写入前多读一次库）。
  */
 export async function practiceCelebrations(taskId: string, priorLog: Record<string, number> | undefined, today = todayKey()): Promise<Celebration[]> {
   const after = await loadPointsContext(today);
@@ -116,29 +119,12 @@ export async function practiceCelebrations(taskId: string, priorLog: Record<stri
   if (!taskAfter) return [];
   const was = scorePracticeWeek({ ...taskAfter, weeklyLog: priorLog }, weekStart);
   const now = scorePracticeWeek(taskAfter, weekStart);
-  const cumulativeBefore = after.summary.cumulative - (now.total - was.total);
-  const result: Celebration[] = [];
-  const keys: string[] = [];
-  if (now.reached && !was.reached) {
-    const key = `reach:${weekStart}:${taskId}`;
-    keys.push(key);
-    const name = practiceShortName(taskAfter);
-    result.push({ id: key, level: "medium", title: `${name}本周${practiceVerb(name)}够了！`, detail: `达标奖励 +2。再得 ${after.summary.toNextFlower} 分就能换下一朵小红花` });
-  }
-  for (let n = flowersFor(cumulativeBefore) + 1; n <= flowersFor(after.summary.cumulative); n += 1) keys.push(`flower:${n}`);
-  const fresh = await claimCelebrations(keys);
-  const out = result.filter((item) => fresh.has(item.id));
-  if (fresh.has(`flower:${flowersFor(after.summary.cumulative)}`)) out.unshift(flowerCelebration(after.summary.flowers));
-  return out;
-}
-
-/** 家长加了奖励之后：累计分刚跨过 60（POINTS_PER_FLOWER）的整数倍 → 大档 */
-export async function flowerCelebrations(cumulativeBefore: number, today = todayKey()): Promise<Celebration[]> {
-  const after = await loadPointsContext(today);
-  const keys: string[] = [];
-  for (let n = flowersFor(cumulativeBefore) + 1; n <= flowersFor(after.summary.cumulative); n += 1) keys.push(`flower:${n}`);
-  const fresh = await claimCelebrations(keys);
-  return fresh.has(`flower:${flowersFor(after.summary.cumulative)}`) ? [flowerCelebration(after.summary.flowers)] : [];
+  if (!now.reached || was.reached) return [];
+  const key = `reach:${weekStart}:${taskId}`;
+  const fresh = await claimCelebrations([key]);
+  if (!fresh.has(key)) return [];
+  const name = practiceShortName(taskAfter);
+  return [{ id: key, title: `${name}本周${practiceVerb(name)}够了！`, detail: `达标奖励 +2。本周已挣 ${after.summary.weekAllowance} 元` }];
 }
 
 /** 当天学校作业（不含本周作业、提醒）的完成情况；没有学校作业时 total = 0 */
@@ -162,12 +148,12 @@ export async function homeworkCelebrations(taskId: string, wasDone: boolean, tod
   const result: Celebration[] = [];
   const task = await taskRepository.getTask(taskId);
   if (task && isEarlyCompleted(task) && toLocalDateKey(task.completedAt!) === today) {
-    result.push({ id: `early:${task.id}`, level: "medium", title: "提前完成了！", detail: "拿给妈妈检查，通过了有奖励" });
+    result.push({ id: `early:${task.id}`, title: "提前完成了！", detail: "拿给妈妈检查，通过了有奖励" });
   }
   const school = await schoolHomeworkState(today);
   if (school.allDone && school.ids.includes(taskId)) {
     const more = await moreToDoText(today);
-    result.push({ id: `school:${today}`, level: "medium", title: "哇，全完成了！", detail: more ? `你还可以再做：${more}` : undefined });
+    result.push({ id: `school:${today}`, title: "哇，全完成了！", detail: more ? `你还可以再做：${more}` : undefined });
   }
   const fresh = await claimCelebrations(result.map((item) => item.id));
   return result.filter((item) => fresh.has(item.id));
@@ -200,36 +186,3 @@ export async function skipEarly(taskId: string): Promise<PointsLedger> {
   const now = new Date().toISOString();
   return updatePointsLedger((current) => ({ ...current, earlyDecisions: { ...current.earlyDecisions, [taskId]: { decision: "skip", decidedAt: now, updatedAt: now } } }));
 }
-
-export async function addWish(text: string): Promise<PointsLedger> {
-  const value = text.trim();
-  if (!value) throw new Error("写一下愿望是什么");
-  const now = new Date().toISOString();
-  const wish: Wish = { id: newId(), text: value.slice(0, 60), status: "pending", cost: 1, createdAt: now, updatedAt: now };
-  return updatePointsLedger((current) => ({ ...current, wishes: [...current.wishes, wish] }));
-}
-
-export async function confirmWish(id: string, cost: number): Promise<PointsLedger> {
-  const flowers = Math.max(1, Math.min(99, Math.round(cost) || 1));
-  const now = new Date().toISOString();
-  return updatePointsLedger((current) => ({ ...current, wishes: current.wishes.map((wish) => wish.id === id && wish.status !== "redeemed" ? { ...wish, status: "confirmed", cost: flowers, confirmedAt: now, updatedAt: now } : wish) }));
-}
-
-/** 兑换：小红花够才行（以最新数据为准），扣除并记下兑换时间 */
-export async function redeemWish(id: string): Promise<PointsLedger> {
-  const tasks = await db.tasks.toArray();
-  return updatePointsLedger((current) => {
-    const wish = current.wishes.find((item) => item.id === id);
-    if (!wish || wish.status !== "confirmed" || wish.deletedAt) throw new Error("这个愿望还没确认，或者已经兑换过了");
-    const { flowers } = computePointsSummary(tasks, current, todayKey());
-    if (flowers < wish.cost) throw new Error(`小红花还不够（需要 ${wish.cost} 朵，现在 ${flowers} 朵）`);
-    const now = new Date().toISOString();
-    return { ...current, wishes: current.wishes.map((item) => item.id === id ? { ...item, status: "redeemed", redeemedAt: now, updatedAt: now } : item) };
-  });
-}
-
-export async function deleteWish(id: string): Promise<PointsLedger> {
-  const now = new Date().toISOString();
-  return updatePointsLedger((current) => ({ ...current, wishes: current.wishes.map((wish) => wish.id === id && wish.status !== "redeemed" ? { ...wish, deletedAt: now, updatedAt: now } : wish) }));
-}
-

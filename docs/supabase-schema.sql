@@ -263,6 +263,34 @@ alter table public.tasks
 create index if not exists idx_tasks_course_id on public.tasks(family_id, course_id);
 
 -- ============================================================
+-- 6.6 ledger_entries（记账，TASK_10；增量迁移见 supabase-migration-ledger.sql）
+-- 每条记录一行，带 updated_at / deleted_at，走 LWW 同步和软删除；金额存分。
+-- ============================================================
+
+create table if not exists public.ledger_entries (
+  id           text primary key,
+  family_id    uuid not null references public.families(id) on delete cascade,
+  entry_date   date not null,
+  type         text not null
+               check (type in ('allowance', 'expense', 'deposit', 'withdraw', 'interest', 'opening', 'adjust')),
+  account      text check (account in ('cash', 'savings')),
+  amount_cents integer not null,
+  content      text,
+  category     text,
+  ref_key      text,
+  created_by   text not null default 'child' check (created_by in ('child', 'parent')),
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  deleted_at   timestamptz
+);
+
+create index if not exists idx_ledger_entries_family_date on public.ledger_entries(family_id, entry_date);
+
+create trigger trg_ledger_entries_updated_at
+  before update on public.ledger_entries
+  for each row execute function public.set_updated_at();
+
+-- ============================================================
 -- 7. activity_logs
 -- 操作审计日志，只追加不覆盖
 -- ============================================================
@@ -450,6 +478,24 @@ create policy "courses_delete" on public.courses
   for delete using (family_id = public.get_my_family_id());
 
 -- ----------------------------------------------------------------
+-- ledger_entries（记账，TASK_10）
+-- ----------------------------------------------------------------
+alter table public.ledger_entries enable row level security;
+
+create policy "ledger_entries_select" on public.ledger_entries
+  for select using (family_id = public.get_my_family_id());
+
+create policy "ledger_entries_insert" on public.ledger_entries
+  for insert with check (family_id = public.get_my_family_id());
+
+create policy "ledger_entries_update" on public.ledger_entries
+  for update using (family_id = public.get_my_family_id())
+  with check (family_id = public.get_my_family_id());
+
+create policy "ledger_entries_delete" on public.ledger_entries
+  for delete using (family_id = public.get_my_family_id());
+
+-- ----------------------------------------------------------------
 -- activity_logs：只追加，不允许 update / delete
 -- ----------------------------------------------------------------
 alter table public.activity_logs enable row level security;
@@ -492,6 +538,7 @@ grant select, insert, update, delete on table public.task_occurrence_statuses to
 grant select, insert, update, delete on table public.plan_periods to authenticated;
 grant select, insert, update, delete on table public.courses to authenticated;
 grant select, insert, update, delete on table public.app_settings to authenticated;
+grant select, insert, update, delete on table public.ledger_entries to authenticated;
 
 grant select, insert on table public.activity_logs to authenticated;
 

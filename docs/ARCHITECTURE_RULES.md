@@ -22,7 +22,8 @@
                          ┌─────────────── Supabase (Postgres) ───────────────┐
                          │  tasks / task_checklist_items /                    │
    写入(REST upsert) ───▶ │  task_occurrence_statuses / plan_periods /         │
-                         │  courses / app_settings / activity_logs            │
+                         │  courses / app_settings / activity_logs /          │
+                         │  ledger_entries（记账，TASK_10）                     │
    拉取(REST select) ◀── │  （全部以 family_id 隔离，RLS 保护）                 │
                          └──────────────┬──────────────────────┬─────────────┘
                                         │ Realtime 推送          │ 拉取
@@ -88,7 +89,8 @@
 1. **`Task` 任何新增/改名字段，4 个映射面必须同步更新。** 顺序建议：先改 `types/task.ts`，再全局 `grep` 字段名确认 4 处都覆盖。
 2. **新增字段后必须在 `cloudFieldParity.test.ts` 的 `FIELD_PAIRS` 里加一行。** 这个测试对 `taskToRow` ↔ `rowToTask`（正常读写路径这一对）做"上传→云端行→下载"往返断言，漏映射会立即断言失败。`taskToRow` 已 `export` 供测试引用。维护方式：往 `fullTask()` 里补该字段的非空样例值，往 `FIELD_PAIRS` 数组加 `["字段名", t.字段名]`。
 3. **走 metadata jsonb 的低频字段**（`totalAmount` / `amountUnit` / `splitCount` / `amountPerSession` / `readingTargetCount` / `readingTargetUnit` / `allowedWeekdays` / `allowWeekend` / `enableTimer` / `pauseDuringTravel` / `habitKey` / `dayNotes` / `weeklyLog` / `practicePoints` / `practiceExtraScores`）由 `buildMetadata` 整包透传、`...row.metadata` 整包展开，结构上不会出现单向漏映射，不必逐字段列进 parity 测试；但新增这类字段仍要确认 `buildMetadata` 里加了对应行——**注意 `cloudRepository.ts` 和 `cloudUpload.ts` 各有一份 `buildMetadata`，两处都要加**（2026-11-24 起 `cloudFieldParity.test.ts` 也对 cloudUpload 那份做往返断言，积分两字段同时列进了 `FIELD_PAIRS`）。
-4. **已知缺口**：`cloudFieldParity.test.ts` 只覆盖 `taskToRow`/`rowToTask` 这一对（日常读写路径，最高频最危险）。维护面板的 `cloudUpload.ts` / `cloudDownload.ts` 两个映射面**未纳入**该测试——改这两个文件时需手动逐字段核对。
+4. **记账表 `ledger_entries`（TASK_10）不重复这个问题**：行映射只有 `lib/ledgerRows.ts` 一份（`ledgerEntryToRow` / `rowToLedgerEntry`），日常写入、日常拉取、维护面板上传、维护面板下载四处都调它；往返对照与四处用法见 `lib/__tests__/ledgerRows.test.ts`。以后新加表照这个做法：一份映射，四处共用。
+5. **已知缺口**：`cloudFieldParity.test.ts` 只覆盖 `taskToRow`/`rowToTask` 这一对（日常读写路径，最高频最危险）。维护面板的 `cloudUpload.ts` / `cloudDownload.ts` 两个映射面**未纳入**该测试——改这两个文件时需手动逐字段核对。
 
 ### 3.2 冗余 / 派生字段规范
 
@@ -243,8 +245,11 @@
 | `lib/__tests__/cloudFieldParity.test.ts` | `taskToRow`↔`rowToTask` 全字段往返对照（43 例，防单向漏映射）|
 | `context/__tests__/timerStore.test.ts` | 计时器状态机纯函数（暂停继续保留 accumulated 等）|
 | `utils/__tests__/date.test.ts` | 日期工具（toLocalDateKey UTC+8 边界等）|
-| `utils/__tests__/points.test.ts` | 每周练习积分规则（次每天一次、达标 +2、多做计分/不计分、不扣分、跨周累积、小红花、兑换、起始周、快照、提前完成判定、还可以再做）+ 账本跨设备合并 |
-| `data/__tests__/pointsService.test.ts` | 积分数据层：家长奖励加减撤回、提前完成待处理、愿望确认兑换、补算快照、按标题套预设只套一次、庆祝只弹一次 |
+| `utils/__tests__/points.test.ts` | 每周练习积分规则（次每天一次、达标 +2、多做计分/不计分、不扣分、1 分 = 1 元、负分零花钱为 0、起始周、快照固定零花钱、周日 20 点结算、提前完成判定、还可以再做）+ 账本跨设备合并（旧愿望数据原样保留） |
+| `data/__tests__/pointsService.test.ts` | 积分数据层：家长奖励加减撤回、提前完成待处理、结算快照（零花钱 = 练习 + 奖励）、按显示名套预设只套一次、庆祝只弹一次 |
+| `utils/__tests__/ledger.test.ts` | 记账规则（TASK_10）：金额、余额、存取款、余额不足拦截、孩子权限、利息按最低日终余额（月中 / 月底存入、取出再存入）、利率修改只影响之后月份、待转账、本月小结、对账 |
+| `data/__tests__/ledgerService.test.ts` | 记账数据层：练习奖励待转账 → 家长确认入账、快照后改动不影响金额、余额不足不写入、孩子只能改删当天自己记的、软删、对账调整、改利率只有家长 |
+| `lib/__tests__/ledgerRows.test.ts` | `ledger_entries` 行映射往返对照；日常写入 upsert、拉取 LWW 合并（软删传播、本地新的不回滚、补传本地独有）、维护面板上传 / 下载（Supabase mock） |
 | `data/__tests__/completionSync.test.ts` | 勾选链路（§3.6）：本地写完即回调、同任务上传串行、拉取避让在途写入、并发勾选不丢勾（Supabase mock 带闸门）|
 
 **新增功能必须配套的测试级别**：

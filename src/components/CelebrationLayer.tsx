@@ -5,7 +5,7 @@ import type { Celebration } from "../data/pointsService";
 const PETAL_COLORS = ["#2B7656", "#DCEAE3", "#E36B4E", "#EFC66A"];
 
 /**
- * 中档 / 大档庆祝（2026-11-24）：少量（大档多一些）散花 + 一句提示，点一下消失。不加声音；
+ * 中档庆祝（2026-11-24）：少量散花 + 一句提示，点一下消失。不加声音；
  * 散花 1.6 秒内落完，提示卡片停在那里等点。prefers-reduced-motion 下不散花。
  * 一次只显示队列里的第一个，点掉再显示下一个。
  */
@@ -13,7 +13,7 @@ export function CelebrationLayer({ queue, onDismiss }: { queue: Celebration[]; o
   const current = queue[0];
   const petals = useMemo(() => {
     if (!current) return [];
-    const count = current.level === "big" ? 36 : 14;
+    const count = 14;
     return Array.from({ length: count }, (_, index) => ({
       left: 10 + ((index * 37) % 80) + Math.random() * 6,
       drift: (Math.random() - 0.5) * 120,
@@ -35,9 +35,8 @@ export function CelebrationLayer({ queue, onDismiss }: { queue: Celebration[]; o
         ))}
       </div>
       <button type="button" role="status" aria-live="polite" onClick={onDismiss}
-        className={`relative max-w-sm animate-[celebrate_500ms_ease-out] rounded-lg border border-ink/10 bg-white shadow-xl px-6 py-5 text-center motion-reduce:animate-none ${current.level === "big" ? "sm:px-8 sm:py-6" : ""}`}>
-        {current.level === "big" && <span aria-hidden className="mb-1 block text-4xl">🌸</span>}
-        <span className={`block font-bold text-ink ${current.level === "big" ? "text-xl" : "text-lg"}`}>{current.title}</span>
+        className={`relative max-w-sm animate-[celebrate_500ms_ease-out] rounded-lg border border-ink/10 bg-white shadow-xl px-6 py-5 text-center motion-reduce:animate-none`}>
+        <span className="block text-lg font-bold text-ink">{current.title}</span>
         {current.detail && <span className="mt-1.5 block text-[15px] leading-6 text-muted">{current.detail}</span>}
         <span className="mt-3 block text-[13px] text-stone-400">点一下关闭</span>
       </button>

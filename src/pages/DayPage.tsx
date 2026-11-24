@@ -21,7 +21,7 @@ import { loadBalances } from "../data/ledgerService";
 import type { Balances } from "../utils/ledger";
 import { formatMoreToDo, gainForLog, moreToDoToday, POINTS_START_WEEK } from "../utils/points";
 import { isParentDevice } from "../utils/device";
-import { GroupHeading, NEUTRAL_DOT, SUBJECT_DOT } from "../components/GroupHeading";
+import { GroupHeading, NEUTRAL_DOT, RewardHint, SUBJECT_DOT } from "../components/GroupHeading";
 
 /** 刚完成的任务在原位停留多久再收进"已完成"（略长于 400ms 的勾选动画） */
 const COMPLETED_HOLD_MS = 700;
@@ -215,7 +215,7 @@ export function DayPage(props: Props) {
       </div>
       {hasPractice && <div className="contents lg:flex lg:min-w-0 lg:flex-col">
         <section aria-label="每周练习" className="surface order-3 overflow-visible lg:order-none lg:flex-1">
-          <div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">每周练习</h2><ProgressMeter completed={practice.done} total={practice.target} />{pointsOn && points ? <span title={`本周已做 ${practice.done}/${practice.target} 次`} className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${practiceAllDone ? "text-primary" : "text-ink"}`}>本周 {points.summary.weekTotal} 分</span> : <span title="本周已做次数 / 本周目标次数（各项加起来）" className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${practiceAllDone ? "text-primary" : "text-ink"}`}>{practiceAllDone ? `本周都做够了 ${practice.done}/${practice.target}` : `已做 ${practice.done}/${practice.target} 次`}</span>}</div>
+          <div className="flex items-center gap-3 border-b border-ink/10 px-3 py-3 sm:px-4"><h2 className="shrink-0 text-base font-bold text-ink">每周练习</h2>{pointsOn && <RewardHint text="全部完成有奖励！" />}<ProgressMeter completed={practice.done} total={practice.target} />{pointsOn && points ? <span title={`本周已做 ${practice.done}/${practice.target} 次`} className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${practiceAllDone ? "text-primary" : "text-ink"}`}>本周 {points.summary.weekTotal} 分</span> : <span title="本周已做次数 / 本周目标次数（各项加起来）" className={`ml-auto shrink-0 text-[13px] font-semibold tabular-nums ${practiceAllDone ? "text-primary" : "text-ink"}`}>{practiceAllDone ? `本周都做够了 ${practice.done}/${practice.target}` : `已做 ${practice.done}/${practice.target} 次`}</span>}</div>
           <SortableTaskList tasks={timesPending} renderTask={renderTask} onReorder={reorderTasks} />
           {timesPending.length === 0 && <p className="px-4 py-3 text-[15px] font-semibold text-primary">这周的练习都做够了</p>}
           {timesDone.length > 0 && <>

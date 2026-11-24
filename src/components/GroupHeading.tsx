@@ -33,13 +33,18 @@ interface Props {
 }
 
 /** 分组小标题：13px 半粗、无底色，靠色点与留白分区 */
+/** 琥珀色礼物小胶囊："提前完成有奖励！"（本周课外作业）、"全部完成有奖励！"（每周练习），两处同一个样式 */
+export function RewardHint({ text }: { text: string }) {
+  return <span className="inline-flex min-w-0 items-center gap-1 rounded-full bg-sun/35 px-2.5 py-0.5 text-[13px] font-bold text-amber-800"><Gift aria-hidden className="h-3.5 w-3.5 shrink-0" strokeWidth={2.5} /><span className="truncate">{text}</span></span>;
+}
+
 export function GroupHeading({ label, suffix, hint, count, dot, handle, highlight, action }: Props) {
   return (
     <h3 className={`flex items-center gap-2 px-3 pb-1 pt-3 text-[13px] font-semibold transition-colors sm:px-4 ${highlight ? "bg-mint/60" : ""}`}>
       {dot && <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: dot }} />}
       <span className="text-ink">{label}</span>
       {suffix && <span className="font-medium text-muted">{suffix}</span>}
-      {hint && <span className="inline-flex min-w-0 items-center gap-1 rounded-full bg-sun/35 px-2.5 py-0.5 font-bold text-amber-800"><Gift aria-hidden className="h-3.5 w-3.5 shrink-0" strokeWidth={2.5} /><span className="truncate">{hint}</span></span>}
+      {hint && <RewardHint text={hint} />}
       {count !== undefined && <span className="ml-auto font-medium tabular-nums text-muted">{count}</span>}
       {action && <span className={count === undefined ? "ml-auto" : ""}>{action}</span>}
       {/* 手柄放最右侧：放左侧会让有手柄和没手柄的分组色点对不齐；只在电脑上显示（2026-11-18） */}

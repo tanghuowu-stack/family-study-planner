@@ -1,6 +1,7 @@
 import { CalendarPlus, CalendarX, Check, ChevronDown, Copy, MoreHorizontal, NotebookPen, Pencil, Trash2, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { CONFETTI_COLORS, CONFETTI_RADIUS } from "../utils/confetti";
 import type { ChecklistItem, TaskDisplay, TaskStatus } from "../types/task";
 import { WEEKLY_LOG_DAY_MAX, type WeeklyTimesProgress } from "../utils/weeklyTimes";
 import { STATUS_META, canEndRecurring, canExtendRecurring, isOccurrenceSchedule, taskShortName } from "../utils/taskMeta";
@@ -67,8 +68,6 @@ type AnimState = "idle" | "checking" | "unchecking";
  * 打勾得分弹窗周围炸开的彩色散花（2026-11-24 用户要求颜色丰富些、散花大些）：
  * 26 片，圆点 / 花瓣 / 彩条三种形状，12–24px，绕一圈往外飞再往下落着转着淡出。
  */
-const SPARK_COLORS = ["#F4A3B5", "#FFB347", "#7FC8F8", "#B39DDB", "#EFC66A", "#E36B4E", "#2B7656", "#8BD3A8", "#FF8FA3"];
-const SPARK_RADIUS = ["9999px", "60% 0 60% 0", "4px"];
 const POINT_SPARKS = Array.from({ length: 26 }, (_, index) => {
   const angle = (index / 26) * Math.PI * 2 + (index % 2 ? 0.12 : -0.08);
   const distance = [300, 230, 170][index % 3];
@@ -79,8 +78,8 @@ const POINT_SPARKS = Array.from({ length: 26 }, (_, index) => {
     dy: Math.round(Math.sin(angle) * distance * 0.8),
     width: shape === 2 ? Math.round(size * 0.55) : size,
     height: shape === 2 ? Math.round(size * 1.3) : size,
-    radius: SPARK_RADIUS[shape],
-    color: SPARK_COLORS[index % SPARK_COLORS.length],
+    radius: CONFETTI_RADIUS[shape],
+    color: CONFETTI_COLORS[index % CONFETTI_COLORS.length],
     spin: `${(index % 2 ? 1 : -1) * (180 + (index % 5) * 60)}deg`,
     delay: 60 + (index % 6) * 25,
   };
@@ -435,13 +434,14 @@ function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly:
   // 今天以后、任务结束以后的点不了；以前的日子只有 Mac 上能补记（iPad / 手机上只能记今天）
   const loggable = (date: string) => date <= today && (weekly.allowPast !== false || date === today) && (!task.endDate || date <= task.endDate);
   const [editing, setEditing] = useState<string>();
-  // 今天打勾得分时屏幕正中弹出"+2 分"小胶囊：数字从下往上弹出、后面炸开一圈彩色散花，约 1.6 秒上浮淡出（不用点，docs/TASK_09_points.md §10）
+  // 今天每记一次，屏幕正中弹出"+2 分"（不得分时"✓ 做完了"）小胶囊：数字从下往上弹出、后面炸开一圈彩色散花，约 1.6 秒上浮淡出（不用点，docs/TASK_09_points.md §10）
   const [floats, setFloats] = useState<{ id: number; gain: number }[]>([]);
   const floatId = useRef(0);
   const log = (date: string, delta: number) => {
     const gain = delta > 0 && date === today ? weekly.gainFor?.(date, delta) ?? 0 : 0;
     onLog(date, delta);
-    if (gain > 0) {
+    // 2026-11-24 用户："每次完成都有散花庆祝"——今天每记一次都炸散花；得分时胶囊写"+N 分"，不得分（超过目标、没开积分）写"✓ 做完了"
+    if (delta > 0 && date === today) {
       const id = ++floatId.current;
       setFloats((current) => [...current, { id, gain }]);
       setTimeout(() => setFloats((current) => current.filter((item) => item.id !== id)), 1800);
@@ -456,7 +456,7 @@ function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly:
     <ol className="mt-1 flex items-center gap-1" aria-label="本周每天的记录">
       {lastFloat && createPortal(
         <div className="pointer-events-none fixed inset-0 z-[70] flex items-center justify-center overflow-hidden">
-          <div key={lastFloat.id} role="status" aria-label={`加 ${lastFloat.gain} 分`} data-testid="points-float"
+          <div key={lastFloat.id} role="status" aria-label={lastFloat.gain > 0 ? `加 ${lastFloat.gain} 分` : "做完了"} data-testid="points-float"
             className="points-float relative" style={{ animation: "points-pop 1600ms cubic-bezier(.22,.8,.3,1) forwards" }}>
             {/* 小圆点和波纹垫在胶囊下面，从胶囊后面炸出来 */}
             <span aria-hidden="true" className="absolute inset-0 rounded-full border-[3px] border-[#F4A3B5]/70" style={{ animation: "points-ring 700ms ease-out 60ms both" }} />
@@ -465,8 +465,10 @@ function WeeklyTimesBar({ task, weekly, viewDate }: { task: TaskDisplay; weekly:
                 style={{ width: spark.width, height: spark.height, borderRadius: spark.radius, background: spark.color, "--dx": `${spark.dx}px`, "--dy": `${spark.dy}px`, "--spin": spark.spin, animation: `points-spark 1000ms cubic-bezier(.15,.7,.3,1) ${spark.delay}ms both` } as CSSProperties} />
             ))}
             <div className="relative flex items-baseline gap-1 rounded-full bg-white/95 px-7 py-3 text-primary shadow-[0_16px_40px_-12px_rgba(43,118,86,0.5)] ring-1 ring-primary/10">
-              <span aria-hidden="true" className="inline-block text-5xl font-medium leading-none tabular-nums tracking-tight" style={{ animation: "points-rise 620ms cubic-bezier(.2,.9,.3,1.45) 60ms both" }}>+{lastFloat.gain}</span>
-              <span aria-hidden="true" className="inline-block text-xl font-normal text-primary/60" style={{ animation: "points-rise 620ms cubic-bezier(.2,.9,.3,1.45) 180ms both" }}>分</span>
+              {lastFloat.gain > 0 ? <>
+                <span aria-hidden="true" className="inline-block text-5xl font-medium leading-none tabular-nums tracking-tight" style={{ animation: "points-rise 620ms cubic-bezier(.2,.9,.3,1.45) 60ms both" }}>+{lastFloat.gain}</span>
+                <span aria-hidden="true" className="inline-block text-xl font-normal text-primary/60" style={{ animation: "points-rise 620ms cubic-bezier(.2,.9,.3,1.45) 180ms both" }}>分</span>
+              </> : <span aria-hidden="true" className="inline-flex items-center gap-2 text-3xl font-medium leading-none" style={{ animation: "points-rise 620ms cubic-bezier(.2,.9,.3,1.45) 60ms both" }}><Check className="h-8 w-8" strokeWidth={3} />做完了</span>}
             </div>
           </div>
         </div>,

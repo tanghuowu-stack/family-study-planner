@@ -1,5 +1,5 @@
 import { ChevronDown } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { HabitSection } from "../components/HabitSection";
 import { WeekReviewStrip } from "../components/WeekReviewStrip";
 import { taskRepository } from "../data/taskRepository";
@@ -7,12 +7,16 @@ import { todayKey } from "../utils/date";
 
 type CourseStats = Awaited<ReturnType<typeof taskRepository.getCourseStatistics>>;
 
+export type StatsTab = "week" | "habits" | "courses";
+
 /**
- * 周计划及打卡（原"统计与设置"，2026-11 第 6 批拆分；2026-11-18 改名，并把本周条从月视图搬过来）：
- * 顶部本周完成情况（每天 + 每周几次），下面打卡月历和课程节数统计（本月 / 本年累计直接显示，自定义时间段收在下面）；
+ * 统计（原"周计划及打卡"；2026-11-25 页面整理改名并分成三个标签，一次只看一块，不再一长页堆三块）：
+ * - 本周：本周每天完成情况（每天 + 每周几次），点某天展开那天还没做的；
+ * - 打卡：各打卡项目的月历；
+ * - 上课：课程节数（本月 / 本年累计直接显示，自定义时间段收在下面）。
  * 云同步、备份、课程、假期、历史备忘、操作记录都在"设置"页。
  */
-export function StatsPage({ refreshKey, onOpenDay }: { refreshKey: number; onOpenDay: (date: string) => void }) {
+export function StatsPage({ refreshKey, onOpenDay, tab, tabs }: { refreshKey: number; onOpenDay: (date: string) => void; tab: StatsTab; tabs: ReactNode }) {
   const [message, setMessage] = useState("");
   const [courseStart, setCourseStart] = useState(() => `${todayKey().slice(0, 7)}-01`);
   const [courseEnd, setCourseEnd] = useState(todayKey);
@@ -23,17 +27,18 @@ export function StatsPage({ refreshKey, onOpenDay }: { refreshKey: number; onOpe
     setCourseStats(await taskRepository.getCourseStatistics(courseStart, courseEnd));
     setMessage("");
   };
-  return <main className="mx-auto w-full max-w-5xl lg:max-w-none xl:max-w-6xl px-3 pb-content pt-3 sm:px-7 sm:pt-6 lg:px-10"><header className="page-header page-header--compact"><h1 className="page-title">周计划及打卡</h1></header>
-    <WeekReviewStrip refreshKey={refreshKey} onOpenDay={onOpenDay} />
-    <HabitSection />
-    <section className="surface mt-4 p-3 sm:mt-6 sm:p-5">
+  return <main className="mx-auto w-full max-w-5xl lg:max-w-none xl:max-w-6xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
+    {tabs}
+    {tab === "week" && <WeekReviewStrip refreshKey={refreshKey} onOpenDay={onOpenDay} />}
+    {tab === "habits" && <HabitSection />}
+    {tab === "courses" && <section className="surface p-3 sm:p-5">
       <h2 className="text-base font-bold text-ink">课程节数统计</h2>
       <CourseTotals refreshKey={refreshKey} />
       <div className="mt-3 border-t border-ink/[0.07] pt-2">
         <button onClick={() => setShowCustom(!showCustom)} aria-expanded={showCustom} className="flex min-h-10 items-center gap-1 text-[13px] font-semibold text-muted hover:text-ink">自定义时间段<ChevronDown className={`h-4 w-4 transition ${showCustom ? "rotate-180" : ""}`} /></button>
         {showCustom && <><div className="mt-1 flex flex-wrap items-end gap-2"><label className="text-[13px] text-muted">开始日期<input type="date" value={courseStart} onChange={(event) => setCourseStart(event.target.value)} className="mt-1 block min-h-11 rounded-lg border px-2.5 text-sm text-stone-700" /></label><label className="text-[13px] text-muted">结束日期<input type="date" value={courseEnd} onChange={(event) => setCourseEnd(event.target.value)} className="mt-1 block min-h-11 rounded-lg border px-2.5 text-sm text-stone-700" /></label><button onClick={countCourses} className="min-h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-white">统计</button></div>{message && <p role="alert" className="mt-3 text-sm text-rose-700">{message}</p>}{courseStats && <CourseStatistics data={courseStats} />}</>}
       </div>
-    </section>
+    </section>}
   </main>;
 }
 

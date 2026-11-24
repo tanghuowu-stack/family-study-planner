@@ -1,5 +1,5 @@
 import { Check, Pencil, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { formatFullDate, fromDateKey, todayKey } from "../utils/date";
 import { getCalendarAnnotation } from "../data/calendarAnnotations";
 import {
@@ -49,7 +49,7 @@ function CourseName({ course }: { course: string }) {
 const displayTime = (value: string) => value.replace("-", "–");
 const termLabel = (value: string) => /^[（(].+[）)]$/.test(value.trim()) ? value.trim() : `（${value.trim()}）`;
 
-export function TimetablePage() {
+export function TimetablePage({ tabs }: { tabs?: ReactNode } = {}) {
   const [today, setToday] = useState(todayKey);
   const [saved, setSaved] = useState<SchoolTimetable | null>(null);
   const [draft, setDraft] = useState<SchoolTimetable | null>(null);
@@ -139,7 +139,7 @@ export function TimetablePage() {
   };
 
   if (!draft) {
-    return <main className="mx-auto w-full max-w-6xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10"><div className="surface p-6 text-sm text-muted">正在读取课表...</div></main>;
+    return <main className="mx-auto w-full max-w-6xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">{tabs}<div className="surface p-6 text-sm text-muted">正在读取课表...</div></main>;
   }
 
   const firstExtended = draft.slots.find((slot) => slot.id === "extended-1");
@@ -150,6 +150,7 @@ export function TimetablePage() {
 
   return (
     <main className={`school-timetable-page ${editing ? "is-editing" : ""} mx-auto w-full max-w-6xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10`}>
+      {tabs}
       <header className="page-header timetable-header">
         <div className="min-w-0"><div className="flex min-w-0 items-baseline gap-x-3"><h1 className="page-title shrink-0">课表</h1><p className="hidden min-w-0 truncate text-xs font-semibold text-ink sm:block sm:text-sm">{formatFullDate(today)}{holidayStatus && <span className={`ml-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{holidayStatus}</span>}{!editing && saved?.term && <span className="ml-1">{termLabel(saved.term)}</span>}</p></div>{editing ? <input aria-label="学期名称" value={draft.term} onChange={(event) => setDraft({ ...draft, term: event.target.value })} className="mt-1 w-full max-w-sm rounded-md border px-2 py-1 text-xs text-muted" /> : <p className="mt-1 truncate text-xs font-semibold text-ink sm:hidden">{formatFullDate(today)}{holidayStatus && <span className={`ml-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{holidayStatus}</span>}{saved?.term && <span className="ml-1">{termLabel(saved.term)}</span>}</p>}</div>
         <div className="flex items-center gap-2">

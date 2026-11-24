@@ -51,7 +51,7 @@ repositoryProvider.ts   按登录状态选择本地 / 云端 repository
 cloudAuth.ts            邮箱密码登录、family/profile 初始化
 cloudUpload/Read/Download.ts  维护工具：上传/预览/下载
 CloudLoginPanel.tsx     设置页里的云同步状态与维护面板
-weekReview.ts           “周计划及打卡”页“本周”条的只读汇总（每件事只算一次、算在到期那天，时段任务算在最后一天；完成看现在的状态）
+weekReview.ts           “统计 › 本周”条的只读汇总（每件事只算一次、算在到期那天，时段任务算在最后一天；完成看现在的状态）
 taskDefaults.ts         新建任务默认设置（getTaskDefaults / mergeTaskDefaults，规则写死在文件头表格）
 utils/points.ts         每周练习积分 → 零花钱（1 分 = 1 元）的纯计算（规则写死在文件头；分数由 weeklyLog 算出，不存总分）
 data/pointsLedger.ts    积分账本（app_settings `points_ledger_v1`：家长奖励、提前完成处理、已庆祝、每周快照含零花钱），跨设备按 id 合并；旧愿望数据原样带着不读
@@ -66,7 +66,7 @@ components/PointsPanel.tsx 积分条（本周 N 分 = N 元｜零钱｜存款）
 App.tsx                 正式任务动作汇聚点（增删改查、勾选、小项、单次状态）
 ```
 
-页面组件（今日页 / 周计划 / 月历 / 任务管理）尽量保持 UI 不变，只通过上层数据层切换数据来源。
+页面组件（今日 / 计划〔月历、课表、全部任务〕/ 统计〔本周、打卡、上课〕/ 记账）尽量保持 UI 不变，只通过上层数据层切换数据来源。
 
 ---
 

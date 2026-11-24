@@ -1,6 +1,6 @@
 import { addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, isSameMonth, startOfMonth, startOfWeek } from "date-fns";
 import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSwipe } from "../hooks/useSwipe";
 import { taskRepository } from "../data/taskRepository";
 import { getCalendarAnnotation } from "../data/calendarAnnotations";
@@ -10,7 +10,7 @@ import { subCategoryLabel } from "../utils/taskMeta";
 import { taskSubjectGroup } from "../utils/taskGrouping";
 import { NEUTRAL_DOT, SUBJECT_DOT } from "../components/GroupHeading";
 
-export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask }: { date: string; refreshKey: number; onDateChange: (date: string) => void; onOpenDay: (date: string) => void; onAddTask: (date: string) => void }) {
+export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask, tabs }: { date: string; refreshKey: number; onDateChange: (date: string) => void; onOpenDay: (date: string) => void; onAddTask: (date: string) => void; tabs?: ReactNode }) {
   const monthDate = fromDateKey(date);
   const monthKey = date.slice(0, 7);
   const gridDates = useMemo(() => eachDayOfInterval({ start: startOfWeek(startOfMonth(monthDate), { weekStartsOn: 1 }), end: endOfWeek(endOfMonth(monthDate), { weekStartsOn: 1 }) }).map(toDateKey), [monthKey]);
@@ -43,6 +43,7 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask
 
   return (
     <main className="mx-auto w-full max-w-7xl overflow-x-hidden px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
+      {tabs}
       <header className="page-header">
         <h1 className="page-title shrink-0">{format(monthDate, "yyyy年M月")}</h1>
         <div className="flex shrink-0 items-center gap-1 rounded-lg border border-ink/10 bg-white p-1">

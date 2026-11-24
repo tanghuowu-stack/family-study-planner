@@ -1,4 +1,4 @@
-import { BarChart3, CalendarDays, Cloud, ClipboardList, Home, Plus, Settings, Table2, Wallet } from "lucide-react";
+import { BarChart3, CalendarDays, CalendarRange, Cloud, ClipboardList, Flame, GraduationCap, Home, ListChecks, Plus, Settings, Table2, Wallet } from "lucide-react";
 import { addDays } from "date-fns";
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { TaskForm } from "./components/TaskForm";
@@ -10,7 +10,8 @@ import { cloudRepository, setCloudSyncErrorHandler } from "./data/cloudRepositor
 import { taskRepository } from "./data/taskRepository";
 import { loadAuthState } from "./lib/cloudAuth";
 import { startRealtimeSync, stopRealtimeSync } from "./lib/realtimeSync";
-import { StatsPage } from "./pages/StatsPage";
+import { StatsPage, type StatsTab } from "./pages/StatsPage";
+import { SegmentedTabs, type SegmentedTab } from "./components/SegmentedTabs";
 import { SettingsPage } from "./pages/SettingsPage";
 import { DayPage } from "./pages/DayPage";
 import { MonthPage } from "./pages/MonthPage";
@@ -26,17 +27,37 @@ import { supabase } from "./lib/supabase";
 import { isParentDevice } from "./utils/device";
 import { archiveSidebarMemo, deleteSidebarMemoHistory, loadSidebarMemoState, restoreSidebarMemo, saveSidebarMemo, type MemoHistoryEntry, type SidebarMemoSetting } from "./data/appSettingsRepository";
 
-type Page = "today" | "month" | "tasks" | "stats" | "timetable" | "ledger" | "settings";
+/**
+ * 2026-11-25 页面整理：菜单 6 项 → 4 项（今日 / 计划 / 统计 / 记账），设置位置不变。
+ * 计划 = 月历 / 课表 / 全部任务（原月视图、课表、任务管理），统计 = 本周 / 打卡 / 上课（原周计划及打卡）。
+ * 每页记住上次看的标签（只记本机）。
+ */
+type Page = "today" | "plan" | "stats" | "ledger" | "settings";
+type PlanTab = "month" | "timetable" | "tasks";
 const navItems = [
   { page: "today" as const, label: "今日", icon: Home },
-  { page: "month" as const, label: "月视图", icon: CalendarDays }, { page: "tasks" as const, label: "任务管理", icon: ClipboardList },
-  { page: "stats" as const, label: "周计划及打卡", icon: BarChart3 },
-  { page: "timetable" as const, label: "课表", icon: Table2 },
+  { page: "plan" as const, label: "计划", icon: CalendarDays },
+  { page: "stats" as const, label: "统计", icon: BarChart3 },
   { page: "ledger" as const, label: "记账", icon: Wallet },
 ];
+const PLAN_TABS: SegmentedTab<PlanTab>[] = [{ value: "month", label: "月历", icon: CalendarRange }, { value: "timetable", label: "课表", icon: Table2 }, { value: "tasks", label: "全部任务", icon: ClipboardList }];
+const STATS_TABS: SegmentedTab<StatsTab>[] = [{ value: "week", label: "本周", icon: ListChecks }, { value: "habits", label: "打卡", icon: Flame }, { value: "courses", label: "上课", icon: GraduationCap }];
+const PLAN_TAB_KEY = "nav_plan_tab";
+const STATS_TAB_KEY = "nav_stats_tab";
+function useRememberedTab<T extends string>(key: string, tabs: SegmentedTab<T>[]): [T, (value: T) => void] {
+  const [value, setValue] = useState<T>(() => {
+    const saved = localStorage.getItem(key);
+    return tabs.some((tab) => tab.value === saved) ? saved as T : tabs[0].value;
+  });
+  return [value, (next: T) => { localStorage.setItem(key, next); setValue(next); }];
+}
 
 export default function App() {
   const [page, setPage] = useState<Page>("today");
+  const [planTab, setPlanTab] = useRememberedTab(PLAN_TAB_KEY, PLAN_TABS);
+  const [statsTab, setStatsTab] = useRememberedTab(STATS_TAB_KEY, STATS_TABS);
+  const planTabs = <SegmentedTabs label="计划" tabs={PLAN_TABS} value={planTab} onChange={setPlanTab} />;
+  const statsTabs = <SegmentedTabs label="统计" tabs={STATS_TABS} value={statsTab} onChange={setStatsTab} />;
   const [selectedDate, setSelectedDate] = useState(todayKey());
   // carry / justAdded / round：「保存，再加一个」时用上一张表单的分类与日期重新打开一张空白表单（round 变化即重新挂载）
   const [form, setForm] = useState<{ open: boolean; task?: Task; carry?: Partial<TaskDraft>; justAdded?: string[]; round?: number }>({ open: false });
@@ -387,15 +408,15 @@ export default function App() {
     </aside>
     <header className="pt-safe sticky top-0 z-40 border-b border-ink/10 bg-paper/95 backdrop-blur-xl desk:hidden"><div className="flex h-14 items-center justify-between px-4"><button onClick={() => setPage("today")} className="flex items-center gap-2.5"><img src="/favicon.svg" alt="" className="h-8 w-8 rounded-lg" /><span className="text-left text-base font-bold">小步计划</span></button><div className="flex items-center gap-2">{!cloudInitializing && <span title={cloudMode ? "云端已连接" : "本地模式"} className={`h-2 w-2 rounded-full ${cloudMode ? "bg-emerald-500" : "bg-stone-300"}`} />}<button type="button" aria-label="设置" title="设置" onClick={() => setPage("settings")} className={`flex h-11 w-11 items-center justify-center rounded-lg border ${page === "settings" ? "border-primary/30 bg-primary/10 text-primary" : "border-ink/10 bg-white text-muted hover:text-primary"}`}><Settings className="h-5 w-5" /></button><button aria-label="添加任务" onClick={() => setForm({ open: true })} className="flex h-11 w-11 items-center justify-center rounded-lg bg-alert text-white"><Plus className="h-4 w-4" /></button></div></div></header>
     <div className="app-content">
-      {page === "today" && <DayPage date={selectedDate} refreshKey={refreshKey} onCelebrate={celebrate} onOpenLedger={() => setPage("ledger")} onDateChange={setSelectedDate} onOpenMonth={() => setPage("month")} onAddTask={() => setForm({ open: true })} {...actions} />}
-      {page === "month" && <MonthPage date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenDay={openDay} onAddTask={(date) => { setSelectedDate(date); setForm({ open: true }); }} />}
-      {page === "tasks" && <TaskManagementPage refreshKey={refreshKey} onRefresh={refresh} notify={notify} onEdit={(task) => setForm({ open: true, task })} onDelete={deleteTask} onEnd={endTask} onExtend={extendTask} onCopy={copyTask} />}
-      {page === "stats" && <StatsPage refreshKey={refreshKey} onOpenDay={openDay} />}
+      {page === "today" && <DayPage date={selectedDate} refreshKey={refreshKey} onCelebrate={celebrate} onOpenLedger={() => setPage("ledger")} onDateChange={setSelectedDate} onOpenMonth={() => { setPlanTab("month"); setPage("plan"); }} onAddTask={() => setForm({ open: true })} {...actions} />}
+      {page === "plan" && planTab === "month" && <MonthPage tabs={planTabs} date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenDay={openDay} onAddTask={(date) => { setSelectedDate(date); setForm({ open: true }); }} />}
+      {page === "plan" && planTab === "tasks" && <TaskManagementPage tabs={planTabs} refreshKey={refreshKey} onRefresh={refresh} notify={notify} onEdit={(task) => setForm({ open: true, task })} onDelete={deleteTask} onEnd={endTask} onExtend={extendTask} onCopy={copyTask} />}
+      {page === "stats" && <StatsPage refreshKey={refreshKey} onOpenDay={openDay} tab={statsTab} tabs={statsTabs} />}
       {page === "settings" && <SettingsPage refreshKey={refreshKey} onImported={refresh} notify={notify} cloudMode={cloudMode} onAuthChange={syncCloudSession} memoHistory={memoHistory} memoBusy={memoBusy} onRestoreMemo={(id) => updateMemoHistory(() => restoreSidebarMemo(id), "已恢复到当前备忘，有原内容时会追加")} onDeleteMemo={(id) => updateMemoHistory(() => deleteSidebarMemoHistory(id), "历史备忘已永久删除")} />}
-      {page === "timetable" && <TimetablePage />}
+      {page === "plan" && planTab === "timetable" && <TimetablePage tabs={planTabs} />}
       {page === "ledger" && <LedgerPage refreshKey={refreshKey} onChanged={refresh} notify={notify} />}
     </div>
-    <nav className="bottom-nav-safe fixed inset-x-0 bottom-0 z-40 border-t border-ink/10 bg-white/95 backdrop-blur desk:hidden"><div className="mx-auto grid max-w-2xl grid-cols-6 px-1 pt-1">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`relative flex min-w-0 flex-col items-center gap-0.5 px-1 py-1.5 text-[10px] ${page === value ? "text-primary" : "text-muted"}`}>{page === value && <span className="absolute -top-1 h-0.5 w-8 bg-alert" />}<Icon className="h-5 w-5" /><span className="truncate">{label}</span></button>)}</div></nav>
+    <nav className="bottom-nav-safe fixed inset-x-0 bottom-0 z-40 border-t border-ink/10 bg-white/95 backdrop-blur desk:hidden"><div className="mx-auto grid max-w-2xl grid-cols-4 px-1 pt-1">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`relative flex min-h-12 min-w-0 flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-[12px] font-medium ${page === value ? "text-primary" : "text-muted"}`}>{page === value && <span className="absolute -top-1 h-0.5 w-8 bg-alert" />}<Icon className="h-5 w-5" /><span className="truncate">{label}</span></button>)}</div></nav>
     {form.open && <TaskForm key={form.round ?? 0} task={form.task} initialDate={selectedDate} carry={form.carry} justAdded={form.justAdded} onClose={() => setForm({ open: false })} onSave={saveTask} onContinue={(carry, savedTitle) => setForm((current) => ({ open: true, carry, justAdded: [...(current.justAdded ?? []), savedTitle], round: (current.round ?? 0) + 1 }))} />}
     {extendTarget && <ExtendRecurringDialog task={extendTarget} onClose={() => setExtendTarget(null)} onConfirm={confirmExtend} />}
     {datePick && <DatePickDialog {...datePick} onClose={() => setDatePick(null)} />}

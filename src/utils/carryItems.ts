@@ -29,19 +29,36 @@ export function carryItemsFor(timetable: SchoolTimetable, date: Date, isHoliday 
   return items;
 }
 
-/** 课表算出来的 + 手动补充的 − 手动删掉的（同名只留一个） */
-export function applyCarryOverride(base: string[], override?: { added: string[]; removed: string[] }): string[] {
-  if (!override) return base;
-  const removed = new Set(override.removed);
-  const result: string[] = [];
-  for (const label of [...base.filter((item) => !removed.has(item)), ...override.added]) {
+/** "明天要带"里的一样：fromTimetable = 课表里高亮算出来的；pinned = 常驻（每天都提醒，带📌角标） */
+export interface CarryEntry { label: string; pinned: boolean; fromTimetable: boolean }
+
+/**
+ * 那一天的清单：课表算出来的（去掉那天删掉的）→ 常驻的（排在课本后面）→ 那一天补充的（仅明天）；同名只留一个。
+ */
+export function buildCarryList(base: string[], pinned: string[], day?: { added: string[]; removed: string[] }): CarryEntry[] {
+  const removed = new Set(day?.removed ?? []);
+  const result: CarryEntry[] = [];
+  const push = (label: string, entry: Omit<CarryEntry, "label">) => {
     const value = label.trim();
-    if (value && !result.includes(value)) result.push(value);
-  }
+    if (!value || removed.has(value) || result.some((item) => item.label === value)) return;
+    result.push({ label: value, ...entry });
+  };
+  base.forEach((label) => push(label, { pinned: false, fromTimetable: true }));
+  pinned.forEach((label) => push(label, { pinned: true, fromTimetable: false }));
+  (day?.added ?? []).forEach((label) => push(label, { pinned: false, fromTimetable: false }));
   return result;
 }
 
-/** 编辑完的列表 → 相对课表的补充 / 删掉 */
-export function diffCarry(base: string[], edited: string[]): { added: string[]; removed: string[] } {
-  return { added: edited.filter((item) => !base.includes(item)), removed: base.filter((item) => !edited.includes(item)) };
+/**
+ * 编辑完的清单 → 常驻清单 + 那一天的补充 / 删掉。
+ * 课表里的不在清单里了 = 那天删掉；常驻的不在清单里了 = 不再常驻（不算"删掉"）；没标常驻的新东西 = 仅明天。
+ */
+export function splitCarryEdit(base: string[], edited: CarryEntry[]): { pinned: string[]; day: { added: string[]; removed: string[] } } {
+  return {
+    pinned: edited.filter((item) => item.pinned && !item.fromTimetable).map((item) => item.label),
+    day: {
+      added: edited.filter((item) => !item.pinned && !base.includes(item.label)).map((item) => item.label),
+      removed: base.filter((label) => !edited.some((item) => item.label === label)),
+    },
+  };
 }

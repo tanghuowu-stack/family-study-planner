@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { cloneSchoolTimetable, DEFAULT_SCHOOL_TIMETABLE } from "../../data/appSettingsRepository";
-import { applyCarryOverride, carryItemsFor, diffCarry } from "../carryItems";
+import { buildCarryList, carryItemsFor, splitCarryEdit } from "../carryItems";
 
 const date = (key: string) => new Date(`${key}T20:00:00`);
 
@@ -26,10 +26,22 @@ describe("明天要带", () => {
     expect(carryItemsFor(none, date("2026-11-26"))).toEqual([]);
   });
 
-  it("手动补充 / 删掉：课表的 + 补充的 − 删掉的，同名只留一个；编辑结果和课表比出补充、删掉", () => {
+  it("清单 = 课表的（去掉那天删掉的）→ 常驻的 → 仅明天补充的；同名只留一个", () => {
     const base = ["道法课本", "美术", "英语课本"];
-    expect(applyCarryOverride(base, { added: ["跳绳", "英语课本"], removed: ["美术"] })).toEqual(["道法课本", "英语课本", "跳绳"]);
-    expect(applyCarryOverride(base)).toEqual(base);
-    expect(diffCarry(base, ["道法课本", "英语课本", "跳绳"])).toEqual({ added: ["跳绳"], removed: ["美术"] });
+    const list = buildCarryList(base, ["水杯", "英语课本"], { added: ["跳绳"], removed: ["美术"] });
+    expect(list.map((item) => [item.label, item.pinned])).toEqual([["道法课本", false], ["英语课本", false], ["水杯", true], ["跳绳", false]]);
+    expect(buildCarryList(base, []).map((item) => item.label)).toEqual(base);
+  });
+
+  it("编辑结果拆成：常驻清单、那天补充、那天删掉（常驻的去掉 = 不再常驻，不算删掉）", () => {
+    const base = ["道法课本", "美术", "英语课本"];
+    const edited = [
+      { label: "道法课本", pinned: false, fromTimetable: true },
+      { label: "英语课本", pinned: false, fromTimetable: true },
+      { label: "水杯", pinned: true, fromTimetable: false },
+      { label: "跳绳", pinned: false, fromTimetable: false },
+    ];
+    expect(splitCarryEdit(base, edited)).toEqual({ pinned: ["水杯"], day: { added: ["跳绳"], removed: ["美术"] } });
+    expect(splitCarryEdit(base, edited.filter((item) => item.label !== "水杯")).pinned).toEqual([]);
   });
 });

@@ -1,4 +1,4 @@
-import { BookOpen, Check, Flag, Pencil, X } from "lucide-react";
+import { Check, Flag, Pencil, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { formatFullDate, fromDateKey, todayKey } from "../utils/date";
 import { getCalendarAnnotation } from "../data/calendarAnnotations";
@@ -233,7 +233,6 @@ function ReadView({ draft, tomorrow, now, phoneView, onPhoneView }: { draft: Sch
       <div className="fit-fill grid min-h-0 gap-3 sm:grid-cols-[minmax(0,1fr)_13.5rem] lg:grid-cols-[minmax(0,1fr)_17rem] desk:gap-4">
         <div className={`${phoneView === "grid" ? "flex" : "hidden"} min-h-0 flex-col sm:flex`}>
           <CourseGrid draft={draft} tomorrow={tomorrow} />
-          <p className="mt-2 flex shrink-0 items-center justify-center gap-1.5 text-[12px] font-medium text-muted"><BookOpen aria-hidden className="h-3.5 w-3.5" />要带的课本、工具显示在今日页“明天要带”里（编辑课表时勾“高亮显示”）</p>
         </div>
         <div className={`${phoneView === "schedule" ? "flex" : "hidden"} min-h-0 flex-col sm:flex`}>
           <DaySchedule now={now} />

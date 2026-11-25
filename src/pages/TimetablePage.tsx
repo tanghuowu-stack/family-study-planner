@@ -235,7 +235,7 @@ function ReadView({ draft, tomorrow, now, phoneView, onPhoneView }: { draft: Sch
           <CourseGrid draft={draft} tomorrow={tomorrow} />
         </div>
         <div className={`${phoneView === "schedule" ? "flex" : "hidden"} min-h-0 flex-col sm:flex`}>
-          <DaySchedule now={now} />
+          <DaySchedule now={now} timetable={draft} />
         </div>
       </div>
     </>
@@ -328,7 +328,14 @@ function NowTag() {
   return <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary px-1.5 text-[10px] font-bold leading-4 tracking-wider text-white" aria-label="正在进行"><span aria-hidden className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />NOW</span>;
 }
 
-function TimelineRow({ entry, color, current, last }: { entry: ScheduleItem; color: string; current: boolean; last?: boolean }) {
+/** 课表里那一节的课名（去掉"（课本）"之类的括号）；和作息里的名称一样（社团、云脑班……）就不重复写 */
+function courseOf(timetable: SchoolTimetable, entry: ScheduleItem, day: number): string {
+  if (!entry.slotId || day < 1 || day > 5) return "";
+  const course = timetable.slots.find((slot) => slot.id === entry.slotId)?.courses[TIMETABLE_DAYS[day - 1]]?.replace(/[（(].*[）)]$/, "").trim() ?? "";
+  return course && course !== "-" && course !== entry.label ? course : "";
+}
+
+function TimelineRow({ entry, color, current, last, course }: { entry: ScheduleItem; color: string; current: boolean; last?: boolean; course?: string }) {
   const isClass = entry.kind === "class";
   const isActivity = entry.kind === "activity";
   const isBig = entry.kind === "big-break";
@@ -345,7 +352,9 @@ function TimelineRow({ entry, color, current, last }: { entry: ScheduleItem; col
         {dot}
       </span>
       <span className="flex min-w-0 items-center gap-1.5">
-        <span className={`min-w-0 truncate ${isClass ? "text-[14px] font-semibold text-ink" : isActivity ? "text-[14px] font-semibold" : isBig ? "text-[12px] font-semibold text-amber-700" : "text-[12px] text-muted"}`} style={isActivity ? { color } : undefined}>{entry.label}</span>
+        <span className={`min-w-0 truncate ${isClass ? "text-[14px] font-semibold text-ink" : isActivity ? "text-[14px] font-semibold" : isBig ? "text-[12px] font-semibold text-amber-700" : "text-[12px] text-muted"}`} style={isActivity ? { color } : undefined}>
+          {entry.label}{course && <span className="ml-1.5 font-bold" style={{ color: courseTone(course).color }}>{course}</span>}
+        </span>
         {current && <NowTag />}
         <span className="flex-1" />
         {(isClass || isActivity || isBig) && <span className="hidden shrink-0 text-[11px] tabular-nums text-stone-400 lg:inline">{durationText(entry)}</span>}
@@ -354,7 +363,7 @@ function TimelineRow({ entry, color, current, last }: { entry: ScheduleItem; col
   );
 }
 
-function DaySchedule({ now }: { now: Date }) {
+function DaySchedule({ now, timetable }: { now: Date; timetable: SchoolTimetable }) {
   const today = now.getDay();
   const [day, setDay] = useState(today >= 1 && today <= 5 ? today : 1);
   const current = day === today ? currentScheduleItem(now) : null;
@@ -383,7 +392,7 @@ function DaySchedule({ now }: { now: Date }) {
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2.5">
         <ol>
           {heading("上午", SECTION_COLOR.morning, "8:25")}
-          {SCHOOL_MORNING.items.map((entry) => <TimelineRow key={entry.start + entry.label} entry={entry} color={SECTION_COLOR.morning} current={isCurrent(entry)} />)}
+          {SCHOOL_MORNING.items.map((entry) => <TimelineRow key={entry.start + entry.label} entry={entry} color={SECTION_COLOR.morning} current={isCurrent(entry)} course={courseOf(timetable, entry, day)} />)}
         </ol>
         <div className="my-1.5 space-y-1">
           {[SCHOOL_LUNCH, SCHOOL_NAP].map((entry) => (
@@ -394,9 +403,9 @@ function DaySchedule({ now }: { now: Date }) {
         </div>
         <ol>
           {heading("下午", SECTION_COLOR.afternoon, "14:00")}
-          {SCHOOL_AFTERNOON.items.map((entry) => <TimelineRow key={entry.start + entry.label} entry={entry} color={SECTION_COLOR.afternoon} current={isCurrent(entry)} />)}
+          {SCHOOL_AFTERNOON.items.map((entry) => <TimelineRow key={entry.start + entry.label} entry={entry} color={SECTION_COLOR.afternoon} current={isCurrent(entry)} course={courseOf(timetable, entry, day)} />)}
           {heading("课后服务", SECTION_COLOR.after, "15:55")}
-          {after.map((entry) => <TimelineRow key={entry.start + entry.label} entry={entry} color={SECTION_COLOR.after} current={isCurrent(entry)} />)}
+          {after.map((entry) => <TimelineRow key={entry.start + entry.label} entry={entry} color={SECTION_COLOR.after} current={isCurrent(entry)} course={courseOf(timetable, entry, day)} />)}
           <li className="grid grid-cols-[3rem_14px_minmax(0,1fr)] items-center gap-x-2 pt-1">
             <span className="text-right text-[13px] font-bold tabular-nums text-ink">{SCHOOL_DISMISS.classEnd}</span>
             <span className="relative flex h-full items-center justify-center"><span aria-hidden className="absolute left-1/2 top-0 h-1/2 w-px -translate-x-1/2 bg-ink/10" /><span className="relative z-10 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-white"><Flag className="h-3 w-3" /></span></span>

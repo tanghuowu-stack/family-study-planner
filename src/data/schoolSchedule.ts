@@ -12,6 +12,8 @@ export interface ScheduleItem {
   start: string;
   end: string;
   kind: ScheduleKind;
+  /** 对应课表里的哪一节（作息时间后面写上那天这一节是什么课，2026-11-25） */
+  slotId?: string;
 }
 
 export interface ScheduleSection {
@@ -19,19 +21,19 @@ export interface ScheduleSection {
   items: ScheduleItem[];
 }
 
-const item = (label: string, start: string, end: string, kind: ScheduleKind = "break"): ScheduleItem => ({ label, start, end, kind });
+const item = (label: string, start: string, end: string, kind: ScheduleKind = "break", slotId?: string): ScheduleItem => ({ label, start, end, kind, ...(slotId ? { slotId } : {}) });
 
 export const SCHOOL_MORNING: ScheduleSection = {
   title: "上午",
   items: [
-    item("第一节", "8:25", "9:05", "class"),
+    item("第一节", "8:25", "9:05", "class", "am-1"),
     item("课间活动", "9:05", "9:20"),
-    item("第二节", "9:20", "10:00", "class"),
+    item("第二节", "9:20", "10:00", "class", "am-2"),
     item("大课间", "10:00", "10:30", "big-break"),
-    item("第三节", "10:30", "11:10", "class"),
+    item("第三节", "10:30", "11:10", "class", "am-3"),
     item("眼保健操", "11:10", "11:15"),
     item("课间活动", "11:15", "11:30"),
-    item("第四节", "11:30", "12:10", "class"),
+    item("第四节", "11:30", "12:10", "class", "am-4"),
   ],
 };
 
@@ -42,30 +44,30 @@ export const SCHOOL_NAP = item("午休", "13:00", "13:50", "big-break");
 export const SCHOOL_AFTERNOON: ScheduleSection = {
   title: "下午",
   items: [
-    item("第五节", "14:00", "14:40", "class"),
+    item("第五节", "14:00", "14:40", "class", "pm-1"),
     item("眼保健操", "14:40", "14:45"),
     item("课间活动", "14:45", "15:00"),
-    item("第六节", "15:00", "15:40", "class"),
+    item("第六节", "15:00", "15:40", "class", "pm-2"),
     item("课间活动", "15:40", "15:55"),
   ],
 };
 
 /**
  * 课后服务（延时）按星期几不同（2026-11-25 用户更正）：
- * - 周一、周二：延时课 1（15:55–16:35）、课间活动、延时课 2（16:50–17:30）、延时课 3（17:30–17:55）；
+ * - 周一、周二：延时1（15:55–16:35）、课间活动、延时2（16:50–17:30）、延时3（17:30–17:55）；
  * - 周四：同周一，只是第一段是社团；
  * - 周三：云脑班 15:55–17:55；
  * - 周五：俱乐部 15:55–17:00、文学社 17:00–17:55。
  */
 const extendedDay = (first: string): ScheduleItem[] => [
-  item(first, "15:55", "16:35", "activity"),
+  item(first, "15:55", "16:35", "activity", "extended-1"),
   item("课间活动", "16:35", "16:50"),
-  item("延时课 2", "16:50", "17:30", "activity"),
-  item("延时课 3", "17:30", "17:55", "activity"),
+  item("延时2", "16:50", "17:30", "activity", "extended-2"),
+  item("延时3", "17:30", "17:55", "activity", "extended-3"),
 ];
 export const SCHOOL_AFTER_BY_DAY: Record<number, ScheduleItem[]> = {
-  1: extendedDay("延时课 1"),
-  2: extendedDay("延时课 1"),
+  1: extendedDay("延时1"),
+  2: extendedDay("延时1"),
   3: [item("云脑班", "15:55", "17:55", "activity")],
   4: extendedDay("社团"),
   5: [item("俱乐部", "15:55", "17:00", "activity"), item("文学社", "17:00", "17:55", "activity")],

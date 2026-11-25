@@ -62,9 +62,10 @@ describe("保存前检查：余额不足、必填、孩子权限", () => {
   const entries = opening("2026-11-23", 10, 50);
   const child = { parent: false, entries, today };
 
-  it("孩子记支出，零钱不够不让存，提示先从存款取出或找妈妈对账", () => {
-    expect(validateEntry({ type: "expense", date: today, amountCents: 1001, content: "买书", category: "书" }, child)).toBe("零钱不够，先从存款里取出，或找妈妈对账");
+  it("孩子记支出，零钱不够也让记（零钱记成负数，以后挣的零花钱补上；2026-11-25 用户改）", () => {
+    expect(validateEntry({ type: "expense", date: today, amountCents: 1001, content: "买书", category: "书" }, child)).toBeNull();
     expect(validateEntry({ type: "expense", date: today, amountCents: 1000, content: "买书", category: "书" }, child)).toBeNull();
+    expect(balancesOf([...entries, entry(today, "expense", 10.01, { createdBy: "child", content: "买书", category: "书" })]).cash).toBe(-1);
   });
 
   it("孩子从存款取出，存款不够不让存；存进存款，零钱不够不让存", () => {
@@ -75,8 +76,9 @@ describe("保存前检查：余额不足、必填、孩子权限", () => {
 
   it("改自己的记录时，按去掉原来那条之后的余额算", () => {
     const spent = entry(today, "expense", 8, { createdBy: "child", content: "零食", category: "吃的" });
-    expect(validateEntry({ type: "expense", date: today, amountCents: 1000, content: "零食", category: "吃的" }, { ...child, entries: [...entries, spent], editingId: spent.id })).toBeNull();
-    expect(validateEntry({ type: "expense", date: today, amountCents: 1000, content: "零食", category: "吃的" }, { ...child, entries: [...entries, spent] })).toMatch(/零钱不够/);
+    expect(validateEntry({ type: "deposit", date: today, amountCents: 1000 }, { ...child, entries: [...entries, spent] })).toMatch(/零钱不够/);
+    const saved = entry(today, "deposit", 8, { createdBy: "child" });
+    expect(validateEntry({ type: "deposit", date: today, amountCents: 1000 }, { ...child, entries: [...entries, saved], editingId: saved.id })).toBeNull();
   });
 
   it("支出必须写内容、选分类；对账调整必须写原因；金额不能是 0", () => {

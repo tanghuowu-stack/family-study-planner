@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties } from "react";
 import {
-  ArrowDownToLine, ArrowUpFromLine, Award, BookOpen, ChevronDown, Ellipsis, Flag, Gift, PencilLine, PiggyBank, Puzzle, Receipt, Scale, TrendingUp, Utensils,
+  ArrowDownToLine, ArrowUpFromLine, Award, BookOpen, ChevronDown, Ellipsis, Flag, Gift, PencilLine, PiggyBank, Plus, Puzzle, Receipt, Scale, TrendingUp, Utensils,
 } from "lucide-react";
 import { Sheet } from "../components/Sheet";
 import { loadPointsContext, settlePendingWeeks } from "../data/pointsService";
@@ -190,10 +190,20 @@ export function LedgerPage({ refreshKey, onChanged, notify }: { refreshKey: numb
             ))}
           </section>
 
-          {/* 快捷记账 */}
-          <section aria-label="记一笔" className="surface grid grid-cols-3 divide-x divide-ink/[0.07]">
-            {quick.map((item) => (
-              <button key={item.type} type="button" onClick={() => setEditor({ mode: "new", type: item.type })} className="flex min-h-[76px] flex-col items-center justify-center gap-1.5 px-2 py-3 text-sm font-semibold text-ink hover:bg-stone-50">
+          {/* 快捷记账（2026-11-25 用户：“记一笔支出”要更突出、更大——记账先按它）：
+              支出是一个实心大按钮（手机占满一行），存进 / 取出是旁边两个次级按钮 */}
+          <section aria-label="记一笔" className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] sm:gap-3">
+            <button type="button" onClick={() => setEditor({ mode: "new", type: "expense" })} data-testid="add-expense"
+              className="col-span-2 flex min-h-[4.5rem] items-center gap-3 rounded-lg bg-alert px-4 text-left text-white shadow-[0_10px_24px_-12px_rgba(227,107,78,0.9)] transition-colors hover:bg-[#cf5b40] active:scale-[0.99] sm:col-span-1 sm:min-h-[5.5rem] sm:px-5">
+              <span aria-hidden className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/20"><Plus className="h-6 w-6" strokeWidth={2.5} /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[18px] font-bold leading-6">记一笔支出</span>
+                <span className="block truncate text-[13px] text-white/80">零钱 {formatYuan(balances.cash)} 元 · 买了什么就记一笔</span>
+              </span>
+              <Receipt aria-hidden className="hidden h-7 w-7 shrink-0 text-white/50 sm:block" />
+            </button>
+            {quick.filter((item) => item.type !== "expense").map((item) => (
+              <button key={item.type} type="button" onClick={() => setEditor({ mode: "new", type: item.type })} className="surface flex min-h-16 items-center justify-center gap-2.5 px-2 py-2 text-[15px] font-semibold text-ink hover:bg-stone-50 sm:min-h-[5.5rem] sm:flex-col sm:gap-1.5">
                 <EntryIcon icon={item.icon} color={item.color} />
                 {item.label}
               </button>
@@ -403,6 +413,9 @@ function EntryDialog({ ctx, editor, parent, onClose, onSaved }: { ctx: LedgerCon
   const accountChoice = type === "adjust" || type === "opening";
   const editableDate = parent;
   const title = existing ? `改：${LEDGER_TYPE_LABEL[type]}` : TYPE_TITLES[type] ?? LEDGER_TYPE_LABEL[type];
+  // 支出后零钱变成负数时提示一下（允许记，TASK_10 §4.1）；改旧记录时先把它原来的金额加回来
+  const cashBefore = ctx.balances.cash + (existing && existing.type === "expense" && !existing.deletedAt ? existing.amountCents : 0);
+  const overdraw = type === "expense" && cents !== null && cents > 0 && cashBefore - cents < 0 ? cashBefore - cents : null;
   const hint = type === "withdraw" ? `存款现在 ${formatYuan(ctx.balances.savings)} 元` : type === "expense" || type === "deposit" ? `零钱现在 ${formatYuan(ctx.balances.cash)} 元` : undefined;
 
   const save = async () => {
@@ -447,6 +460,7 @@ function EntryDialog({ ctx, editor, parent, onClose, onSaved }: { ctx: LedgerCon
         {type === "adjust" && <label className={labelClass}>原因<input value={content} maxLength={60} onChange={(event) => setContent(event.target.value)} className={`${inputClass} mt-1`} /></label>}
         {editableDate ? <label className={labelClass}>日期<input type="date" value={date} onChange={(event) => setDate(event.target.value)} className={`${inputClass} mt-1`} /></label>
           : <p className="text-[13px] text-muted">记在今天（{formatCompactDate(ctx.today)}）</p>}
+        {overdraw !== null && <p data-testid="overdraw-note" className="rounded-lg bg-sun/20 px-3 py-2 text-[13px] leading-5 text-amber-900">零钱只有 {formatYuan(cashBefore)} 元，记下后零钱是 <span className="font-bold">{formatYuan(overdraw)}</span> 元；以后挣的零花钱会先把它补上。</p>}
         {error && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p>}
         <button type="button" disabled={busy} onClick={() => void save()} className={`${primaryButton} w-full`}>{existing ? "保存修改" : "记下来"}</button>
         {existing && (confirmDelete

@@ -1,4 +1,4 @@
-import { BarChart3, CalendarDays, CalendarRange, Cloud, ClipboardList, Flame, GraduationCap, Home, ListChecks, Plus, Settings, Table2, Wallet } from "lucide-react";
+import { BarChart3, CalendarDays, CalendarRange, Cloud, ClipboardList, Flame, GraduationCap, Home, Plus, Settings, Table2, Wallet } from "lucide-react";
 import { addDays } from "date-fns";
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { TaskForm } from "./components/TaskForm";
@@ -29,7 +29,7 @@ import { archiveSidebarMemo, deleteSidebarMemoHistory, loadSidebarMemoState, res
 
 /**
  * 2026-11-25 页面整理：菜单 6 项 → 5 项（今日 / 计划 / 课表 / 统计 / 记账），设置位置不变。
- * 计划 = 月历 / 全部任务（原月视图、任务管理），统计 = 本周 / 打卡 / 上课（原周计划及打卡）。
+ * 计划 = 月历 / 全部任务（原月视图、任务管理），统计 = 打卡 / 上课（原周计划及打卡；"本周"和今日页右栏重复，同日去掉）。
  * 课表常看，单独一项（同日用户："得点好几下才能看到"）。
  * 每页记住上次看的标签（只记本机）。
  */
@@ -43,7 +43,7 @@ const navItems = [
   { page: "ledger" as const, label: "记账", icon: Wallet },
 ];
 const PLAN_TABS: SegmentedTab<PlanTab>[] = [{ value: "month", label: "月历", icon: CalendarRange }, { value: "tasks", label: "全部任务", icon: ClipboardList }];
-const STATS_TABS: SegmentedTab<StatsTab>[] = [{ value: "week", label: "本周", icon: ListChecks }, { value: "habits", label: "打卡", icon: Flame }, { value: "courses", label: "上课", icon: GraduationCap }];
+const STATS_TABS: SegmentedTab<StatsTab>[] = [{ value: "habits", label: "打卡", icon: Flame }, { value: "courses", label: "上课", icon: GraduationCap }];
 const PLAN_TAB_KEY = "nav_plan_tab";
 const STATS_TAB_KEY = "nav_stats_tab";
 function useRememberedTab<T extends string>(key: string, tabs: SegmentedTab<T>[]): [T, (value: T) => void] {
@@ -414,7 +414,7 @@ export default function App() {
       {page === "today" && <DayPage date={selectedDate} refreshKey={refreshKey} onCelebrate={celebrate} onOpenLedger={() => setPage("ledger")} onDateChange={setSelectedDate} onOpenMonth={() => { setPlanTab("month"); setPage("plan"); }} onAddTask={() => setForm({ open: true })} {...actions} />}
       {page === "plan" && planTab === "month" && <MonthPage tabs={planTabs} date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenDay={openDay} onAddTask={(date) => { setSelectedDate(date); setForm({ open: true }); }} />}
       {page === "plan" && planTab === "tasks" && <TaskManagementPage tabs={planTabs} refreshKey={refreshKey} onRefresh={refresh} notify={notify} onEdit={(task) => setForm({ open: true, task })} onDelete={deleteTask} onEnd={endTask} onExtend={extendTask} onCopy={copyTask} />}
-      {page === "stats" && <StatsPage refreshKey={refreshKey} onOpenDay={openDay} tab={statsTab} tabs={statsTabs} />}
+      {page === "stats" && <StatsPage refreshKey={refreshKey} tab={statsTab} tabs={statsTabs} />}
       {page === "settings" && <SettingsPage refreshKey={refreshKey} onImported={refresh} notify={notify} cloudMode={cloudMode} onAuthChange={syncCloudSession} memoHistory={memoHistory} memoBusy={memoBusy} onRestoreMemo={(id) => updateMemoHistory(() => restoreSidebarMemo(id), "已恢复到当前备忘，有原内容时会追加")} onDeleteMemo={(id) => updateMemoHistory(() => deleteSidebarMemoHistory(id), "历史备忘已永久删除")} />}
       {page === "timetable" && <TimetablePage />}
       {page === "ledger" && <LedgerPage refreshKey={refreshKey} onChanged={refresh} notify={notify} />}

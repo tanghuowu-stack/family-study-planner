@@ -7,7 +7,7 @@
 
 ## 0. 这个文件怎么用（给 Claude Code）
 
-- **本套文档（PROJECT_GUIDE + TASK_01~08）是当前唯一权威**。docs 目录下可能还有更早的 md（如 current-state.md、project-rules.md、change-log.md、cloud-migration-plan.md、codex-runbook.md 等），那些是历史参考，**如有冲突一律以本套文档为准**，不要从旧文件里取规则。`supabase-schema.sql` 是真实建表脚本，可作为表结构的事实依据参考。
+- **本套文档（PROJECT_GUIDE + TASK_01~10 + style.md + ARCHITECTURE_RULES.md）是当前唯一权威**。`project-rules.md` 是更早的历史参考，`change-log.md` 只记改动历史，**如有冲突一律以本套文档为准**，不要从旧文件里取规则。（2026-11-25 已删掉过时的 current-state.md、codex-runbook.md、cloud-migration-plan.md、supabase-sync-implementation-plan.md，需要时看 git 历史。）`supabase-schema.sql` 是真实建表脚本，可作为表结构的事实依据参考。
 - **每次开工**：先读本文件，再读本次任务对应的单张任务卡（如 `TASK_01_realtime.md`）。**不要读无关的任务卡**，节省上下文。
 - **改动前**：先 `git status` 确认工作区干净，先读相关源文件再动手，不要凭文档猜测当前代码。
 - **改动后**：自检三条铁律（见第 5 节）是否违反；提交前 `git status --short` 确认 `.env.local` 没进暂存区。
@@ -51,7 +51,6 @@ repositoryProvider.ts   按登录状态选择本地 / 云端 repository
 cloudAuth.ts            邮箱密码登录、family/profile 初始化
 cloudUpload/Read/Download.ts  维护工具：上传/预览/下载
 CloudLoginPanel.tsx     设置页里的云同步状态与维护面板
-weekReview.ts           “统计 › 本周”条的只读汇总（每件事只算一次、算在到期那天，时段任务算在最后一天；完成看现在的状态）
 taskDefaults.ts         新建任务默认设置（getTaskDefaults / mergeTaskDefaults，规则写死在文件头表格）
 utils/points.ts         每周练习积分 → 零花钱（1 分 = 1 元）的纯计算（规则写死在文件头；分数由 weeklyLog 算出，不存总分）
 data/pointsLedger.ts    积分账本（app_settings `points_ledger_v1`：家长奖励、提前完成处理、已庆祝、每周快照含零花钱），跨设备按 id 合并；旧愿望数据原样带着不读

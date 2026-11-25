@@ -286,8 +286,10 @@ export function validateEntry(input: EntryInput, options: { parent: boolean; ent
     const others = options.entries.filter((entry) => entry.id !== editingId);
     const before = balancesOf(others);
     const effect = entryEffect(input);
-    if (before.cash + effect.cash < 0) return input.type === "deposit" ? "零钱不够，找妈妈对账" : "零钱不够，先从存款里取出，或找妈妈对账";
-    if (before.savings + effect.savings < 0) return "存款不够，找妈妈对账";
+    // 2026-11-25 用户：支出时零钱不够也让记，零钱记成负数，以后挣的零花钱先补上（TASK_10 §4.1）；
+    // 存进 / 取出是在两个账户之间挪钱，没有的钱挪不了，仍然拦
+    if (input.type === "deposit" && before.cash + effect.cash < 0) return "零钱不够，找妈妈对账";
+    if (input.type === "withdraw" && before.savings + effect.savings < 0) return "存款不够，找妈妈对账";
   }
   return null;
 }

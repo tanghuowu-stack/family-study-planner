@@ -229,6 +229,9 @@ body::before {
     line-height: 1.15;
   }
   .school-timetable-page:not(.is-editing) .timetable-course > span { font-size: 14px; line-height: 1.15; }
+  /* 手机：课程色块铺满格子、不留圆角外的空白；带课本的小圆点缩小贴角 */
+  .school-timetable-page:not(.is-editing) .timetable-course > span:first-child { min-height: 0; height: 100%; padding: 2px 1px; border-radius: 6px; }
+  .school-timetable-page:not(.is-editing) .timetable-carry { top: 4px; right: 4px; width: 6px; height: 6px; }
   .school-timetable-page:not(.is-editing) .timetable-course-note {
     display: block;
     margin-left: 0;

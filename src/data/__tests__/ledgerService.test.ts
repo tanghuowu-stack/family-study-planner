@@ -76,8 +76,7 @@ describe("练习奖励：结算后待转账，家长点已转账才入账", () =
 });
 
 describe("孩子记账：支出、存进存款、从存款取出", () => {
-  it("3. 余额不够不让存；期初余额设好后可以记；存取款在两个账户之间挪", async () => {
-    await expect(saveLedgerEntry({ type: "expense", date: TODAY, amountCents: 500, content: "买文具", category: "文具" }, child)).rejects.toThrow("零钱不够，先从存款里取出，或找妈妈对账");
+  it("3. 期初余额设好后可以记；存取款在两个账户之间挪，没有的钱挪不了；支出零钱不够也能记（记成负数）", async () => {
     await expect(setOpeningBalances({ cash: 2000, savings: 10000 }, "2026-11-23", child)).rejects.toThrow("只有家长");
     await setOpeningBalances({ cash: 2000, savings: 10000 }, "2026-11-23", parent);
 
@@ -89,9 +88,13 @@ describe("孩子记账：支出、存进存款、从存款取出", () => {
     expect(ctx.month.byCategory).toEqual([{ category: "文具", cents: 500 }]);
 
     await expect(saveLedgerEntry({ type: "withdraw", date: TODAY, amountCents: 10701 }, child)).rejects.toThrow("存款不够");
-    await expect(saveLedgerEntry({ type: "expense", date: TODAY, amountCents: 801, content: "玩具", category: "玩具" }, child)).rejects.toThrow("零钱不够");
     ctx = await loadLedgerContext(TODAY);
     expect(ctx.balances).toEqual({ cash: 800, savings: 10700 }); // 被拦下的没有写进去
+    // 零钱 8 元，买 8.01 元的玩具也让记：零钱 −0.01 元；这时存进存款还是不让
+    await saveLedgerEntry({ type: "expense", date: TODAY, amountCents: 801, content: "玩具", category: "玩具" }, child);
+    ctx = await loadLedgerContext(TODAY);
+    expect(ctx.balances).toEqual({ cash: -1, savings: 10700 });
+    await expect(saveLedgerEntry({ type: "deposit", date: TODAY, amountCents: 1 }, child)).rejects.toThrow("零钱不够");
     expect(ctx.entries.every((entry) => entry.createdBy === "parent" || entry.createdBy === "child")).toBe(true);
   });
 

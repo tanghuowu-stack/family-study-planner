@@ -17,6 +17,10 @@ TASK_05_visual.md      ← 视觉配色优化      [Haiku/Sonnet]
 TASK_06_multi_child.md ← 多孩子档案        [Sonnet]
 TASK_07_voice_input.md ← 语音输入+AI解析   [Opus]
 TASK_08_stats.md       ← 打卡统计（按项目分月历，非"周报"）[Sonnet]
+TASK_09_points.md      ← 每周练习积分与零花钱
+TASK_10_ledger.md      ← 记账（零钱 / 存款 / 利息 / 对账）
+style.md               ← 界面样式规则（各页面版式都以它为准）
+ARCHITECTURE_RULES.md  ← 数据与同步的硬规则
 change-log.md          ← 详细改动历史（每次改了什么、为什么），本文件只留摘要
 ```
 

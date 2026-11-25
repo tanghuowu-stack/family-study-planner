@@ -1,4 +1,5 @@
 import { addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, isSameMonth, startOfMonth, startOfWeek } from "date-fns";
+import { zhCN } from "date-fns/locale";
 import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSwipe } from "../hooks/useSwipe";
@@ -41,86 +42,94 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask
     }
   };
 
+  const today = todayKey();
+  const monthLabels = useMemo(() => gridDates.filter((key) => key.slice(0, 7) === monthKey).flatMap((key) => calendarLabels(items[key] ?? [])), [items, monthKey]);
+  const upcomingCount = useMemo(() => gridDates.filter((key) => key.slice(0, 7) === monthKey && key >= today).reduce((sum, key) => sum + calendarLabels(items[key] ?? []).filter((label) => !label.done).length, 0), [items, monthKey, today]);
+  const isThisMonth = monthKey === today.slice(0, 7);
+
+  /*
+   * 月历（2026-11-25 用户："把月历整个页面重新再设计一下"）：
+   * - 表头：大号"11月"+ 灰色年份，右侧圆形 ‹ › 和"今天"胶囊；下面一行灰字概览（本月 N 项安排 · 还有 N 项没到 / 没做）。
+   * - 星期一行浅色小字（周末玫红），不再用黑色横条；格子之间 1px 细线，整体圆角白卡。
+   * - 今天：整个格子浅绿底 + 顶部 3px 主色条，日期数字主色粗体，不再给数字单独加色块。
+   * - 周末两列浅暖底；不是本月的日子只显示淡色日期，不列安排。
+   * - 做完的安排灰字、色点变淡，不划线（原来过去的日子满屏删除线）；没做的正文色，时间在前面灰色小字。
+   */
   return (
     <main className="mx-auto w-full max-w-7xl overflow-x-hidden px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
       {tabs}
-      <header className="page-header">
-        <h1 className="page-title shrink-0">{format(monthDate, "yyyy年M月")}</h1>
-        <div className="flex shrink-0 items-center gap-1 rounded-lg border border-ink/10 bg-white p-1">
-          <button onClick={() => move(-1)} aria-label={`上一月：${format(addMonths(monthDate, -1), "yyyy年M月")}`} className="flex h-8 w-8 items-center justify-center rounded-md text-sm font-semibold text-muted hover:bg-stone-100 hover:text-ink sm:h-10 sm:w-auto sm:min-w-20 sm:gap-1 sm:px-3"><ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" /><span className="hidden sm:inline">{format(addMonths(monthDate, -1), "M月")}</span></button>
-          <button onClick={() => onDateChange(todayKey())} className="h-8 min-w-12 rounded-md bg-primary/10 px-2 text-sm font-bold text-primary hover:bg-primary/15 sm:h-10 sm:min-w-20 sm:px-4 sm:text-base">本月</button>
-          <button onClick={() => move(1)} aria-label={`下一月：${format(addMonths(monthDate, 1), "yyyy年M月")}`} className="flex h-8 w-8 items-center justify-center rounded-md text-sm font-semibold text-muted hover:bg-stone-100 hover:text-ink sm:h-10 sm:w-auto sm:min-w-20 sm:gap-1 sm:px-3"><span className="hidden sm:inline">{format(addMonths(monthDate, 1), "M月")}</span><ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" /></button>
+      <header className="mb-3 flex items-end justify-between gap-3 sm:mb-4">
+        <div className="min-w-0">
+          <h1 className="flex items-baseline gap-2 text-ink"><span className="text-[30px] font-bold leading-9 tracking-tight sm:text-[36px] sm:leading-10">{format(monthDate, "M月")}</span><span className="text-[17px] font-semibold text-muted sm:text-xl">{format(monthDate, "yyyy")}</span></h1>
+          <p className="mt-1 text-[13px] text-muted">{isThisMonth ? "本月" : "这个月"} {monthLabels.length} 项安排{isThisMonth && upcomingCount > 0 && ` · 今天起还有 ${upcomingCount} 项`}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+          {!isThisMonth && <button onClick={() => onDateChange(today)} className="min-h-11 rounded-full bg-primary px-4 text-sm font-bold text-white hover:bg-[#256a4d]">回到本月</button>}
+          <button onClick={() => move(-1)} aria-label={`上一月：${format(addMonths(monthDate, -1), "yyyy年M月")}`} className="flex h-11 w-11 items-center justify-center rounded-full border border-ink/10 bg-white text-ink hover:bg-stone-50"><ChevronLeft className="h-5 w-5" /></button>
+          <button onClick={() => move(1)} aria-label={`下一月：${format(addMonths(monthDate, 1), "yyyy年M月")}`} className="flex h-11 w-11 items-center justify-center rounded-full border border-ink/10 bg-white text-ink hover:bg-stone-50"><ChevronRight className="h-5 w-5" /></button>
         </div>
       </header>
 
-      <div ref={swipeRef} className="grid grid-cols-7 overflow-hidden rounded-lg border border-ink/15 bg-white shadow-card">
-        {["一", "二", "三", "四", "五", "六", "日"].map((day) => (
-          <div key={day} className="border-b border-ink/10 bg-ink px-2 py-2.5 text-center text-[13px] font-semibold text-white/70"><span className="hidden sm:inline">周</span>{day}</div>
-        ))}
-        {gridDates.map((key) => {
-          const tasks = items[key] ?? [];
-          const labels = calendarLabels(tasks);
-          const annotation = getCalendarAnnotation(key);
-          const annotations = [...annotation.solarTerms, ...annotation.festivals];
-          const isSelected = selectedDay === key;
-
-          return (
-            <button
-              key={key}
-              onClick={() => handleDayClick(key)}
-              aria-current={key === todayKey() ? "date" : undefined}
-              className={`min-h-20 border-b border-r border-ink/[0.08] p-1.5 text-left align-top sm:min-h-28 sm:p-2.5 ${
-                !isSameMonth(fromDateKey(key), monthDate)
-                  ? "bg-stone-50/70 text-stone-300 opacity-65"
-                  : key === todayKey()
-                  ? `shadow-[inset_0_0_0_2px_rgba(227,107,78,0.55)] ${isSelected ? "bg-alert/[0.16]" : "bg-alert/[0.09] hover:bg-alert/[0.14]"}`
-                  : isSelected
-                  ? "bg-mint/70"
-                  : "hover:bg-mint/25"
-              }`}
-            >
-              {/* Date number row */}
-              <div className="flex min-w-0 items-center gap-0.5 sm:gap-1">
-                <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[13px] font-semibold ${key === todayKey() ? "bg-alert text-white" : ""}`}>
-                  {fromDateKey(key).getDate()}
-                </span>
-                {annotation.holidayStatus && (
-                  <span className={`hidden rounded px-1 text-[13px] font-bold leading-5 sm:inline ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>
-                    {annotation.holidayStatus}
-                  </span>
-                )}
-              </div>
-
-              {/* Solar term / festival — desktop only */}
-              {annotations.length > 0 && (
-                <div className="mt-0.5 hidden truncate text-[13px] font-medium text-amber-700 sm:block">{annotations.join("·")}</div>
-              )}
-
-              {/* 手机：格子太窄放不下文字（原先截成"整理明/天"这类半句），改为色点 + 件数，点开在下方看详情 */}
-              {labels.length > 0 && (
-                <div className="mt-1 flex flex-wrap items-center gap-0.5 sm:hidden" aria-label={`${labels.length} 项安排`}>
-                  {labels.slice(0, 4).map((label) => <span key={`${label.type}:${label.text}`} className={`h-1.5 w-1.5 rounded-full ${label.done ? "opacity-40" : ""}`} style={{ backgroundColor: label.dot }} />)}
-                  <span className="ml-0.5 text-[13px] font-semibold leading-none tabular-nums text-muted">{labels.length}</span>
+      <div ref={swipeRef} className="overflow-hidden rounded-xl border border-ink/[0.08] bg-white shadow-[0_1px_2px_rgba(32,41,37,0.04),0_12px_32px_-20px_rgba(32,41,37,0.25)]">
+        <div className="grid grid-cols-7 border-b border-ink/[0.08]">
+          {["一", "二", "三", "四", "五", "六", "日"].map((day, index) => (
+            <div key={day} className={`py-2.5 text-center text-[12px] font-semibold tracking-wide sm:py-3 sm:text-[13px] ${index >= 5 ? "bg-[#FBF8F4] text-alert/80" : "text-muted"}`}><span className="hidden sm:inline">周</span>{day}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-px bg-ink/[0.06]">
+          {gridDates.map((key, index) => {
+            const tasks = items[key] ?? [];
+            const labels = calendarLabels(tasks);
+            const annotation = getCalendarAnnotation(key);
+            const annotations = [...annotation.solarTerms, ...annotation.festivals];
+            const isSelected = selectedDay === key;
+            const inMonth = isSameMonth(fromDateKey(key), monthDate);
+            const isToday = key === today;
+            const weekend = index % 7 >= 5;
+            const past = key < today;
+            const bg = !inMonth ? "bg-[#FAF9F7]" : isToday ? "bg-[#E9F3ED]" : isSelected ? "bg-mint/60" : weekend ? "bg-[#FDFBF8]" : "bg-white";
+            return (
+              <button
+                key={key}
+                onClick={() => handleDayClick(key)}
+                aria-current={isToday ? "date" : undefined}
+                aria-label={`${format(fromDateKey(key), "M月d日")}${labels.length ? `，${labels.length} 项安排` : ""}`}
+                className={`relative flex min-h-[3.75rem] flex-col p-1.5 text-left align-top transition-colors sm:min-h-[7.5rem] sm:p-2.5 ${bg} ${inMonth && !isToday ? "hover:bg-mint/30" : ""} ${isSelected ? "ring-2 ring-inset ring-primary/40" : ""}`}
+              >
+                {isToday && <span aria-hidden className="absolute inset-x-0 top-0 h-[3px] bg-primary" />}
+                <div className="flex min-w-0 items-center gap-1">
+                  <span className={`text-[14px] leading-6 tabular-nums sm:text-[15px] ${!inMonth ? "text-stone-300" : isToday ? "font-bold text-primary" : past ? "font-medium text-muted" : "font-semibold text-ink"}`}>{fromDateKey(key).getDate()}</span>
+                  {isToday && <span className="hidden text-[12px] font-semibold text-primary sm:inline">今天</span>}
+                  {inMonth && annotation.holidayStatus && (
+                    <span className={`rounded px-1 text-[11px] font-bold leading-4 sm:text-[12px] ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{annotation.holidayStatus}</span>
+                  )}
+                  {inMonth && annotations.length > 0 && <span className="ml-auto hidden min-w-0 truncate text-[12px] font-medium text-amber-700 sm:inline">{annotations.join("·")}</span>}
                 </div>
-              )}
 
-              {/* 电脑 / iPad：像日程本一样直接写在格子里——色点 + 时间 + 名称，不加框（2026-11-21 用户：带框太死板） */}
-              <div className="mt-1 hidden space-y-0.5 sm:block">
-                {labels.slice(0, 5).map((label) => (
-                  <div key={`${label.type}:${label.text}`} title={label.time ? `${label.time} ${label.name}` : label.name} className={`flex min-w-0 items-start gap-1.5 text-[13px] leading-[18px] ${label.done ? "text-muted line-through" : "text-ink"}`}>
-                    <span aria-hidden className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: label.dot }} />
-                    {/* 名称最多两行，格子窄时不至于只剩一个字；时间只在宽屏显示，窄格子里让给名称 */}
-                    <span className="min-w-0 break-all [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden">{label.time && <span className="mr-1 hidden tabular-nums text-muted xl:inline">{label.time}</span>}{label.name}</span>
+                {/* 手机：格子太窄放不下文字，色点（做完的变淡），点开在下方看详情 */}
+                {inMonth && labels.length > 0 && (
+                  <div className="mt-auto flex flex-wrap items-center gap-[3px] pb-0.5 sm:hidden" aria-hidden>
+                    {labels.slice(0, 6).map((label) => <span key={`${label.type}:${label.text}`} className={`h-1.5 w-1.5 rounded-full ${label.done ? "opacity-30" : ""}`} style={{ backgroundColor: label.dot }} />)}
                   </div>
-                ))}
-                {labels.length > 5 && <div className="pl-3 text-[13px] text-muted">还有 {labels.length - 5} 项</div>}
-              </div>
-            </button>
-          );
-        })}
+                )}
+
+                {/* 电脑 / iPad：色点 + 时间 + 名称 */}
+                {inMonth && <div className="mt-1 hidden space-y-[3px] sm:block">
+                  {labels.slice(0, 4).map((label) => (
+                    <div key={`${label.type}:${label.text}`} title={label.time ? `${label.time} ${label.name}` : label.name} className={`flex min-w-0 items-center gap-1.5 text-[13px] leading-[18px] ${label.done ? "text-stone-400" : "text-ink"}`}>
+                      <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${label.done ? "opacity-40" : ""}`} style={{ backgroundColor: label.dot }} />
+                      <span className="min-w-0 truncate">{label.time && <span className={`mr-1 hidden tabular-nums lg:inline ${label.done ? "" : "text-muted"}`}>{label.time}</span>}{label.name}</span>
+                    </div>
+                  ))}
+                  {labels.length > 4 && <div className="pl-3 text-[12px] font-medium text-muted">+{labels.length - 4} 项</div>}
+                </div>}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Mobile expanded day panel */}
+      {/* 手机：点某天在下面展开 */}
       {selectedDay && (
         <DayPanel
           day={selectedDay}
@@ -141,53 +150,31 @@ function DayPanel({ day, tasks, onOpenDay, onAddTask, onClose }: { day: string; 
   const d = fromDateKey(day);
 
   return (
-      <div className="surface mt-3 p-4 sm:hidden">
-      <div className="flex items-start justify-between">
-        <div>
-          <span className="font-semibold text-ink">
-            {d.getMonth() + 1}月{d.getDate()}日
-          </span>
-          {annotations.length > 0 && (
-            <span className="ml-2 text-[13px] text-amber-700">{annotations.join("·")}</span>
-          )}
-          {annotation.holidayStatus && (
-            <span className={`ml-2 rounded px-1.5 py-0.5 text-[13px] font-bold ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>
-              {annotation.holidayStatus}
-            </span>
-          )}
-        </div>
-        <button onClick={onClose} className="rounded-lg p-1 text-stone-400 hover:bg-stone-50">
-          <X className="h-4 w-4" />
-        </button>
+    <div className="surface mt-3 overflow-hidden sm:hidden">
+      <div className="flex items-center gap-2 border-b border-ink/[0.07] px-4 py-3">
+        <span className="text-[17px] font-bold text-ink">{d.getMonth() + 1}月{d.getDate()}日</span>
+        <span className="text-[13px] text-muted">{format(d, "EEEE", { locale: zhCN }).replace("星期", "周")}</span>
+        {annotations.length > 0 && <span className="text-[13px] text-amber-700">{annotations.join("·")}</span>}
+        {annotation.holidayStatus && <span className={`rounded px-1.5 py-0.5 text-[12px] font-bold ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{annotation.holidayStatus}</span>}
+        <button onClick={onClose} aria-label="收起" className="ml-auto flex h-11 w-11 items-center justify-center rounded-full text-muted hover:bg-stone-100"><X className="h-5 w-5" /></button>
       </div>
-
       {labels.length === 0 ? (
-        <p className="mt-3 text-sm text-stone-400">今日暂无任务</p>
+        <p className="px-4 py-5 text-sm text-muted">这天没有安排</p>
       ) : (
-        <div className="mt-2 divide-y divide-ink/[0.07]">
+        <ul className="divide-y divide-ink/[0.06] px-4">
           {labels.map((label) => (
-            <div key={`${label.type}:${label.text}`} className={`flex min-h-11 items-center gap-2 text-[15px] ${label.done ? "text-muted line-through" : "text-ink"}`}>
-              <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: label.dot }} />
-              {label.time && <span className="shrink-0 text-[13px] tabular-nums text-muted">{label.time}</span>}
-              <span className="flex-1">{label.name}</span>
-            </div>
+            <li key={`${label.type}:${label.text}`} className={`flex min-h-12 items-center gap-3 text-[15px] ${label.done ? "text-stone-400" : "text-ink"}`}>
+              <span className="w-11 shrink-0 text-[13px] tabular-nums text-muted">{label.time ?? "全天"}</span>
+              <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${label.done ? "opacity-40" : ""}`} style={{ backgroundColor: label.dot }} />
+              <span className="min-w-0 flex-1 truncate">{label.name}</span>
+              {label.done && <span className="text-[12px] text-stone-400">已完成</span>}
+            </li>
           ))}
-        </div>
+        </ul>
       )}
-
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <button
-          onClick={() => onAddTask(day)}
-          className="flex items-center justify-center gap-1.5 rounded-lg bg-alert py-2.5 text-sm font-semibold text-white"
-        >
-          <Plus className="h-4 w-4" />新建任务
-        </button>
-        <button
-          onClick={() => onOpenDay(day)}
-          className="rounded-lg border border-ink/10 bg-white py-2.5 text-sm font-semibold text-primary"
-        >
-          查看当日页 →
-        </button>
+      <div className="grid grid-cols-2 gap-2 border-t border-ink/[0.07] p-3">
+        <button onClick={() => onAddTask(day)} className="flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-alert text-sm font-semibold text-white"><Plus className="h-4 w-4" />新建任务</button>
+        <button onClick={() => onOpenDay(day)} className="min-h-11 rounded-lg border border-ink/10 bg-white text-sm font-semibold text-primary">打开这一天</button>
       </div>
     </div>
   );

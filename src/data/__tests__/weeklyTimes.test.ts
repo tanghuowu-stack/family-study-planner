@@ -45,7 +45,6 @@ import { cloudRepository } from "../cloudRepository";
 import type { Task, TaskDraft } from "../../types/task";
 import { applyWeeklyLog, weeklyTimesActiveIn, weeklyTimesProgress } from "../../utils/weeklyTimes";
 import { isEndedRecurring } from "../../utils/taskMeta";
-import { getWeekReview } from "../weekReview";
 import { computeWeeklyStreak, getHabitCalendars, getHabitCandidates } from "../statsRepository";
 
 const TODAY = "2026-11-19"; // 周四；本周 11-16（一）~ 11-22（日）
@@ -161,18 +160,7 @@ describe("云端模式", () => {
   });
 });
 
-describe("第 3 步：本周条与打卡", () => {
-  it("8. 月视图本周条：每周几次不进 7 天件数，单独给出这一周做了几次；过去的周按那一周的记录算", async () => {
-    const { task } = await taskRepository.create(piano({ weeklyLog: { "2026-11-10": 3, "2026-11-17": 1, "2026-11-19": 1 } }));
-    const review = await getWeekReview(TODAY, TODAY);
-    expect(review.days.reduce((sum, day) => sum + day.total, 0)).toBe(0);
-    expect(review.weeklyTimes).toEqual([{ taskId: task.id, title: "钢琴练习", done: 2, target: 3, unit: "次", reached: false, subject: "other" }]);
-    const lastWeek = await getWeekReview("2026-11-10", TODAY);
-    expect(lastWeek.weeklyTimes[0]).toMatchObject({ done: 3, reached: true });
-    // 开始之前的周不列
-    expect((await getWeekReview("2026-10-20", TODAY)).weeklyTimes).toEqual([]);
-  });
-
+describe("第 3 步：打卡", () => {
   it("9. 连续周数：本周没做够不算断；过去哪周没做够就断；停 2 周以内接着算，再长从头算", () => {
     const t = (log: Record<string, number>, extra: Partial<Task> = {}) => ({ ...piano(), id: "p", createdAt: "", updatedAt: "", weeklyLog: log, ...extra } as Task);
     // 11-02、11-09 两周都做够 3 次，本周（11-16）只做 1 次
@@ -276,17 +264,16 @@ describe("把每周几次改成别的类型", () => {
   const toDaily = (task: Task): TaskDraft => ({ ...task, id: undefined, createdAt: undefined, updatedAt: undefined, timeType: "recurring", schedulePattern: "dailyRecurring",
     recurrence: { frequency: "daily", startDate: "2026-11-02" }, weeklyQuota: undefined, startDate: undefined } as unknown as TaskDraft);
 
-  it("15. 有记录的：原任务结束日记到昨天、记录保留（本周条和打卡照算）；另建重复任务从今天开始，接上打卡；今天之后的今日页不再出现原任务", async () => {
+  it("15. 有记录的：原任务结束日记到昨天、记录保留（打卡照算）；另建重复任务从今天开始，接上打卡；今天之后的今日页不再出现原任务", async () => {
     const { task: old } = await taskRepository.create(piano({ title: "课外读书", mainCategory: "extraHomework", subCategory: "chinese", weeklyLog: { "2026-11-10": 2, "2026-11-17": 1 }, enableStreak: true, streakStartDate: "2026-11-02" }));
     const { task, ended } = await taskRepository.convertFromWeeklyTimes(old.id, toDaily(old), TODAY);
     expect(ended).toMatchObject({ id: old.id, timeType: "weeklyTimes", endDate: "2026-11-18", weeklyLog: { "2026-11-10": 2, "2026-11-17": 1 } });
     expect(task).toMatchObject({ timeType: "recurring", recurrence: { startDate: TODAY }, habitKey: old.id, enableStreak: true, streakStartDate: TODAY });
     expect(task.weeklyQuota).toBeUndefined();
     expect(task.weeklyLog).toBeUndefined();
-    // 今天的本周计划不再有它；周二那天还在；本周条（按周一取）照算它这周的 1 次
+    // 今天的本周计划不再有它；周二那天还在
     expect(await taskRepository.getWeeklyTimes(TODAY)).toEqual([]);
     expect((await taskRepository.getWeeklyTimes("2026-11-17")).map((t) => t.id)).toEqual([old.id]);
-    expect((await getWeekReview(TODAY, TODAY)).weeklyTimes).toMatchObject([{ taskId: old.id, done: 1 }]);
     // 新任务今天出现在当天清单
     expect((await taskRepository.getTasksForDate(TODAY)).map((t) => t.id)).toContain(task.id);
     // 打卡还是一行，以前记的那天照样算完成

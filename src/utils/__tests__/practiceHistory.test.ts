@@ -9,6 +9,17 @@ const practice = (id: string, extra: Partial<Task>): Task => ({
 } as Task);
 
 describe("统计 › 练习：每项一周一周的完成情况", () => {
+  it("行的顺序和今日页一样：按拖过的顺序，没拖过的排后面", () => {
+    const log = { "2026-11-17": 1 };
+    const tasks = [
+      practice("RAZ", { sortOrder: 4, weeklyLog: log }),
+      practice("背诗", { sortOrder: 2, weeklyLog: log }),
+      practice("新加的", { weeklyLog: log }),
+      practice("钢琴", { sortOrder: 0, weeklyLog: log }),
+    ];
+    expect(practiceHistory(tasks, ["2026-11-16"]).map((row) => row.taskId)).toEqual(["钢琴", "背诗", "RAZ", "新加的"]);
+  });
+
   it("每格是那周做了几次 / 目标、是否达标；还没开始、或第一次记录之前的周是 null；整段都没在进行的项不列", () => {
     const tasks = [
       practice("钢琴", { weeklyLog: { "2026-11-03": 1, "2026-11-05": 2, "2026-11-10": 1 } }),

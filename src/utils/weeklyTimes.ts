@@ -61,6 +61,10 @@ export function sumWeeklyTimes(items: { done: number; target: number }[]): { don
   return items.reduce((sum, item) => ({ done: sum.done + Math.min(item.done, item.target), target: sum.target + item.target }), { done: 0, target: 0 });
 }
 
+/** 每周练习的显示顺序：今日页拖过的顺序（sortOrder）→ 截止日 → 建的先后。今日页和统计 › 练习共用，两边顺序一样 */
+export const byPracticeOrder = (a: Pick<Task, "sortOrder" | "endDate" | "createdAt">, b: Pick<Task, "sortOrder" | "endDate" | "createdAt">) =>
+  (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || (a.endDate ?? "").localeCompare(b.endDate ?? "") || a.createdAt.localeCompare(b.createdAt);
+
 /**
  * 统计 › 练习（2026-11-25 B3，代替原来的“打卡”）：每项每周练习在一串周里的完成情况。
  * 一行一项（那几周里至少有一周在进行的），每格是那一周 做了几次 / 目标、有没有达标；那周还没开始或已经停了的格子为 null。
@@ -70,6 +74,7 @@ export interface PracticeHistoryRow { taskId: string; cells: (PracticeHistoryCel
 export function practiceHistory(tasks: Task[], weekStarts: string[], thisWeek: string = weekStarts[weekStarts.length - 1]): PracticeHistoryRow[] {
   return tasks
     .filter((task) => isWeeklyTimes(task) && !task.deletedAt && task.status !== "cancelled" && task.mainCategory !== "readingPlan" && task.childVisible)
+    .sort(byPracticeOrder)
     .map((task) => {
       // 第一次记录之前的周算"还没开始用"，显示"–"，不当成没做（没记过的从本周算起）
       const logged = Object.entries(task.weeklyLog ?? {}).filter(([, count]) => count > 0).map(([date]) => date).sort();

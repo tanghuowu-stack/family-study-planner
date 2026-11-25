@@ -13,7 +13,7 @@ import { dayTaskKey, findJustCompleted, groupDayTasks, isUncountedTask, isWeekPl
 import { useGroupOrder } from "../hooks/useGroupOrder";
 import { useSortableList } from "../hooks/useSortableList";
 import { itemSyncKey, taskSyncKey } from "../utils/taskMeta";
-import { sumWeeklyTimes, weeklyTimesProgress } from "../utils/weeklyTimes";
+import { byPracticeOrder, sumWeeklyTimes, weeklyTimesProgress } from "../utils/weeklyTimes";
 import { ParentBonusRow, PointsHeader, practiceScoreLabels, WeekSummaryBanner } from "../components/PointsPanel";
 import { loadPointsContext, settlePendingWeeks, type Celebration, type PointsContext } from "../data/pointsService";
 import { EARLY_POINTS, formatMoreToDo, gainForLog, moreToDoToday, POINTS_START_WEEK, practiceSettingsOf, REACH_BONUS } from "../utils/points";
@@ -153,7 +153,7 @@ export function DayPage(props: Props) {
   const leftPending = pending.length + weekPending.length;
   // 每周练习：本周没做够的在上面，做够了的收进"已完成"
   const timesReached = (task: TaskDisplay) => weeklyTimesProgress(task, props.date).reached;
-  const timesPending = weeklyTimes.filter((task) => !timesReached(task) || weeklyHeld.has(task.id)).sort(byOrder);
+  const timesPending = weeklyTimes.filter((task) => !timesReached(task) || weeklyHeld.has(task.id)).sort(byPracticeOrder);
   const timesDone = weeklyTimes.filter((task) => timesReached(task) && !weeklyHeld.has(task.id));
   const hasPractice = weeklyTimes.length > 0;
   // 提醒、休闲、旅游照常显示可勾，但不算进"还剩 N 项"和进度条（isUncountedTask）

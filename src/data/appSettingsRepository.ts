@@ -221,7 +221,8 @@ export interface TimetableSlot {
   highlights: Record<TimetableDay, boolean>;
 }
 
-/** 课节之间的休息行（大课间、课间活动、午餐午休……）：名称和时间可在编辑课表时修改（2026-11-18） */
+/** 课节之间的休息行（大课间、课间活动、午餐午休……）：名称和时间可在编辑课表时修改（2026-11-18）。
+ *  2026-11-25 起课表只读页不再显示这些时间，作息时间以 data/schoolSchedule.ts（学校作息表）为准；默认值同步成作息表的时间。 */
 export interface TimetableBreak {
   label: string;
   time: string;
@@ -236,8 +237,8 @@ export interface SchoolTimetable {
 }
 
 export const DEFAULT_TIMETABLE_BREAKS: Record<string, TimetableBreak> = {
-  "am-1": { label: "大课间", time: "09:05-09:35" },
-  "am-2": { label: "课间活动", time: "10:15-10:30" },
+  "am-1": { label: "课间活动", time: "09:05-09:20" },
+  "am-2": { label: "大课间", time: "10:00-10:30" },
   "am-3": { label: "眼保健操 · 课间活动", time: "11:10-11:30" },
   "am-4": { label: "午餐 · 午休", time: "12:10-14:00" },
   "pm-1": { label: "眼保健操 · 课间活动", time: "14:40-15:00" },
@@ -273,7 +274,7 @@ export const DEFAULT_SCHOOL_TIMETABLE: SchoolTimetable = {
   term: "五年级上学期",
   slots: [
     timetableSlot("am-1", "morning", "第一节", "08:25-09:05", courses("数学", "语文", "数学", "语文", "数学")),
-    timetableSlot("am-2", "morning", "第二节", "09:35-10:15", courses("语文", "数学", "语文", "数学", "语文")),
+    timetableSlot("am-2", "morning", "第二节", "09:20-10:00", courses("语文", "数学", "语文", "数学", "语文")),
     timetableSlot("am-3", "morning", "第三节", "10:30-11:10", courses("英语（课本）", "道法（课本）", "科学（课本）", "道法（课本）", "体健")),
     timetableSlot("am-4", "morning", "第四节", "11:30-12:10", courses("足球", "音乐（葫芦丝）", "足球", "美术", "书法")),
     timetableSlot("pm-1", "afternoon", "第一节", "14:00-14:40", courses("劳动", "科学（课本）", "信息", "英语（课本）", "队课")),

@@ -2,6 +2,7 @@ import { Check, Pencil, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { formatFullDate, fromDateKey, todayKey } from "../utils/date";
 import { getCalendarAnnotation } from "../data/calendarAnnotations";
+import { currentScheduleItem, SCHOOL_AFTER, SCHOOL_AFTERNOON, SCHOOL_DISMISS, SCHOOL_LUNCH, SCHOOL_MORNING, type ScheduleItem } from "../data/schoolSchedule";
 import {
   cloneSchoolTimetable,
   loadSchoolTimetable,
@@ -45,9 +46,11 @@ function courseTone(course: string): { color: string; background: string } {
   return { color: "#202925", background: "#F1EFEB" };
 }
 
-function CourseName({ course }: { course: string }) {
+function CourseName({ course, stacked = false }: { course: string; stacked?: boolean }) {
   const match = course.match(/^(.*?)(（(?:葫芦丝|课本)）)$/);
   if (!match) return <>{course || "-"}</>;
+  // 课程表格子窄：括号里的“课本 / 葫芦丝”换到课名下面一行小字
+  if (stacked) return <span className="flex flex-col items-center leading-tight"><span>{match[1]}</span><span className="text-[10px] font-semibold opacity-75">{match[2].slice(1, -1)}</span></span>;
   return <>{match[1]}<span className="timetable-course-note ml-0.5 inline-block text-[10px] font-semibold opacity-75">{match[2]}</span></>;
 }
 
@@ -68,8 +71,11 @@ export function TimetablePage({ tabs }: { tabs?: ReactNode } = {}) {
   const [saving, setSaving] = useState(false);
   const [savedHint, setSavedHint] = useState(false);
 
+  const [now, setNow] = useState(() => new Date());
+  // 手机上"课程表 / 作息时间"切换（iPad、电脑两块并排）
+  const [phoneView, setPhoneView] = useState<"grid" | "schedule">("grid");
   useEffect(() => {
-    const updateDate = () => setToday(todayKey());
+    const updateDate = () => { setToday(todayKey()); setNow(new Date()); };
     const timer = window.setInterval(updateDate, 60_000);
     document.addEventListener("visibilitychange", updateDate);
     return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", updateDate); };
@@ -170,6 +176,7 @@ export function TimetablePage({ tabs }: { tabs?: ReactNode } = {}) {
         </div>
       </header>
 
+      {!editing ? <ReadView draft={draft} tomorrow={tomorrow} now={now} phoneView={phoneView} onPhoneView={setPhoneView} /> : <>
       <section className="timetable-surface overflow-hidden rounded-xl border border-ink/[0.08] bg-white shadow-[0_1px_2px_rgba(32,41,37,0.04),0_12px_32px_-20px_rgba(32,41,37,0.25)]"><div className="timetable-scroll overflow-x-auto"><table className="w-full min-w-[760px] table-fixed border-separate border-spacing-0">
         <colgroup><col className="w-[132px]" />{TIMETABLE_DAYS.map((day) => <col key={day} />)}</colgroup>
         <thead><tr className="bg-[#F7F6F3]"><th className="sticky left-0 z-30 border-b border-r border-ink/[0.08] bg-[#F7F6F3] px-3 py-3 text-left text-[12px] font-semibold text-muted">节次 · 时间</th>{TIMETABLE_DAYS.map((day) => <th key={day} className={`border-b border-ink/[0.08] px-2 py-3 text-center text-[14px] font-bold ${tomorrow === day ? "bg-primary/[0.08] text-primary" : "text-ink"}`}>{DAY_LABELS[day]}{tomorrow === day && <span className="ml-1.5 inline-block rounded-full bg-primary px-1.5 py-px align-middle text-[10px] font-semibold text-white">明天</span>}</th>)}</tr></thead>
@@ -199,6 +206,144 @@ export function TimetablePage({ tabs }: { tabs?: ReactNode } = {}) {
         })}</tbody>
       </table></div></section>
       <p className="timetable-legend mt-2.5 flex shrink-0 items-center justify-center gap-2 text-[12px] font-medium text-muted"><span aria-hidden className="inline-flex h-5 items-center rounded-md px-2 text-[11px] font-bold" style={CARRY_STYLE}>课名</span>粗框黄底的课要带课本或工具</p>
+      </>}
     </main>
+  );
+}
+
+
+/* ───────────────────────── 课表（只读）：课程表 + 作息时间 ─────────────────────────
+ * 2026-11-25 用户："课表特别难看，根据学校的作息时间表重新设计，时间和课程混合或分开都可以"。
+ * 分开：左边课程表只放课（节次 × 周一到周五，不夹休息行、不写时间），右边作息时间按学校的作息表
+ * （data/schoolSchedule.ts）一行一项，正在进行的那一项浅绿底标"现在"。手机上两块用切换按钮看其中一块。
+ * iPad、手机整页一屏，课程表行高按屏幕平分。
+ */
+const SECTION_BADGE: Record<TimetableSection, { color: string; background: string }> = {
+  morning: { color: "#9A5B00", background: "#FDF0D8" },
+  afternoon: { color: "#2F6FAE", background: "#E3EEF9" },
+  extended: { color: "#2B7656", background: "#E3F0E9" },
+};
+
+function ReadView({ draft, tomorrow, now, phoneView, onPhoneView }: { draft: SchoolTimetable; tomorrow: TimetableDay | null; now: Date; phoneView: "grid" | "schedule"; onPhoneView: (view: "grid" | "schedule") => void }) {
+  return (
+    <>
+      <div role="tablist" aria-label="课程表 / 作息时间" className="mb-2 grid shrink-0 grid-cols-2 gap-1 rounded-full border border-ink/10 bg-white p-1 sm:hidden">
+        {(["grid", "schedule"] as const).map((value) => (
+          <button key={value} type="button" role="tab" aria-selected={phoneView === value} onClick={() => onPhoneView(value)}
+            className={`min-h-10 rounded-full text-[14px] font-semibold ${phoneView === value ? "bg-ink text-white" : "text-muted"}`}>{value === "grid" ? "课程表" : "作息时间"}</button>
+        ))}
+      </div>
+      <div className="fit-fill grid min-h-0 gap-3 sm:grid-cols-[minmax(0,1fr)_13.5rem] lg:grid-cols-[minmax(0,1fr)_17rem] desk:gap-4">
+        <div className={`${phoneView === "grid" ? "flex" : "hidden"} min-h-0 flex-col sm:flex`}>
+          <CourseGrid draft={draft} tomorrow={tomorrow} />
+          <p className="mt-2 flex shrink-0 items-center justify-center gap-2 text-[12px] font-medium text-muted"><span aria-hidden className="inline-flex h-5 items-center rounded-md px-2 text-[11px] font-bold" style={CARRY_STYLE}>课名</span>粗框黄底的课要带课本或工具</p>
+        </div>
+        <div className={`${phoneView === "schedule" ? "flex" : "hidden"} min-h-0 flex-col sm:flex`}>
+          <DaySchedule now={now} />
+        </div>
+      </div>
+    </>
+  );
+}
+
+function CourseGrid({ draft, tomorrow }: { draft: SchoolTimetable; tomorrow: TimetableDay | null }) {
+  const first = draft.slots.find((slot) => slot.id === "extended-1");
+  const second = draft.slots.find((slot) => slot.id === "extended-2");
+  // 课后服务前两段同一门（云脑班、俱乐部）合成一格
+  const merged = new Set(TIMETABLE_DAYS.filter((day) => first?.courses[day] && first.courses[day] === second?.courses[day]));
+  let classNo = 0;
+  let afterNo = 0;
+  const divider = (key: string, text: string, tone: string) => (
+    <tr key={key} className="h-7"><td colSpan={6} className={`border-b border-ink/[0.07] px-2 text-center text-[12px] font-semibold tracking-wide ${tone}`}>{text}</td></tr>
+  );
+  return (
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-ink/[0.08] bg-white shadow-[0_1px_2px_rgba(32,41,37,0.04),0_12px_32px_-20px_rgba(32,41,37,0.25)]">
+      <table className="h-full w-full table-fixed border-separate border-spacing-0">
+        <colgroup><col className="w-11 sm:w-14" />{TIMETABLE_DAYS.map((day) => <col key={day} />)}</colgroup>
+        <thead>
+          <tr className="h-10 bg-[#F7F6F3]">
+            <th className="border-b border-ink/[0.08]" aria-label="节次" />
+            {TIMETABLE_DAYS.map((day) => (
+              <th key={day} className={`border-b border-ink/[0.08] px-1 text-center text-[13px] font-bold sm:text-[14px] ${tomorrow === day ? "bg-primary/[0.08] text-primary" : "text-ink"}`}>
+                {DAY_LABELS[day]}{tomorrow === day && <span className="ml-1 hidden rounded-full bg-primary px-1.5 py-px align-middle text-[10px] font-semibold text-white sm:inline-block">明天</span>}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {draft.slots.flatMap((slot, index) => {
+            const rows = [];
+            const prev = draft.slots[index - 1];
+            if (prev && prev.section !== slot.section) rows.push(slot.section === "afternoon" ? divider("lunch", `午餐 · 午休  ${SCHOOL_LUNCH.start}–${SCHOOL_LUNCH.end}`, "bg-[#FDF6E9] text-amber-800") : divider("after", "课后服务  15:55 起", "bg-[#EEF5F1] text-primary"));
+            const badge = SECTION_BADGE[slot.section];
+            const label = slot.section === "extended" ? `${++afterNo}` : `${++classNo}`;
+            rows.push(
+              <tr key={slot.id}>
+                <th scope="row" className="border-b border-r border-ink/[0.07] bg-[#FBFAF8] px-1 font-normal">
+                  <span className="mx-auto flex h-7 w-7 flex-col items-center justify-center rounded-full text-[13px] font-bold leading-none sm:h-8 sm:w-8" style={badge} title={slot.section === "extended" ? `课后第 ${label} 段` : `第 ${label} 节`}>
+                    {slot.section === "extended" && <span className="text-[8px] font-semibold leading-none">课后</span>}{label}
+                  </span>
+                </th>
+                {TIMETABLE_DAYS.map((day) => {
+                  if (slot.id === "extended-2" && merged.has(day)) return null;
+                  const span = slot.id === "extended-1" && merged.has(day) ? 2 : 1;
+                  const course = slot.courses[day];
+                  const carry = slot.highlights[day];
+                  return (
+                    <td key={day} rowSpan={span} className={`border-b border-r border-ink/[0.07] p-[3px] align-middle last:border-r-0 sm:p-1 ${tomorrow === day ? "bg-primary/[0.04]" : ""}`}>
+                      <span className="flex h-full min-h-9 w-full items-center justify-center rounded-lg px-0.5 py-1 text-center text-[14px] font-bold leading-tight sm:min-h-10 sm:text-[16px]" style={carry ? CARRY_STYLE : courseTone(course)} title={carry ? "要带课本或工具" : undefined}>
+                        <CourseName course={course} stacked />
+                      </span>
+                    </td>
+                  );
+                })}
+              </tr>,
+            );
+            return rows;
+          })}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function ScheduleRow({ entry, current }: { entry: ScheduleItem; current: boolean }) {
+  const tone = entry.kind === "class" ? "text-[14px] font-semibold text-ink" : entry.kind === "activity" ? "text-[14px] font-medium text-primary" : entry.kind === "big-break" ? "text-[13px] font-semibold text-amber-800" : "text-[13px] text-muted";
+  return (
+    <li className={`flex min-h-[26px] items-center gap-1.5 rounded-md px-2 py-0.5 ${current ? "bg-mint ring-1 ring-inset ring-primary/30" : ""}`}>
+      <span className={`w-[4.6rem] shrink-0 text-[12px] tabular-nums lg:w-[5.25rem] ${entry.kind === "class" ? "font-semibold text-ink" : "text-muted"}`}>{entry.start}–{entry.end}</span>
+      <span className={`min-w-0 flex-1 leading-tight ${tone}`}>{entry.label}</span>
+      {current && <span className="shrink-0 rounded-full bg-primary px-1.5 text-[11px] font-semibold leading-5 text-white">现在</span>}
+    </li>
+  );
+}
+
+function DaySchedule({ now }: { now: Date }) {
+  const current = currentScheduleItem(now);
+  const day = now.getDay();
+  const isCurrent = (entry: ScheduleItem) => !!current && current.start === entry.start && current.label === entry.label;
+  const sectionTitle = (text: string, color: string) => <p className="mb-0.5 mt-2 flex items-center gap-1.5 px-2 text-[12px] font-bold first:mt-0" style={{ color }}><span aria-hidden className="h-3 w-[3px] rounded-full" style={{ backgroundColor: color }} />{text}</p>;
+  return (
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-ink/[0.08] bg-white shadow-[0_1px_2px_rgba(32,41,37,0.04),0_12px_32px_-20px_rgba(32,41,37,0.25)]">
+      <header className="flex h-10 shrink-0 items-center justify-between border-b border-ink/[0.08] bg-[#F7F6F3] px-3">
+        <h2 className="text-[14px] font-bold text-ink">作息时间</h2>
+        <span className="text-[12px] text-muted">{SCHOOL_DISMISS.leave} 放学</span>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+        {sectionTitle("上午", "#C98A1E")}
+        <ul>{SCHOOL_MORNING.items.map((entry) => <ScheduleRow key={entry.start + entry.label} entry={entry} current={isCurrent(entry)} />)}</ul>
+        <ul className="my-1"><ScheduleRow entry={SCHOOL_LUNCH} current={isCurrent(SCHOOL_LUNCH)} /></ul>
+        {sectionTitle("下午", "#3B82C4")}
+        <ul>{SCHOOL_AFTERNOON.items.map((entry) => <ScheduleRow key={entry.start + entry.label} entry={entry} current={isCurrent(entry)} />)}</ul>
+        {sectionTitle("课后服务", "#2B7656")}
+        {SCHOOL_AFTER.map((group) => (
+          <div key={group.title} className={`mt-1 rounded-lg px-0.5 py-1 ${group.days.includes(day) ? "bg-[#F3F8F5]" : ""}`}>
+            <p className="px-2 text-[12px] font-semibold text-muted">{group.title}{group.days.includes(day) && <span className="ml-1 text-primary">· 今天</span>}</p>
+            <ul>{group.items.map((entry) => <ScheduleRow key={entry.start + entry.label} entry={entry} current={group.days.includes(day) && isCurrent(entry)} />)}</ul>
+          </div>
+        ))}
+        <p className="mx-1 mt-2 rounded-md bg-primary/10 px-2 py-1.5 text-[13px] font-semibold text-primary">{SCHOOL_DISMISS.text}</p>
+      </div>
+    </section>
   );
 }

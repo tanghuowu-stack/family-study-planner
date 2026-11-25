@@ -46,7 +46,7 @@ describe("school timetable settings", () => {
   });
 
   it("keeps edited break names and times, falls back to defaults when missing or blank (2026-11-18)", () => {
-    expect(normalizeSchoolTimetable(null).breaks["am-1"]).toEqual({ label: "大课间", time: "09:05-09:35" });
+    expect(normalizeSchoolTimetable(null).breaks["am-1"]).toEqual({ label: "课间活动", time: "09:05-09:20" });
     const saved = cloneSchoolTimetable(DEFAULT_SCHOOL_TIMETABLE);
     saved.breaks["am-1"] = { label: " 升旗仪式 ", time: "09:05-09:40" };
     saved.breaks["pm-2"] = { label: "  ", time: "" };

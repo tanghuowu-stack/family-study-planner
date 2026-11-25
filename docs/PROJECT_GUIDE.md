@@ -58,6 +58,7 @@ data/pointsService.ts   积分读取、每周结算（周日晚 8 点起，固�
 utils/ledger.ts         记账规则纯函数（余额、校验与权限、利息按最低日终余额、待转账、本月小结、对账）
 data/ledgerRepository.ts 记账记录存取（Dexie ledgerEntries + Supabase ledger_entries）、月利率设置（app_settings `ledger_settings_v1`）
 data/ledgerService.ts   记账操作（记一笔、软删、确认转账、期初余额、对账调整、改利率）
+data/schoolSchedule.ts  学校作息时间（课表页右边“作息时间”；按学校作息表写死，改作息改这个文件）
 lib/ledgerRows.ts       ledger_entries 行映射（四个映射面共用这一份）
 pages/LedgerPage.tsx    记账页
 utils/device.ts         家长设备判断（maxTouchPoints > 0 = 触摸设备，没有家长功能）

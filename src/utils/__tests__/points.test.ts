@@ -47,20 +47,20 @@ describe("一项练习一周的得分", () => {
     expect(scorePracticeWeek(raz, W1).count).toBe(3);
   });
 
-  it("达到目标再 +3（2026-11-25 由 +2 改），不论哪天达标", () => {
+  it("达到目标再 +2，不论哪天达标", () => {
     const piano = practice("p", "钢琴练习", 3, "次", { [day(W1, 0)]: 1, [day(W1, 3)]: 1, [day(W1, 6)]: 1 }, { practicePoints: 2 });
     const score = scorePracticeWeek(piano, W1);
-    expect(score).toMatchObject({ reached: true, completionPoints: 6, reachBonus: 3, extraPoints: 0, total: 9 });
+    expect(score).toMatchObject({ reached: true, completionPoints: 6, reachBonus: 2, extraPoints: 0, total: 8 });
   });
 
   it("多做的部分计分：超过目标的照样按分值得分", () => {
     const poem = practice("s", "我爱背诗", 3, "次", Object.fromEntries([0, 1, 2, 3, 4].map((i) => [day(W1, i), 1])), { practicePoints: 1, practiceExtraScores: true });
-    expect(scorePracticeWeek(poem, W1)).toMatchObject({ count: 5, completionPoints: 3, reachBonus: 3, extraCount: 2, extraPoints: 2, total: 8 });
+    expect(scorePracticeWeek(poem, W1)).toMatchObject({ count: 5, completionPoints: 3, reachBonus: 2, extraCount: 2, extraPoints: 2, total: 7 });
   });
 
   it("多做的部分不计分：超过目标的不得分，只记多了几本", () => {
     const raz = practice("r", "RAZ阅读", 5, "本", { [day(W1, 0)]: 4, [day(W1, 2)]: 4 }, { practicePoints: 1, practiceExtraScores: false });
-    expect(scorePracticeWeek(raz, W1)).toMatchObject({ count: 8, completionPoints: 5, reachBonus: 3, extraCount: 3, extraPoints: 0, total: 8 });
+    expect(scorePracticeWeek(raz, W1)).toMatchObject({ count: 8, completionPoints: 5, reachBonus: 2, extraCount: 3, extraPoints: 0, total: 7 });
   });
 
   it("没达到目标：做了多少得多少，不扣分", () => {
@@ -70,7 +70,7 @@ describe("一项练习一周的得分", () => {
   });
 
   it("没设过分值的按每次 1 分、多做计分", () => {
-    expect(scorePracticeWeek(practice("n", "新练习", 1, "次", { [day(W1, 0)]: 1, [day(W1, 1)]: 1 }), W1)).toMatchObject({ points: 1, extraScores: true, total: 1 + 3 + 1 });
+    expect(scorePracticeWeek(practice("n", "新练习", 1, "次", { [day(W1, 0)]: 1, [day(W1, 1)]: 1 }), W1)).toMatchObject({ points: 1, extraScores: true, total: 1 + 2 + 1 });
   });
 
   it("只看本周的记录，上周多做的不结转", () => {
@@ -102,12 +102,12 @@ describe("零花钱（1 分 = 1 元）、家长奖励", () => {
   });
 
   it("每周得分（含家长奖励和扣分）就是那周的零花钱；每周分开算，不跨周累积", () => {
-    // 第一周：50 分家长奖励 → 50 元；第二周：钢琴 4 次 ×2 + 达标 3 = 11 分，再加 35 分奖励 → 46 元
+    // 第一周：50 分家长奖励 → 50 元；第二周：钢琴 4 次 ×2 + 达标 2 = 10 分，再加 35 分奖励 → 45 元
     const piano = practice("p", "钢琴练习", 4, "次", Object.fromEntries([0, 1, 2, 3].map((i) => [day(W2, i), 1])), { practicePoints: 2 });
     const ledger = ledgerWith({ bonuses: [bonus("a", day(W1, 2), 50), bonus("b", day(W2, 4), 35)] });
     const summary = computePointsSummary([piano], ledger, day(W2, 5));
-    expect(summary.history.map((week) => [week.weekStart, week.total, week.allowance])).toEqual([[W1, 50, 50], [W2, 46, 46]]);
-    expect(summary).toMatchObject({ weekTotal: 46, weekAllowance: 46 });
+    expect(summary.history.map((week) => [week.weekStart, week.total, week.allowance])).toEqual([[W1, 50, 50], [W2, 45, 45]]);
+    expect(summary).toMatchObject({ weekTotal: 45, weekAllowance: 45 });
   });
 
   it("扣分扣成负数时，那周零花钱是 0，不倒扣", () => {
@@ -121,10 +121,10 @@ describe("零花钱（1 分 = 1 元）、家长奖励", () => {
     const piano = (log: Record<string, number>) => practice("p", "钢琴练习", 3, "次", log, { practicePoints: 2 });
     const log = { [day(W1, 0)]: 1, [day(W1, 2)]: 1, [day(W1, 4)]: 1 };
     const snapshot = buildWeekSnapshot([piano(log)], W1, "2026-11-29T12:30:00.000Z", 3);
-    expect(snapshot).toMatchObject({ total: 9, bonus: 3, allowance: 12 });
+    expect(snapshot).toMatchObject({ total: 8, bonus: 3, allowance: 11 });
     const undone = piano({ [day(W1, 0)]: 1, [day(W1, 2)]: 1 });
     const summary = computePointsSummary([undone], ledgerWith({ snapshots: { [W1]: snapshot } }), day(W2, 1));
-    expect(summary.history[0]).toMatchObject({ practice: 4, allowance: 12, settled: true });
+    expect(summary.history[0]).toMatchObject({ practice: 4, allowance: 11, settled: true });
   });
 });
 
@@ -144,11 +144,11 @@ describe("每周结算快照", () => {
 
   it("结算之后再改分值或目标，已结算的周不受影响；没结算的本周按新设置算", () => {
     const snapshot = buildWeekSnapshot([piano(w1Log)], W1, "2026-11-30T00:01:00.000Z");
-    expect(snapshot.total).toBe(9);
+    expect(snapshot.total).toBe(8);
     const changed = piano({ ...w1Log, [day(W2, 0)]: 1 }, { practicePoints: 5, weeklyQuota: quota(1, "次") });
     const summary = computePointsSummary([changed], ledgerWith({ snapshots: { [W1]: snapshot } }), day(W2, 0));
-    expect(summary.history[0]).toMatchObject({ weekStart: W1, practice: 9, settled: true });
-    expect(summary.weekPractice).toBe(5 + 3); // 本周：新设置每次 5 分、目标 1 次 → 达标
+    expect(summary.history[0]).toMatchObject({ weekStart: W1, practice: 8, settled: true });
+    expect(summary.weekPractice).toBe(5 + 2); // 本周：新设置每次 5 分、目标 1 次 → 达标
   });
 
   it("结算后家长撤销那周的一次打勾，分数按结算时的设置跟着扣回", () => {
@@ -161,7 +161,7 @@ describe("每周结算快照", () => {
   it("结算后任务被删掉：那周按快照里记下的分数算", () => {
     const snapshot = buildWeekSnapshot([piano(w1Log)], W1, "2026-11-30T00:01:00.000Z");
     const deleted = piano(w1Log, { deletedAt: "2026-12-01T00:00:00.000Z" });
-    expect(computePointsSummary([deleted], ledgerWith({ snapshots: { [W1]: snapshot } }), day(W2, 2)).history[0].practice).toBe(9);
+    expect(computePointsSummary([deleted], ledgerWith({ snapshots: { [W1]: snapshot } }), day(W2, 2)).history[0].practice).toBe(8);
   });
 });
 
@@ -206,12 +206,12 @@ describe("还可以再做 / 打勾能得几分", () => {
       practice("r", "RAZ阅读", 2, "本", { [day(W1, 0)]: 2 }, { practiceExtraScores: false }),
     ];
     const more = moreToDoToday(tasks, today);
-    expect(more.map((item) => [item.title, item.gain, item.reachesTarget])).toEqual([["钢琴练习", 2, false], ["我爱背诗", 4, true]]);
-    expect(formatMoreToDo(more)).toBe("钢琴 +2　背诗再背 1 次 +4");
+    expect(more.map((item) => [item.title, item.gain, item.reachesTarget])).toEqual([["钢琴练习", 2, false], ["我爱背诗", 3, true]]);
+    expect(formatMoreToDo(more)).toBe("钢琴 +2　背诗再背 1 次 +3");
   });
-  it("打勾能得的分：达标那一下含 +3；不计分的多做为 0", () => {
+  it("打勾能得的分：达标那一下含 +2；不计分的多做为 0", () => {
     const piano = practice("p", "钢琴练习", 2, "次", { [day(W1, 0)]: 1 }, { practicePoints: 2 });
-    expect(gainForLog(piano, today, 1)).toBe(5);
+    expect(gainForLog(piano, today, 1)).toBe(4);
     const raz = practice("r", "RAZ阅读", 2, "本", { [day(W1, 0)]: 2 }, { practiceExtraScores: false });
     expect(gainForLog(raz, today, 1)).toBe(0);
   });

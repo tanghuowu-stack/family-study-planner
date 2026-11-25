@@ -31,7 +31,7 @@ export const POINTS_START_WEEK = "2026-11-23";
 export const YUAN_PER_POINT = 1;
 /** 周日几点起结算这一周（之前打开只显示，不结算） */
 export const SETTLE_HOUR = 20;
-export const REACH_BONUS = 3;
+export const REACH_BONUS = 2;
 export const DEFAULT_PRACTICE_POINTS = 1;
 export const DEFAULT_PRACTICE_EXTRA_SCORES = true;
 export const PRACTICE_POINTS_MAX = 20;

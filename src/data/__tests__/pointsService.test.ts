@@ -82,13 +82,13 @@ describe("零花钱结算（1 分 = 1 元）", () => {
     expect(await settlePendingWeeks(await loadPointsContext("2026-11-29"), "2026-11-29", sundayEvening)).toBe(false);
     expect(await settlePendingWeeks(await loadPointsContext("2026-11-29"), "2026-11-29", new Date("2026-11-29T20:00:00+08:00"))).toBe(true);
     const ledger = await loadPointsLedger();
-    // 钢琴 3 次 × 2 + 达标 3 = 9；奖励 +3 −1 = 2 → 11 元（2026-11-25 起达标 +3）
-    expect(ledger.snapshots["2026-11-23"]).toMatchObject({ total: 9, bonus: 2, allowance: 11 });
+    // 钢琴 3 次 × 2 + 达标 2 = 8；奖励 +3 −1 = 2 → 10 元
+    expect(ledger.snapshots["2026-11-23"]).toMatchObject({ total: 8, bonus: 2, allowance: 10 });
     // 结算以后再加奖励：分数显示跟着变，已结算的零花钱不变
     await addBonus(4, "结算后才加");
     const context = await loadPointsContext("2026-11-29");
-    expect(context.summary.weekTotal).toBe(15);
-    expect(context.summary.history[0].allowance).toBe(11);
+    expect(context.summary.weekTotal).toBe(14);
+    expect(context.summary.history[0].allowance).toBe(10);
   });
 
   it("3b. 那周扣成负分：零花钱是 0", async () => {
@@ -107,7 +107,7 @@ describe("结算、预设、庆祝", () => {
     const context = await loadPointsContext();
     expect(await settlePendingWeeks(context)).toBe(true);
     const ledger = await loadPointsLedger();
-    expect(ledger.snapshots["2026-11-23"]).toMatchObject({ total: 9, reachedCount: 1, allowance: 9 });
+    expect(ledger.snapshots["2026-11-23"]).toMatchObject({ total: 8, reachedCount: 1, allowance: 8 });
     expect(await settlePendingWeeks(await loadPointsContext())).toBe(false);
     vi.setSystemTime(new Date("2026-11-25T10:00:00+08:00"));
   });
@@ -145,13 +145,13 @@ describe("结算、预设、庆祝", () => {
     const piano = await taskRepository.create(practice("", { practicePoints: 1, practiceExtraScores: true, weeklyQuota: { enabled: true, targetCount: 4, unit: "次", isWeeklyRecurring: true, allowAutoDistribute: false, allowRollover: false }, weeklyLog: { "2026-11-23": 1, "2026-11-24": 1, "2026-11-25": 1 } }));
     await taskRepository.create(practice("小白欧22页-23页", { subCategory: "otherInterest", weeklyQuota: { enabled: true, targetCount: 2, unit: "页", isWeeklyRecurring: true, allowAutoDistribute: false, allowRollover: false }, weeklyLog: { "2026-11-24": 3 } }));
     const before = await loadPointsContext();
-    // 修复前：都按默认 1 分 → 钢琴 3，小白欧 3 页 × 1 + 达标 3 = 6（达标 +3）
-    expect(before.summary.weekPractice).toBe(9);
+    // 修复前：都按默认 1 分 → 钢琴 3，小白欧 2 + 达标 2 + 多做 1 = 5
+    expect(before.summary.weekPractice).toBe(8);
     await applyPracticePresetsOnce();
     const after = await loadPointsContext();
-    // 修复后：钢琴 3×2 = 6；小白鸥 3 页×3 + 达标 3 = 12（2026-11-25 起每页 3 分、达标 +3；多做的页同样按每页分值算）
-    expect(after.summary.weekScores.map((item) => [item.title, item.total]).sort()).toEqual([["小白欧22页-23页", 12], ["钢琴练习", 6]]);
-    expect(after.summary.weekPractice).toBe(18);
+    // 修复后：钢琴 3×2 = 6；小白鸥 3 页×3 + 达标 2 = 11（2026-11-25 起每页 3 分；多做的页同样按每页分值算）
+    expect(after.summary.weekScores.map((item) => [item.title, item.total]).sort()).toEqual([["小白欧22页-23页", 11], ["钢琴练习", 6]]);
+    expect(after.summary.weekPractice).toBe(17);
     expect(piano.task.id).toBeTruthy();
   });
 
@@ -175,7 +175,7 @@ describe("结算、预设、庆祝", () => {
     await taskRepository.writeWeeklyLog(task.id, "2026-11-25", 1);
     const first = await practiceCelebrations(task.id, prior);
     expect(first.map((item) => item.title)).toEqual(["钢琴本周练够了！"]);
-    expect(first[0].detail).toBe("达标奖励 +3。本周已挣 9 元");
+    expect(first[0].detail).toBe("达标奖励 +2。本周已挣 8 元");
     await taskRepository.writeWeeklyLog(task.id, "2026-11-25", -1);
     await taskRepository.writeWeeklyLog(task.id, "2026-11-25", 1);
     expect(await practiceCelebrations(task.id, prior)).toEqual([]);
@@ -186,7 +186,7 @@ describe("结算、预设、庆祝", () => {
     const { task } = await taskRepository.create(practice("钢琴练习", { practicePoints: 2, weeklyLog: { "2026-11-23": 1, "2026-11-24": 1 } }));
     await taskRepository.writeWeeklyLog(task.id, "2026-11-25", 1);
     const items = await practiceCelebrations(task.id, { "2026-11-23": 1, "2026-11-24": 1 });
-    expect(items.map((item) => [item.title, item.detail])).toEqual([["钢琴本周练够了！", "达标奖励 +3。本周已挣 109 元"]]);
+    expect(items.map((item) => [item.title, item.detail])).toEqual([["钢琴本周练够了！", "达标奖励 +2。本周已挣 108 元"]]);
   });
 
   it("8. 当天学校作业全部做完 → 卡片“今天的作业做完了，快去赚积分吧！”，飞到今日页那一条；不限次数；只看学校作业", async () => {

@@ -411,8 +411,8 @@ export function TaskForm({ task, initialDate = todayKey(), onClose, onSave, onCo
         <h3 className={sectionTitle}>哪天做</h3>
         {!reading && ["singleDate", "dateRange", "weeklyTimes", "recurring"].includes(draft.timeType) && <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">{TIME_TYPE_CHOICES.map(([value, text]) => <button key={value} type="button" onClick={() => changeTimeType(value)} className={segment(draft.timeType === value)}>{text}</button>)}</div>}
         {draft.timeType === "weeklyTimes" && <WeeklyTimesFields draft={draft} set={set} input={input} label={label} chip={chip} />}
-        {task?.timeType === "weeklyTimes" && draft.timeType !== "weeklyTimes" && !!task.weeklyLog && Object.keys(task.weeklyLog).length > 0 && <p className="text-[13px] text-muted">原任务今天结束，已记录的次数{task.enableStreak || task.streakStartDate ? "和打卡" : ""}保留。</p>}
-        {task && isOccurrenceSchedule(task) && draft.timeType === "weeklyTimes" && <p className="text-[13px] text-muted">原任务今天结束，历史记录{task.enableStreak || task.streakStartDate ? "和打卡" : ""}保留。</p>}
+        {task?.timeType === "weeklyTimes" && draft.timeType !== "weeklyTimes" && !!task.weeklyLog && Object.keys(task.weeklyLog).length > 0 && <p className="text-[13px] text-muted">原任务今天结束，已记录的次数保留。</p>}
+        {task && isOccurrenceSchedule(task) && draft.timeType === "weeklyTimes" && <p className="text-[13px] text-muted">原任务今天结束，历史记录保留。</p>}
 
         {draft.timeType === "singleDate" && <DayPicker value={draft.date} onChange={(value) => set("date", value)} chip={chip} input={input} />}
         {draft.timeType === "dateRange" && <DateRange draft={draft} set={set} input={input} label={label} />}

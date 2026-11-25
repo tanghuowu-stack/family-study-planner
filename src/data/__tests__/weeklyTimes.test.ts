@@ -45,7 +45,6 @@ import { cloudRepository } from "../cloudRepository";
 import type { Task, TaskDraft } from "../../types/task";
 import { applyWeeklyLog, weeklyTimesActiveIn, weeklyTimesProgress } from "../../utils/weeklyTimes";
 import { isEndedRecurring } from "../../utils/taskMeta";
-import { getHabitCalendars, getHabitCandidates } from "../statsRepository";
 
 const TODAY = "2026-11-19"; // 周四；本周 11-16（一）~ 11-22（日）
 const piano = (overrides: Partial<Task> = {}): TaskDraft => ({
@@ -160,32 +159,6 @@ describe("云端模式", () => {
   });
 });
 
-describe("第 3 步：打卡", () => {
-  it("10. 打卡页：每周几次可以勾进打卡；记了的那天算完成，没记的日子不算漏卡", async () => {
-    const { task } = await taskRepository.create(piano({ title: "课外读书", mainCategory: "extraHomework", subCategory: "chinese", weeklyQuota: { enabled: true, targetCount: 2, unit: "本", isWeeklyRecurring: true, allowAutoDistribute: false, allowRollover: false }, weeklyLog: { "2026-11-11": 2, "2026-11-17": 1 } }));
-    expect((await getHabitCandidates()).map((c) => [c.taskId, c.scheduleText])).toEqual([[task.id, "每周 2 本"]]);
-    await db.tasks.update(task.id, { enableStreak: true, streakStartDate: "2026-11-02" });
-    const [cal] = await getHabitCalendars("2026-11", TODAY);
-    expect(cal.monthCompletedDays).toBe(2);
-    expect(cal.days.filter((d) => d.status === "missed")).toEqual([]);
-    expect(cal.days.find((d) => d.date === "2026-11-17")!.status).toBe("done");
-    expect(cal.hasScheduleInMonth).toBe(true);
-  });
-
-  it("11. 钢琴固定分组：改成每周几次后，记了的那天也算进“钢琴”这一行（和以前的钢琴任务合在一起）", async () => {
-    const OLD = "2026-01-01T00:00:00.000Z";
-    await db.tasks.add({ id: "old-piano", title: "钢琴练习", mainCategory: "interestClass", subCategory: "pianoPractice", timeType: "recurring", schedulePattern: "dailyRecurring",
-      recurrence: { frequency: "daily", startDate: "2026-11-01", endDate: "2026-11-08" }, status: "todo", rolloverMode: "skipIfMissed", allowRollover: false, childVisible: true,
-      enableStreak: true, streakStartDate: "2026-11-01", createdAt: OLD, updatedAt: OLD } as Task);
-    await taskRepository.create(piano({ startDate: "2026-11-09", weeklyLog: { "2026-11-18": 1 } }));
-    const cals = await getHabitCalendars("2026-11", TODAY);
-    expect(cals).toHaveLength(1);
-    expect(cals[0].title).toBe("钢琴");
-    expect(cals[0].days.find((d) => d.date === "2026-11-18")!.status).toBe("done");
-    expect(cals[0].days.find((d) => d.date === "2026-11-17")!.status).toBe("off");
-  });
-});
-
 describe("把已有的重复任务改成每周几次", () => {
   const OLD = "2026-01-01T00:00:00.000Z";
   const daily = (overrides: Partial<Task> = {}) => ({
@@ -197,12 +170,9 @@ describe("把已有的重复任务改成每周几次", () => {
     weeklyQuota: { enabled: true, targetCount: 2, unit: "本", isWeeklyRecurring: true, allowAutoDistribute: false, allowRollover: false } } as unknown as TaskDraft);
   const occ = (date: string) => ({ id: `daily-read:${date}`, taskId: "daily-read", occurrenceDate: date, status: "done" as const, completedAt: `${date}T12:00:00.000Z`, createdAt: OLD, updatedAt: OLD });
 
-  it("12. 有历史的：原任务排期截到昨天、历史照旧；另建每周几次从今天开始，接上打卡；今天勾过的算今天一次", async () => {
+  it("12. 有历史的：原任务排期截到昨天、历史照旧；另建每周几次从今天开始；今天勾过的算今天一次", async () => {
     await db.tasks.add(daily());
     await db.taskOccurrenceStatuses.bulkAdd([occ("2026-11-17"), occ(TODAY)]);
-    const before = await getHabitCalendars("2026-11", TODAY);
-    expect(before[0].days.find((d) => d.date === "2026-11-17")!.status).toBe("done");
-
     const { task, ended } = await taskRepository.convertToWeeklyTimes("daily-read", asWeekly(daily()), TODAY);
     expect(ended!.id).toBe("daily-read");
     expect(ended!.recurrence!.endDate).toBe("2026-11-18");
@@ -214,11 +184,6 @@ describe("把已有的重复任务改成每周几次", () => {
     expect(on17?.status).toBe("done");
     expect((await taskRepository.getTasksForDate(TODAY)).map((t) => t.id)).not.toContain("daily-read");
     expect((await taskRepository.getWeeklyTimes(TODAY)).map((t) => t.id)).toEqual([task.id]);
-    // 打卡：还是一行，17 号、今天都算完成
-    const after = await getHabitCalendars("2026-11", TODAY);
-    expect(after).toHaveLength(1);
-    expect(after[0].days.find((d) => d.date === "2026-11-17")!.status).toBe("done");
-    expect(after[0].days.find((d) => d.date === TODAY)!.status).toBe("done");
   });
 
   it("13. 还没开始过的（起点在今天以后、没有记录）：直接原地改，不另建", async () => {
@@ -244,7 +209,7 @@ describe("把每周几次改成别的类型", () => {
   const toDaily = (task: Task): TaskDraft => ({ ...task, id: undefined, createdAt: undefined, updatedAt: undefined, timeType: "recurring", schedulePattern: "dailyRecurring",
     recurrence: { frequency: "daily", startDate: "2026-11-02" }, weeklyQuota: undefined, startDate: undefined } as unknown as TaskDraft);
 
-  it("15. 有记录的：原任务结束日记到昨天、记录保留（打卡照算）；另建重复任务从今天开始，接上打卡；今天之后的今日页不再出现原任务", async () => {
+  it("15. 有记录的：原任务结束日记到昨天、记录保留；另建重复任务从今天开始；今天之后的今日页不再出现原任务", async () => {
     const { task: old } = await taskRepository.create(piano({ title: "课外读书", mainCategory: "extraHomework", subCategory: "chinese", weeklyLog: { "2026-11-10": 2, "2026-11-17": 1 }, enableStreak: true, streakStartDate: "2026-11-02" }));
     const { task, ended } = await taskRepository.convertFromWeeklyTimes(old.id, toDaily(old), TODAY);
     expect(ended).toMatchObject({ id: old.id, timeType: "weeklyTimes", endDate: "2026-11-18", weeklyLog: { "2026-11-10": 2, "2026-11-17": 1 } });
@@ -256,10 +221,6 @@ describe("把每周几次改成别的类型", () => {
     expect((await taskRepository.getWeeklyTimes("2026-11-17")).map((t) => t.id)).toEqual([old.id]);
     // 新任务今天出现在当天清单
     expect((await taskRepository.getTasksForDate(TODAY)).map((t) => t.id)).toContain(task.id);
-    // 打卡还是一行，以前记的那天照样算完成
-    const cals = await getHabitCalendars("2026-11", TODAY);
-    expect(cals).toHaveLength(1);
-    expect(cals[0].days.find((d) => d.date === "2026-11-10")!.status).toBe("done");
   });
 
   it("16. 一次都没记过的：直接原地改，不另建", async () => {

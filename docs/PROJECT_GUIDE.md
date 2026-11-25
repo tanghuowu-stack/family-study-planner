@@ -45,8 +45,6 @@
 ```
 taskRepository.ts       原 IndexedDB 本地数据层（保留，勿删）
 cloudRepository.ts      云端优先数据层，Supabase 读写 + 本地缓存
-statsRepository.ts      习惯打卡数据层（getHabitCandidates / setHabitEnabled /
-                        getHabitCalendars / getRestDays / toggleRestDay），规格见 TASK_08_stats.md
 repositoryProvider.ts   按登录状态选择本地 / 云端 repository
 cloudAuth.ts            邮箱密码登录、family/profile 初始化
 cloudUpload/Read/Download.ts  维护工具：上传/预览/下载

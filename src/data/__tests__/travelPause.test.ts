@@ -2,7 +2,6 @@ import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "../db";
 import { taskRepository } from "../taskRepository";
-import { getHabitCalendars } from "../statsRepository";
 import { createTravelPauseCheck, isTravelPauseEnabled } from "../../utils/travelPause";
 import type { Task, TaskOccurrenceStatus } from "../../types/task";
 
@@ -87,15 +86,4 @@ describe("travel suspension", () => {
     expect((await taskRepository.getTasksForDate("2026-10-03")).some((t) => t.id === "habit")).toBe(true);
   });
 
-  it("preserves completed history while travel days are off and don't break streaks", async () => {
-    await db.tasks.bulkAdd([task("habit"), trip()]);
-    await db.taskOccurrenceStatuses.bulkAdd([done("2026-10-01"), done("2026-10-03"), done("2026-10-05"), done("2026-10-06")]);
-    const [cal] = await getHabitCalendars("2026-10", "2026-10-06");
-    const days = Object.fromEntries(cal.days.map((d) => [d.date, d.status]));
-    expect(days["2026-10-02"]).toBe("off");
-    expect(days["2026-10-03"]).toBe("done");
-    expect(days["2026-10-04"]).toBe("off");
-    expect(cal.monthCompletedDays).toBe(4);
-    expect((await taskRepository.getTasksForDate("2026-10-03")).find((t) => t.id === "habit")?.status).toBe("done");
-  });
 });

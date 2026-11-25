@@ -17,7 +17,7 @@ interface Props {
     progress: WeeklyTimesProgress;
     onLog: (date: string, delta: number) => void;
     /** 积分（2026-11-24）：标题右侧灰色小字"N 分"，超出目标但不计分的"多读了 N 本" */
-    score?: { points: string; extra?: string };
+    score?: { extra?: string };
     /** 每做一次（一页、一篇…）得几分，写在名字后面（2026-11-25 用户：一目了然） */
     pointValue?: number;
     /** 记这一下能多得几分：今天打勾时圆点上方飘出"+2"（补记以前的日子不飘） */
@@ -265,7 +265,7 @@ export function TaskItem({ task, compact = false, viewDate, readOnly = false, we
           {hasChecklist && <span className="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-6 text-muted">{!ringMode && <span className="relative h-1 w-10 overflow-hidden rounded-full bg-stone-200"><span className="absolute inset-y-0 left-0 rounded-full bg-primary transition-all" style={{ width: `${(completedItems / displayItems.length) * 100}%` }} /></span>}<span className="tabular-nums">{completedItems}/{displayItems.length}</span></span>}
           {dueLabel && !task.rolledFromDate && <span className={`mt-0.5 inline-flex h-5 shrink-0 items-center rounded px-1.5 text-[13px] font-semibold leading-none ${done ? "bg-stone-100 text-stone-400" : DUE_TONE[dueLabel.tone]}`}>{dueLabel.text}</span>}
           {weekly && <span className={`shrink-0 text-[13px] font-semibold leading-6 tabular-nums ${weekly.progress.reached ? "text-primary" : "text-muted"}`}>{weekly.progress.done}/{weekly.progress.target} {weekly.progress.unit}</span>}
-          {weekly?.score && <span className="shrink-0 text-[13px] leading-6 tabular-nums text-muted">{weekly.score.extra && <span className="mr-1.5">{weekly.score.extra}</span>}{weekly.score.points}</span>}
+          {weekly?.score?.extra && <span className="shrink-0 text-[13px] leading-6 tabular-nums text-muted">{weekly.score.extra}</span>}
           {unsynced && <UnsyncedBadge onRetry={onRetrySync} />}
         </div>
         {weekly && <WeeklyTimesBar task={task} weekly={weekly} viewDate={viewDate} />}

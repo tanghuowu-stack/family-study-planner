@@ -60,3 +60,29 @@ export function applyWeeklyLog(log: Record<string, number> | undefined, date: st
 export function sumWeeklyTimes(items: { done: number; target: number }[]): { done: number; target: number } {
   return items.reduce((sum, item) => ({ done: sum.done + Math.min(item.done, item.target), target: sum.target + item.target }), { done: 0, target: 0 });
 }
+
+/**
+ * 统计 › 练习（2026-11-25 B3，代替原来的“打卡”）：每项每周练习在一串周里的完成情况。
+ * 一行一项（那几周里至少有一周在进行的），每格是那一周 做了几次 / 目标、有没有达标；那周还没开始或已经停了的格子为 null。
+ */
+export interface PracticeHistoryCell { weekStart: string; done: number; target: number; unit: string; reached: boolean }
+export interface PracticeHistoryRow { taskId: string; cells: (PracticeHistoryCell | null)[] }
+export function practiceHistory(tasks: Task[], weekStarts: string[], thisWeek: string = weekStarts[weekStarts.length - 1]): PracticeHistoryRow[] {
+  return tasks
+    .filter((task) => isWeeklyTimes(task) && !task.deletedAt && task.status !== "cancelled" && task.mainCategory !== "readingPlan" && task.childVisible)
+    .map((task) => {
+      // 第一次记录之前的周算"还没开始用"，显示"–"，不当成没做（没记过的从本周算起）
+      const logged = Object.entries(task.weeklyLog ?? {}).filter(([, count]) => count > 0).map(([date]) => date).sort();
+      const firstWeek = logged.length ? getWeekStartKey(logged[0]) : thisWeek;
+      return { task, firstWeek };
+    })
+    .map(({ task, firstWeek }) => ({
+      taskId: task.id,
+      cells: weekStarts.map((weekStart) => {
+        if (!weeklyTimesActiveIn(task, weekStart) || weekStart < firstWeek) return null;
+        const progress = weeklyTimesProgress(task, weekStart);
+        return { weekStart, done: progress.done, target: progress.target, unit: progress.unit, reached: progress.reached };
+      }),
+    }))
+    .filter((row) => row.cells.some(Boolean));
+}

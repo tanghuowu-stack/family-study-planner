@@ -1,8 +1,10 @@
-# TASK_08 · 习惯打卡（统计页）
+# TASK_08 · 习惯打卡（统计页）——**已停用（2026-11-25）**
 
-> **本卡是当前实现的规格描述**（2026-07-18 重构定稿），不是改动流水账。
-> 数据层：`src/data/statsRepository.ts`；UI：`src/components/HabitSection.tsx`（统计页内）。
-> 修改本功能前先读 `PROJECT_GUIDE.md` 6.5 节 R1-R6。
+> **2026-11-25 起打卡功能整体去掉**：打卡里的钢琴、背诗、听写、RAZ 和今日页“每周练习”是同一批事，重复了（用户同意项目审查建议 B3）。
+> 统计页第一个标签换成“练习”：每周练习一周一周的完成情况 + 每周积分（`StatsPage.tsx` `PracticeHistory`、`utils/weeklyTimes.ts` `practiceHistory`，样式见 style.md“统计”）。
+> 代码 `statsRepository.ts`、`HabitSection.tsx` 及测试 `stats.test.ts` 已删除；任务上的 `enableStreak` / `streakStartDate` / `habitKey` 字段、
+> app_settings 里的 `stats_rest_days` / `stats_hidden_habit_candidates` 保留不动、不再读写。
+> 下面是停用前的规格，留作历史参考，**不要按它恢复功能**；以后要做类似功能先和用户确认，另起设计。
 
 ---
 

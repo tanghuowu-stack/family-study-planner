@@ -178,31 +178,9 @@ export function deleteSidebarMemoHistory(id: string): Promise<SidebarMemoSetting
   return updateSidebarMemo((current) => ({ ...current, history: current.history.filter((item) => item.id !== id) }));
 }
 
-// ── 统计设置（TASK_08）────────────────────────────────────────────────────────
-
-const REST_DAYS_KEY = "stats_rest_days";
-// 注：stats_revive_cards / stats_daily_overrides 为 2026-07-18 重构前的历史键，
-// 代码不再读写（云端旧数据不清理，任其保留）。
-
-/** 休息日列表（YYYY-MM-DD），该天打卡跳过不断卡 */
-export async function loadRestDays(): Promise<string[]> {
-  return (await loadJsonSetting<string[]>(REST_DAYS_KEY)) ?? [];
-}
-
-export async function saveRestDays(days: string[]): Promise<void> {
-  return saveJsonSetting(REST_DAYS_KEY, [...new Set(days)].sort(), "休息日设置云端同步失败");
-}
-
-const HIDDEN_HABIT_CANDIDATES_KEY = "stats_hidden_habit_candidates";
-
-/** 「管理打卡项目」里被隐藏、不再展示的任务 id 列表（如"奥数暑假班"这类肯定不打卡的） */
-export async function loadHiddenHabitCandidates(): Promise<string[]> {
-  return (await loadJsonSetting<string[]>(HIDDEN_HABIT_CANDIDATES_KEY)) ?? [];
-}
-
-export async function saveHiddenHabitCandidates(ids: string[]): Promise<void> {
-  return saveJsonSetting(HIDDEN_HABIT_CANDIDATES_KEY, [...new Set(ids)], "打卡候选设置云端同步失败");
-}
+// ── 统计设置（TASK_08，已删除）──────────────────────────────────────────────
+// 打卡页 2026-11-25 换成"练习"历史后，休息日（stats_rest_days）、隐藏的打卡候选（stats_hidden_habit_candidates）
+// 以及更早的 stats_revive_cards / stats_daily_overrides 都不再读写；云端旧数据不清理，任其保留。
 
 // ── 课表设置 ─────────────────────────────────────────────────────────────────
 

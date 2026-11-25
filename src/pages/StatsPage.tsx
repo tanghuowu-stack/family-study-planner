@@ -1,17 +1,22 @@
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { HabitSection } from "../components/HabitSection";
 import { taskRepository } from "../data/taskRepository";
 import { DESK_QUERY, useMediaQuery } from "../hooks/useMediaQuery";
-import { todayKey } from "../utils/date";
+import { db } from "../data/db";
+import { loadPointsContext } from "../data/pointsService";
+import { getWeekStartKey, todayKey, toDateKey } from "../utils/date";
+import { taskShortName } from "../utils/taskMeta";
+import { practiceHistory, type PracticeHistoryRow } from "../utils/weeklyTimes";
+import type { Task } from "../types/task";
 
 type CourseStats = Awaited<ReturnType<typeof taskRepository.getCourseStatistics>>;
 
-export type StatsTab = "habits" | "courses";
+export type StatsTab = "practice" | "courses";
 
 /**
  * 统计（原"周计划及打卡"；2026-11-25 页面整理改名并分标签，一次只看一块）：
- * - 打卡：月度概览、每个项目一张卡、打卡矩阵；
+ * - 练习：每周练习一周一周的完成情况和每周积分（2026-11-25 B3，代替原来的"打卡"：打卡里的钢琴、背诗、听写、RAZ
+ *   和每周练习是同一批事，重复了；原打卡月历、管理、休息日一起去掉，任务上的打卡字段保留不用）；
  * （"本周"标签同日去掉：和今日页右栏重复，用户要求）
  * - 上课：课程节数（本月 / 本年累计直接显示，自定义时间段收在下面）。
  * 云同步、备份、课程、假期、历史备忘、操作记录都在"设置"页。
@@ -29,7 +34,7 @@ export function StatsPage({ refreshKey, tab, tabs }: { refreshKey: number; tab: 
   };
   return <main className="fit-screen mx-auto w-full max-w-5xl lg:max-w-none xl:max-w-6xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
     {tabs}
-    {tab === "habits" && <HabitSection />}
+    {tab === "practice" && <div className="fit-fill flex min-h-0 flex-col"><PracticeHistory refreshKey={refreshKey} /></div>}
     {tab === "courses" && <div className="fit-fill flex min-h-0 flex-col gap-2 desk:gap-4">
       <CourseTotals refreshKey={refreshKey} />
       <section className="surface shrink-0 px-3 py-0.5 sm:px-5">
@@ -38,6 +43,82 @@ export function StatsPage({ refreshKey, tab, tabs }: { refreshKey: number; tab: 
       </section>
     </div>}
   </main>;
+}
+
+/**
+ * 统计 › 练习：行 = 每周练习，列 = 周（Mac 8 周，手机 / iPad 4 周，‹ › 往前翻），每格“做了 / 目标”，
+ * 达标的主色实心块、过去没达标的玫红字、本周浅绿底；最后一行是那周的积分（练习 + 提前完成 + 家长奖励）。
+ */
+function PracticeHistory({ refreshKey }: { refreshKey: number }) {
+  const desk = useMediaQuery(DESK_QUERY);
+  const count = desk ? 8 : 4;
+  const thisWeek = getWeekStartKey(todayKey());
+  const [offset, setOffset] = useState(0); // 往前翻了几周
+  const [tasks, setTasks] = useState<Task[] | null>(null);
+  const [scores, setScores] = useState<Map<string, number>>(new Map());
+  useEffect(() => {
+    void db.tasks.toArray().then(setTasks);
+    void loadPointsContext().then((ctx) => setScores(new Map(ctx.summary.history.map((week) => [week.weekStart, week.total])))).catch(() => setScores(new Map()));
+  }, [refreshKey]);
+  if (!tasks) return null;
+  const weeks = Array.from({ length: count }, (_, index) => {
+    const d = new Date(`${thisWeek}T00:00:00`);
+    d.setDate(d.getDate() - 7 * (count - 1 - index + offset));
+    return toDateKey(d);
+  });
+  const rows: PracticeHistoryRow[] = practiceHistory(tasks, weeks, thisWeek);
+  const byId = new Map(tasks.map((task) => [task.id, task]));
+  const label = (week: string) => week === thisWeek ? "本周" : `${Number(week.slice(5, 7))}/${Number(week.slice(8))}`;
+  const cellClass = "px-1 text-center tabular-nums";
+  if (!rows.length) return <div className="surface p-6 text-center text-sm text-muted">这几周没有每周练习</div>;
+  return (
+    <section className="surface flex min-h-0 shrink flex-col overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-auto">
+        <table className="w-full table-fixed border-separate border-spacing-0 text-[14px] desk:text-[15px]">
+          <colgroup><col className="w-[6.5rem] desk:w-40" />{weeks.map((week) => <col key={week} />)}</colgroup>
+          <thead className="sticky top-0 z-10 bg-[#F7F6F3]">
+            <tr className="h-11 text-[12px] font-semibold text-muted desk:text-[13px]">
+              <th className="border-b border-ink/[0.08] pl-3 text-left desk:pl-4">
+                <span className="flex items-center gap-0.5">练习
+                  <span className="ml-auto flex">
+                    <button type="button" aria-label="往前看" onClick={() => setOffset(offset + 1)} disabled={offset >= 26} className="flex h-8 w-7 items-center justify-center rounded-full text-ink hover:bg-white disabled:text-stone-300"><ChevronLeft className="h-4 w-4" /></button>
+                    <button type="button" aria-label="往后看" onClick={() => setOffset(Math.max(0, offset - 1))} disabled={offset === 0} className="flex h-8 w-7 items-center justify-center rounded-full text-ink hover:bg-white disabled:text-stone-300"><ChevronRight className="h-4 w-4" /></button>
+                  </span>
+                </span>
+              </th>
+              {weeks.map((week) => <th key={week} className={`border-b border-ink/[0.08] ${cellClass} ${week === thisWeek ? "bg-mint/60 text-primary" : ""}`}>{label(week)}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.taskId} className="h-11">
+                <td className="truncate border-b border-ink/[0.05] pl-3 pr-1 text-ink desk:pl-4">{byId.get(row.taskId) ? taskShortName(byId.get(row.taskId)!) : ""}</td>
+                {row.cells.map((cell, index) => {
+                  const week = weeks[index];
+                  const current = week === thisWeek;
+                  if (!cell) return <td key={week} className={`border-b border-ink/[0.05] ${cellClass} text-stone-300 ${current ? "bg-mint/30" : ""}`}>–</td>;
+                  const missed = !cell.reached && !current;
+                  return (
+                    <td key={week} className={`border-b border-ink/[0.05] p-1 ${current ? "bg-mint/30" : ""}`}>
+                      <span className={`flex h-8 items-center justify-center rounded-md text-[13px] font-semibold tabular-nums ${cell.reached ? "bg-primary text-white" : missed ? "text-rose-600" : "text-ink"}`} title={`${cell.done}/${cell.target} ${cell.unit}`}>
+                        {cell.reached && "✓ "}{cell.done}/{cell.target}
+                      </span>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className="sticky bottom-0 bg-white">
+            <tr className="h-11 font-bold">
+              <td className="border-t border-ink/10 pl-3 text-ink desk:pl-4">积分</td>
+              {weeks.map((week) => <td key={week} className={`border-t border-ink/10 ${cellClass} ${week === thisWeek ? "bg-mint/40 text-primary" : scores.has(week) ? "text-ink" : "text-stone-300"}`}>{scores.has(week) ? scores.get(week) : "–"}</td>)}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+  );
 }
 
 const COURSE_GROUPS = ["语文", "数学", "英语", "兴趣班", "其他"];

@@ -196,7 +196,6 @@ export const EXTRA_CONTENT_OPTIONS: { value: ExtraContentType; label: string }[]
 export const EXTRA_CONTENT_OPTIONS_SIMPLE: { value: ExtraContentType; label: string }[] = [
   { value: "class", label: "上课" }, { value: "homework", label: "作业" },
 ];
-export const extraContentLabel = (value?: ExtraContentType) => EXTRA_CONTENT_OPTIONS.find((item) => item.value === value)?.label ?? "其他";
 
 const CUSTOM_SUB_PREFIX = "custom:";
 export const customSubCategoryValue = (label: string) => `${CUSTOM_SUB_PREFIX}${encodeURIComponent(label.trim())}`;

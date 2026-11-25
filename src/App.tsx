@@ -1,4 +1,4 @@
-import { BarChart3, CalendarDays, CalendarRange, Cloud, ClipboardList, Flame, GraduationCap, Home, Plus, Settings, Table2, Wallet } from "lucide-react";
+import { BarChart3, CalendarDays, CalendarRange, Cloud, ClipboardList, Dumbbell, GraduationCap, Home, Plus, Settings, Table2, Wallet } from "lucide-react";
 import { addDays } from "date-fns";
 import { lazy, Suspense, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { TaskForm } from "./components/TaskForm";
@@ -39,7 +39,7 @@ import { archiveSidebarMemo, deleteSidebarMemoHistory, loadSidebarMemoState, res
 
 /**
  * 2026-11-25 页面整理：菜单 6 项 → 5 项（今日 / 计划 / 课表 / 统计 / 记账），设置位置不变。
- * 计划 = 月历 / 全部任务（原月视图、任务管理），统计 = 打卡 / 上课（原周计划及打卡；"本周"和今日页右栏重复，同日去掉）。
+ * 计划 = 月历 / 全部任务（原月视图、任务管理），统计 = 练习 / 上课（原周计划及打卡；"本周"和今日页右栏重复去掉；"打卡"和每周练习重复，同日改成"练习"历史）。
  * 课表常看，单独一项（同日用户："得点好几下才能看到"）。
  * 每页记住上次看的标签（只记本机）。
  */
@@ -53,7 +53,7 @@ const navItems = [
   { page: "ledger" as const, label: "记账", icon: Wallet },
 ];
 const PLAN_TABS: SegmentedTab<PlanTab>[] = [{ value: "month", label: "月历", icon: CalendarRange }, { value: "tasks", label: "全部任务", icon: ClipboardList }];
-const STATS_TABS: SegmentedTab<StatsTab>[] = [{ value: "habits", label: "打卡", icon: Flame }, { value: "courses", label: "上课", icon: GraduationCap }];
+const STATS_TABS: SegmentedTab<StatsTab>[] = [{ value: "practice", label: "练习", icon: Dumbbell }, { value: "courses", label: "上课", icon: GraduationCap }];
 const PLAN_TAB_KEY = "nav_plan_tab";
 const STATS_TAB_KEY = "nav_stats_tab";
 function useRememberedTab<T extends string>(key: string, tabs: SegmentedTab<T>[]): [T, (value: T) => void] {

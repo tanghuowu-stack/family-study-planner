@@ -11,9 +11,13 @@ const primaryButton = "min-h-11 rounded-lg bg-primary px-4 text-sm font-bold tex
 const quietButton = "min-h-10 rounded-lg bg-white px-3 text-sm font-semibold text-primary ring-1 ring-inset ring-primary/30 disabled:opacity-40";
 
 /** 一项练习的灰色小字："N 分"；超出目标但不计分的再加"多读了 N 本" */
-export function practiceScoreLabels(score?: PracticeWeekScore): { points: string; extra?: string } | undefined {
+/**
+ * 每周练习每行右边的小字（2026-11-25 B4）：不再写“已得 N 分”（名字后面有每次几分，本周总分在表头胶囊里），
+ * 只在超过目标、多做又不计分时写“本周多读了 N 本”。
+ */
+export function practiceScoreLabels(score?: PracticeWeekScore): { extra?: string } | undefined {
   if (!score) return undefined;
-  return { points: `已得 ${score.total} 分`, extra: score.extraCount > 0 && !score.extraScores ? `本周多${practiceVerb(score.title)}了 ${score.extraCount} ${score.unit}` : undefined };
+  return { extra: score.extraCount > 0 && !score.extraScores ? `本周多${practiceVerb(score.title)}了 ${score.extraCount} ${score.unit}` : undefined };
 }
 
 /**

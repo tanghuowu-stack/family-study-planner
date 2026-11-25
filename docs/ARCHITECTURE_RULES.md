@@ -239,7 +239,7 @@
 | 测试文件 | 覆盖范围 |
 |---|---|
 | `data/__tests__/regression.test.ts` | R1–R6 铁律、checklist 联动、父子联动、completedAt 一致性、endDate 镜像、reorder 排序、计时用时不被完成动作覆盖 |
-| `data/__tests__/stats.test.ts` | TASK_08 打卡：候选、起点、月历三态、单项连续、休息日免罚 |
+| `utils/__tests__/practiceHistory.test.ts` | 统计 › 练习：每项一周一周的完成情况（第一次记录之前的周不算没做）|
 | `data/__tests__/cloudReorder.test.ts` | `reorderTasks` 云端 upsert 行集合、未登录不上传（Supabase mock）|
 | `lib/__tests__/cloudUpload.test.ts` | occurrence 上传过滤（A 类违规行不上传）|
 | `lib/__tests__/cloudFieldParity.test.ts` | `taskToRow`↔`rowToTask` 全字段往返对照（43 例，防单向漏映射）|

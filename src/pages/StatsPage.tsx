@@ -26,12 +26,12 @@ export function StatsPage({ refreshKey, tab, tabs }: { refreshKey: number; tab: 
     setCourseStats(await taskRepository.getCourseStatistics(courseStart, courseEnd));
     setMessage("");
   };
-  return <main className="mx-auto w-full max-w-5xl lg:max-w-none xl:max-w-6xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
+  return <main className="fit-screen mx-auto w-full max-w-5xl lg:max-w-none xl:max-w-6xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
     {tabs}
     {tab === "habits" && <HabitSection />}
-    {tab === "courses" && <div className="space-y-3 sm:space-y-4">
+    {tab === "courses" && <div className="fit-fill flex flex-col gap-2 desk:gap-4">
       <CourseTotals refreshKey={refreshKey} />
-      <section className="surface px-3 py-1 sm:px-5">
+      <section className="surface shrink-0 px-3 py-0.5 sm:px-5">
         <button onClick={() => setShowCustom(!showCustom)} aria-expanded={showCustom} className="flex min-h-12 w-full items-center gap-1 text-[14px] font-semibold text-ink">按时间段统计<span className="ml-1 text-[13px] font-normal text-muted">自己选开始和结束日期</span><ChevronDown className={`ml-auto h-4 w-4 text-muted transition ${showCustom ? "rotate-180" : ""}`} /></button>
         {showCustom && <><div className="mt-1 flex flex-wrap items-end gap-2"><label className="text-[13px] text-muted">开始日期<input type="date" value={courseStart} onChange={(event) => setCourseStart(event.target.value)} className="mt-1 block min-h-11 rounded-lg border px-2.5 text-sm text-stone-700" /></label><label className="text-[13px] text-muted">结束日期<input type="date" value={courseEnd} onChange={(event) => setCourseEnd(event.target.value)} className="mt-1 block min-h-11 rounded-lg border px-2.5 text-sm text-stone-700" /></label><button onClick={countCourses} className="min-h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-white">统计</button></div>{message && <p role="alert" className="mt-3 text-sm text-rose-700">{message}</p>}{courseStats && <CourseStatistics data={courseStats} />}<div className="h-3" /></>}
       </section>
@@ -65,20 +65,20 @@ function CourseTotals({ refreshKey }: { refreshKey: number }) {
   if (!groups.length) return <div className="surface p-6 text-center text-sm text-muted">今年还没有课程</div>;
   const top = [...data.year.items].sort((a, b) => b.count - a.count)[0];
   const max = Math.max(...data.year.items.map((item) => item.count), 1);
-  const tile = "surface min-w-0 p-3 sm:p-4";
+  const tile = "surface min-w-0 px-3 py-2 desk:p-4";
   return <>
-    <div className="grid grid-cols-3 gap-2 sm:gap-3">
-      <div className={tile}><p className="text-[13px] font-medium text-muted">{monthName}上课</p><p className="mt-1.5 text-[24px] font-bold leading-8 tabular-nums text-primary sm:text-[28px]">{data.month.total}<span className="text-[15px] font-semibold text-muted"> 节</span></p><p className="mt-1 truncate text-[12px] text-muted sm:text-[13px]">截至 {Number(today.slice(5, 7))}月{Number(today.slice(8))}日</p></div>
-      <div className={tile}><p className="text-[13px] font-medium text-muted">{today.slice(0, 4)}年</p><p className="mt-1.5 text-[24px] font-bold leading-8 tabular-nums text-ink sm:text-[28px]">{data.year.total}<span className="text-[15px] font-semibold text-muted"> 节</span></p><p className="mt-1 truncate text-[12px] text-muted sm:text-[13px]">{data.year.items.length} 门课</p></div>
-      <div className={tile}><p className="text-[13px] font-medium text-muted">上得最多</p><p className="mt-1.5 truncate text-[17px] font-bold leading-8 text-ink sm:text-[20px]" title={top.label}>{top.label}</p><p className="mt-1 truncate text-[12px] text-muted sm:text-[13px]">今年 {top.count} 节</p></div>
+    <div className="grid shrink-0 grid-cols-3 gap-2 sm:gap-3">
+      <div className={tile}><p className="text-[13px] font-medium text-muted">{monthName}上课</p><p className="mt-0.5 text-[20px] font-bold leading-7 tabular-nums text-primary desk:mt-1.5 desk:text-[28px] desk:leading-8">{data.month.total}<span className="text-[15px] font-semibold text-muted"> 节</span></p><p className="mt-1 truncate text-[12px] text-muted sm:text-[13px]">截至 {Number(today.slice(5, 7))}月{Number(today.slice(8))}日</p></div>
+      <div className={tile}><p className="text-[13px] font-medium text-muted">{today.slice(0, 4)}年</p><p className="mt-0.5 text-[20px] font-bold leading-7 tabular-nums text-ink desk:mt-1.5 desk:text-[28px] desk:leading-8">{data.year.total}<span className="text-[15px] font-semibold text-muted"> 节</span></p><p className="mt-1 truncate text-[12px] text-muted sm:text-[13px]">{data.year.items.length} 门课</p></div>
+      <div className={tile}><p className="text-[13px] font-medium text-muted">上得最多</p><p className="mt-0.5 truncate text-[16px] font-bold leading-7 text-ink desk:mt-1.5 desk:text-[20px] desk:leading-8" title={top.label}>{top.label}</p><p className="mt-1 truncate text-[12px] text-muted sm:text-[13px]">今年 {top.count} 节</p></div>
     </div>
-    <div className="grid gap-3 lg:grid-cols-2 lg:gap-4">
+    <div className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto sm:grid-cols-2 desk:gap-4 desk:overflow-visible">
       {groups.map(({ group, items }) => {
         const color = GROUP_COLOR[group] ?? GROUP_COLOR.其他;
         const groupMonth = items.reduce((sum, item) => sum + (monthCount.get(`${item.group}:${item.label}`) ?? 0), 0);
         const groupYear = items.reduce((sum, item) => sum + item.count, 0);
         return <section key={group} className="surface overflow-hidden">
-          <header className="flex items-center gap-2 border-b border-ink/[0.07] px-3 py-3 sm:px-4">
+          <header className="flex items-center gap-2 border-b border-ink/[0.07] px-3 py-2 sm:px-4 desk:py-3">
             <span aria-hidden className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
             <h3 className="text-[15px] font-bold text-ink">{group}</h3>
             <span className="ml-auto text-[13px] tabular-nums text-muted">{monthName} <span className="font-semibold text-ink">{groupMonth}</span> · 今年 <span className="font-semibold text-ink">{groupYear}</span> 节</span>
@@ -86,13 +86,12 @@ function CourseTotals({ refreshKey }: { refreshKey: number }) {
           <ul className="divide-y divide-ink/[0.05]">
             {items.map((item) => {
               const month = monthCount.get(`${item.group}:${item.label}`) ?? 0;
-              return <li key={item.label} className="px-3 py-2.5 sm:px-4">
-                <div className="flex items-baseline gap-2">
-                  <span className="min-w-0 flex-1 truncate text-[15px] font-medium text-ink">{item.label}</span>
-                  <span className={`w-16 shrink-0 text-right text-[13px] tabular-nums ${month ? "text-ink" : "text-stone-300"}`}>{monthName} <span className="font-bold">{month}</span></span>
-                  <span className="w-16 shrink-0 text-right text-[13px] tabular-nums text-muted">今年 <span className="font-bold text-ink">{item.count}</span></span>
-                </div>
-                <span className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-stone-100"><span className="block h-full rounded-full" style={{ width: `${(item.count / max) * 100}%`, backgroundColor: color, opacity: 0.75 }} /></span>
+              // 一行：课名、条形（按全年最多那门的比例）、本月、今年（2026-11-25 手机上收紧，一门课一行）
+              return <li key={item.label} className="flex min-h-9 items-center gap-2 px-3 py-1 sm:px-4 desk:min-h-11">
+                <span className="w-[6.5rem] shrink-0 truncate text-[14px] font-medium text-ink desk:w-32 desk:text-[15px]">{item.label}</span>
+                <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-stone-100"><span className="block h-full rounded-full" style={{ width: `${(item.count / max) * 100}%`, backgroundColor: color, opacity: 0.75 }} /></span>
+                <span className={`w-[3.25rem] shrink-0 text-right text-[13px] tabular-nums ${month ? "text-ink" : "text-stone-300"}`}>{monthName} <span className="font-bold">{month}</span></span>
+                <span className="w-[3.75rem] shrink-0 text-right text-[13px] tabular-nums text-muted">今年 <span className="font-bold text-ink">{item.count}</span></span>
               </li>;
             })}
           </ul>

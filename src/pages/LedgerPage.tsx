@@ -3,6 +3,7 @@ import {
   ArrowDownToLine, ArrowUpFromLine, Award, BookOpen, ChevronDown, Ellipsis, Flag, Gift, PencilLine, PiggyBank, Plus, Puzzle, Receipt, Scale, TrendingUp, Utensils,
 } from "lucide-react";
 import { Sheet } from "../components/Sheet";
+import { TABLET_FIT_QUERY, useMediaQuery } from "../hooks/useMediaQuery";
 import { loadPointsContext, settlePendingWeeks } from "../data/pointsService";
 import {
   addReconcileAdjustments, confirmTransfer, deleteLedgerEntry, loadLedgerContext, saveLedgerEntry, setMonthlyRate, setOpeningBalances, type LedgerContext,
@@ -93,6 +94,7 @@ type Editor = { mode: "new"; type: LedgerType } | { mode: "edit"; entry: LedgerE
 
 export function LedgerPage({ refreshKey, onChanged, notify }: { refreshKey: number; onChanged: () => void; notify: (message: string) => void }) {
   const [ctx, setCtx] = useState<LedgerContext | null>(null);
+  const tablet = useMediaQuery(TABLET_FIT_QUERY);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [dialog, setDialog] = useState<"opening" | "rate" | null>(null);
   // 每个月的流水展开 / 收起；没点过的按默认：这个月（及以后）展开，过完的月份收起
@@ -143,96 +145,11 @@ export function LedgerPage({ refreshKey, onChanged, notify }: { refreshKey: numb
     { type: "withdraw", label: "从存款取出", icon: ArrowUpFromLine, color: "#3F8F86" },
   ];
 
-  return (
-    <main className="mx-auto w-full max-w-5xl px-3 pb-content pt-3 sm:px-7 sm:pt-6 lg:px-10">
-      <header className="page-header">
-        <h1 className="page-title">记账</h1>
-        {parent && <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setDialog("opening")} className="min-h-11 rounded-lg border border-ink/10 bg-white px-3 text-sm font-semibold text-muted hover:text-ink">期初余额</button>
-          <button type="button" onClick={() => setDialog("rate")} className="min-h-11 rounded-lg border border-ink/10 bg-white px-3 text-sm font-semibold text-muted hover:text-ink">月利率 {formatRate(rateNow)}</button>
-        </div>}
-      </header>
-
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
-        <div className="min-w-0 space-y-4">
-          {/* 总资产卡：零钱 + 存款 */}
-          <section aria-label="余额" className="overflow-hidden rounded-lg bg-primary text-white shadow-sm">
-            <div className="px-5 pb-4 pt-5">
-              <p className="text-[13px] font-semibold text-white/70">总资产（元）</p>
-              <p className="mt-1 text-[34px] font-bold leading-10 tabular-nums tracking-tight" data-testid="ledger-total">{formatYuan(balances.cash + balances.savings)}</p>
-            </div>
-            <div className="grid grid-cols-2 border-t border-white/15">
-              <div className="border-r border-white/15 px-5 py-3.5">
-                <p className="flex items-center gap-1.5 text-[13px] font-semibold text-white/70"><span aria-hidden className="h-2 w-2 rounded-full bg-white" />零钱 · 可以自由花</p>
-                <p className="mt-0.5 text-[22px] font-bold leading-8 tabular-nums" data-testid="ledger-cash">{formatYuan(balances.cash)}</p>
-              </div>
-              <div className="px-5 py-3.5">
-                <p className="flex items-center gap-1.5 text-[13px] font-semibold text-white/70"><span aria-hidden className="h-2 w-2 rounded-full bg-sun" />存款 · 零钱通</p>
-                <p className="mt-0.5 text-[22px] font-bold leading-8 tabular-nums" data-testid="ledger-savings">{formatYuan(balances.savings)}</p>
-              </div>
-            </div>
-            <p className="border-t border-white/15 bg-black/10 px-5 py-2.5 text-[13px] leading-5 text-white/90" data-testid="projected-interest">
-              {projected ? <>这个月不取钱的话，下月 1 日能拿到 <span className="font-bold tabular-nums text-sun">{formatYuan(projected.cents)}</span> 元利息</> : "每月 1 日结算上个月的利息"}
-            </p>
-          </section>
-
-          {/* 本月收入 / 支出 / 结余 */}
-          <section aria-label="本月收支" className="surface grid grid-cols-3 divide-x divide-ink/[0.07]">
-            {[
-              { label: `${monthLabel(month.month)}收入`, text: formatYuan(month.incomeCents), tone: "text-primary" },
-              { label: `${monthLabel(month.month)}支出`, text: formatYuan(month.expenseCents), tone: "text-ink" },
-              { label: `${monthLabel(month.month)}结余`, text: formatYuan(net), tone: net < 0 ? "text-alert" : "text-ink" },
-            ].map((item) => (
-              <div key={item.label} className="px-3 py-3 sm:px-4">
-                <p className="text-[13px] text-muted">{item.label}</p>
-                <p className={`mt-0.5 text-lg font-bold tabular-nums sm:text-xl ${item.tone}`}>{item.text}</p>
-              </div>
-            ))}
-          </section>
-
-          {/* 快捷记账（2026-11-25 用户：“记一笔支出”要更突出、更大——记账先按它）：
-              支出是一个实心大按钮（手机占满一行），存进 / 取出是旁边两个次级按钮 */}
-          <section aria-label="记一笔" className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] sm:gap-3">
-            <button type="button" onClick={() => setEditor({ mode: "new", type: "expense" })} data-testid="add-expense"
-              className="col-span-2 flex min-h-[4.5rem] items-center gap-3 rounded-lg bg-alert px-4 text-left text-white shadow-[0_10px_24px_-12px_rgba(227,107,78,0.9)] transition-colors hover:bg-[#cf5b40] active:scale-[0.99] sm:col-span-1 sm:min-h-[5.5rem] sm:px-5">
-              <span aria-hidden className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/20"><Plus className="h-6 w-6" strokeWidth={2.5} /></span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-[18px] font-bold leading-6">记一笔支出</span>
-                <span className="block truncate text-[13px] text-white/80">零钱 {formatYuan(balances.cash)} 元 · 买了什么就记一笔</span>
-              </span>
-              <Receipt aria-hidden className="hidden h-7 w-7 shrink-0 text-white/50 sm:block" />
-            </button>
-            {quick.filter((item) => item.type !== "expense").map((item) => (
-              <button key={item.type} type="button" onClick={() => setEditor({ mode: "new", type: item.type })} className="surface flex min-h-16 items-center justify-center gap-2.5 px-2 py-2 text-[15px] font-semibold text-ink hover:bg-stone-50 sm:min-h-[5.5rem] sm:flex-col sm:gap-1.5">
-                <EntryIcon icon={item.icon} color={item.color} />
-                {item.label}
-              </button>
-            ))}
-          </section>
-
-          {pending.length > 0 && (
-            <section aria-label="待转账" className="surface border-sun/70">
-              <div className="flex items-center justify-between gap-3 border-b border-ink/[0.07] bg-sun/15 px-4 py-2.5"><h2 className="text-base font-bold text-ink">待转账</h2><span className="text-right text-[13px] text-muted">{parent ? "转好以后点“已转账”入账" : "妈妈转好后点“已转账”就会记上"}</span></div>
-              <ul className="divide-y divide-ink/[0.07]">
-                {pending.map((item) => (
-                  <li key={item.id} className="flex items-center gap-3 px-4 py-3" data-testid="pending-transfer">
-                    <EntryIcon icon={item.type === "interest" ? TrendingUp : Award} color="#2B7656" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[15px] font-semibold text-ink">{item.title}</p>
-                      <p className="truncate text-[13px] text-muted">{item.detail ?? "转到零钱"}</p>
-                    </div>
-                    <span className="shrink-0 text-base font-bold tabular-nums text-primary">+{formatYuan(item.amountCents)}</span>
-                    {parent ? <button type="button" disabled={busyTransfer === item.id} onClick={() => void transfer(item.id)} className={primaryButton}>已转账</button>
-                      : <span className="shrink-0 rounded-md bg-stone-100 px-2 py-1 text-[13px] text-muted">等转账</span>}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {/* 流水：按月分组，过完的月份默认收起 */}
-          <section aria-label="记录" className="surface overflow-hidden">
-            <div className="flex items-center justify-between border-b border-ink/10 px-4 py-3"><h2 className="text-base font-bold text-ink">流水</h2><span className="text-[13px] tabular-nums text-muted">{months.reduce((sum, item) => sum + item.count, 0)} 笔</span></div>
+  // 流水卡：电脑 / 手机放在左栏最下面；iPad 一屏布局时单独占右栏、在卡片里滚动（2026-11-25）
+  const records = (
+          <section aria-label="记录" className={`surface overflow-hidden ${tablet ? "flex min-h-0 flex-1 flex-col" : ""}`}>
+            <div className="flex shrink-0 items-center justify-between border-b border-ink/10 px-4 py-3"><h2 className="text-base font-bold text-ink">流水</h2><span className="text-[13px] tabular-nums text-muted">{months.reduce((sum, item) => sum + item.count, 0)} 笔</span></div>
+            <div className={tablet ? "min-h-0 flex-1 overflow-y-auto" : ""}>
             {months.length === 0 ? <p className="px-4 py-8 text-center text-[15px] text-muted">还没有记录。{parent ? "可以先在右上角设好期初余额。" : ""}</p> : months.map((group) => {
               const open = isOpen(group.month);
               return (
@@ -289,13 +206,109 @@ export function LedgerPage({ refreshKey, onChanged, notify }: { refreshKey: numb
                 </div>
               );
             })}
+            </div>
           </section>
-        </div>
+  );
 
-        <div className="space-y-4">
+  return (
+    <main className="fit-tablet mx-auto w-full max-w-5xl px-3 pb-content pt-3 sm:px-7 sm:pt-6 lg:px-10">
+      <header className="page-header">
+        <h1 className="page-title">记账</h1>
+        {parent && <div className="flex items-center gap-2">
+          <button type="button" onClick={() => setDialog("opening")} className="min-h-11 rounded-lg border border-ink/10 bg-white px-3 text-sm font-semibold text-muted hover:text-ink">期初余额</button>
+          <button type="button" onClick={() => setDialog("rate")} className="min-h-11 rounded-lg border border-ink/10 bg-white px-3 text-sm font-semibold text-muted hover:text-ink">月利率 {formatRate(rateNow)}</button>
+        </div>}
+      </header>
+
+      {/* iPad（非电脑、宽 ≥640）：一屏两栏——左栏余额 / 本月 / 记一笔 / 待转账 / 支出构成 / 对账（在栏里滚动），右栏流水（在卡片里滚动） */}
+      <div className={tablet ? "fit-fill grid min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] gap-3" : "grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start"}>
+        <div className={tablet ? "min-h-0 min-w-0 space-y-3 overflow-y-auto pb-1" : "min-w-0 space-y-4"}>
+          {/* 总资产卡：零钱 + 存款 */}
+          <section aria-label="余额" className="overflow-hidden rounded-lg bg-primary text-white shadow-sm">
+            <div className="px-5 pb-4 pt-5">
+              <p className="text-[13px] font-semibold text-white/70">总资产（元）</p>
+              <p className="mt-1 text-[34px] font-bold leading-10 tabular-nums tracking-tight" data-testid="ledger-total">{formatYuan(balances.cash + balances.savings)}</p>
+            </div>
+            <div className="grid grid-cols-2 border-t border-white/15">
+              <div className="border-r border-white/15 px-5 py-3.5">
+                <p className="flex items-center gap-1.5 whitespace-nowrap text-[13px] font-semibold text-white/70"><span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-white" />零钱<span className={tablet ? "hidden" : ""}> · 可以自由花</span></p>
+                <p className="mt-0.5 text-[22px] font-bold leading-8 tabular-nums" data-testid="ledger-cash">{formatYuan(balances.cash)}</p>
+              </div>
+              <div className="px-5 py-3.5">
+                <p className="flex items-center gap-1.5 whitespace-nowrap text-[13px] font-semibold text-white/70"><span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-sun" />存款<span className={tablet ? "hidden" : ""}> · 零钱通</span></p>
+                <p className="mt-0.5 text-[22px] font-bold leading-8 tabular-nums" data-testid="ledger-savings">{formatYuan(balances.savings)}</p>
+              </div>
+            </div>
+            <p className="border-t border-white/15 bg-black/10 px-5 py-2.5 text-[13px] leading-5 text-white/90" data-testid="projected-interest">
+              {projected ? <>这个月不取钱的话，下月 1 日能拿到 <span className="font-bold tabular-nums text-sun">{formatYuan(projected.cents)}</span> 元利息</> : "每月 1 日结算上个月的利息"}
+            </p>
+          </section>
+
+          {/* 本月收入 / 支出 / 结余 */}
+          <section aria-label="本月收支" className="surface grid grid-cols-3 divide-x divide-ink/[0.07]">
+            {[
+              { label: `${monthLabel(month.month)}收入`, text: formatYuan(month.incomeCents), tone: "text-primary" },
+              { label: `${monthLabel(month.month)}支出`, text: formatYuan(month.expenseCents), tone: "text-ink" },
+              { label: `${monthLabel(month.month)}结余`, text: formatYuan(net), tone: net < 0 ? "text-alert" : "text-ink" },
+            ].map((item) => (
+              <div key={item.label} className="px-3 py-3 sm:px-4">
+                <p className="text-[13px] text-muted">{item.label}</p>
+                <p className={`mt-0.5 text-lg font-bold tabular-nums sm:text-xl ${item.tone}`}>{item.text}</p>
+              </div>
+            ))}
+          </section>
+
+          {/* 快捷记账（2026-11-25 用户：“记一笔支出”要更突出、更大——记账先按它）：
+              支出是一个实心大按钮（手机占满一行），存进 / 取出是旁边两个次级按钮 */}
+          <section aria-label="记一笔" className={`grid grid-cols-2 gap-2 ${tablet ? "" : "sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] sm:gap-3"}`}>
+            <button type="button" onClick={() => setEditor({ mode: "new", type: "expense" })} data-testid="add-expense"
+              className={`col-span-2 flex min-h-[4.5rem] items-center gap-3 rounded-lg bg-alert px-4 text-left text-white shadow-[0_10px_24px_-12px_rgba(227,107,78,0.9)] transition-colors hover:bg-[#cf5b40] active:scale-[0.99] ${tablet ? "" : "sm:col-span-1 sm:min-h-[5.5rem] sm:px-5"}`}>
+              <span aria-hidden className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/20"><Plus className="h-6 w-6" strokeWidth={2.5} /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[18px] font-bold leading-6">记一笔支出</span>
+                <span className="block truncate text-[13px] text-white/80">零钱 {formatYuan(balances.cash)} 元 · 买了什么就记一笔</span>
+              </span>
+              <Receipt aria-hidden className="hidden h-7 w-7 shrink-0 text-white/50 sm:block" />
+            </button>
+            {quick.filter((item) => item.type !== "expense").map((item) => (
+              <button key={item.type} type="button" onClick={() => setEditor({ mode: "new", type: item.type })} className={`surface flex min-h-16 items-center justify-center gap-2.5 px-2 py-2 text-[15px] font-semibold text-ink hover:bg-stone-50 ${tablet ? "" : "sm:min-h-[5.5rem] sm:flex-col sm:gap-1.5"}`}>
+                <EntryIcon icon={item.icon} color={item.color} />
+                {item.label}
+              </button>
+            ))}
+          </section>
+
+          {pending.length > 0 && (
+            <section aria-label="待转账" className="surface border-sun/70">
+              <div className="flex items-center justify-between gap-3 border-b border-ink/[0.07] bg-sun/15 px-4 py-2.5"><h2 className="text-base font-bold text-ink">待转账</h2><span className="text-right text-[13px] text-muted">{parent ? "转好以后点“已转账”入账" : "妈妈转好后点“已转账”就会记上"}</span></div>
+              <ul className="divide-y divide-ink/[0.07]">
+                {pending.map((item) => (
+                  <li key={item.id} className="flex items-center gap-3 px-4 py-3" data-testid="pending-transfer">
+                    <EntryIcon icon={item.type === "interest" ? TrendingUp : Award} color="#2B7656" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[15px] font-semibold text-ink">{item.title}</p>
+                      <p className="truncate text-[13px] text-muted">{item.detail ?? "转到零钱"}</p>
+                    </div>
+                    <span className="shrink-0 text-base font-bold tabular-nums text-primary">+{formatYuan(item.amountCents)}</span>
+                    {parent ? <button type="button" disabled={busyTransfer === item.id} onClick={() => void transfer(item.id)} className={primaryButton}>已转账</button>
+                      : <span className="shrink-0 rounded-md bg-stone-100 px-2 py-1 text-[13px] text-muted">等转账</span>}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {!tablet && records}
+
+          {tablet && <>
+            <ExpenseBreakdown summary={month} />
+            <ReconcileCard ctx={ctx} parent={parent} onDone={(count) => changed(`已生成 ${count} 条对账调整`)} />
+          </>}
+        </div>
+        {tablet ? <div className="flex min-h-0 min-w-0 flex-col">{records}</div> : <div className="space-y-4">
           <ExpenseBreakdown summary={month} />
           <ReconcileCard ctx={ctx} parent={parent} onDone={(count) => changed(`已生成 ${count} 条对账调整`)} />
-        </div>
+        </div>}
       </div>
 
       {editor && <EntryDialog ctx={ctx} editor={editor} parent={parent} onClose={() => setEditor(null)} onSaved={(message) => { setEditor(null); changed(message); }} />}

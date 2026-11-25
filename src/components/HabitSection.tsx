@@ -54,9 +54,9 @@ export function HabitSection() {
   const isThisMonth = month === todayKey().slice(0, 7);
 
   return (
-    <section>
+    <section className="fit-fill flex min-h-0 flex-col">
       {/* 月份切换、管理、休息日同一行（2026-11-18 手机排版收紧）；不是本月时点月份回到本月 */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-1.5">
         <div className="flex min-w-0 items-center">
           <button onClick={() => shiftMonth(-1)} className="flex h-9 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-white hover:text-ink sm:w-10" aria-label="上个月"><ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" /></button>
           <h2 className="whitespace-nowrap text-center text-[15px] font-bold text-ink sm:min-w-24 sm:text-base">{isThisMonth
@@ -88,7 +88,7 @@ export function HabitSection() {
           {calendars.some((cal) => cal.hasScheduleInMonth)
             ? <>
               <HabitSummary calendars={calendars.filter((cal) => cal.hasScheduleInMonth)} isThisMonth={isThisMonth} />
-              <h3 className="mt-5 px-1 text-[15px] font-bold text-ink sm:mt-6">每日明细</h3>
+              <h3 className="mt-2 hidden px-1 text-[15px] font-bold text-ink desk:mt-6 desk:block">每日明细</h3>
               <HabitMatrix calendars={calendars.filter((cal) => cal.hasScheduleInMonth)} restDays={restDays} />
             </>
             : <div className="surface mt-3 p-5 text-center text-sm text-muted">这个月没有安排打卡项目</div>}
@@ -135,31 +135,33 @@ function HabitSummary({ calendars, isThisMonth }: { calendars: HabitCalendar[]; 
   const done = counts.reduce((sum, item) => sum + item.done, 0);
   const missed = counts.reduce((sum, item) => sum + item.missed, 0);
   const rate = done + missed ? Math.round((done / (done + missed)) * 100) : 0;
-  const tile = "surface min-w-0 p-3 sm:p-4";
+  // 手机和 iPad 上收紧（一屏放下，2026-11-25）；电脑（desk）上宽松
+  const tile = "surface min-w-0 px-3 py-2 desk:p-4";
+  const big = "mt-0.5 text-[20px] font-bold leading-7 tabular-nums desk:mt-1.5 desk:text-[28px] desk:leading-8";
   return (
     <>
-      <div className="mt-2 grid grid-cols-3 gap-2 sm:mt-3 sm:gap-3">
-        <div className={tile}><p className="text-[13px] font-medium text-muted">{isThisMonth ? "本月" : "这个月"}打卡</p><p className="mt-1.5 text-[24px] font-bold leading-8 tabular-nums text-primary sm:text-[28px]">{done}<span className="text-[15px] font-semibold text-muted"> 次</span></p><p className="mt-1 truncate text-[12px] text-muted sm:text-[13px]">{calendars.length} 个项目</p></div>
-        <div className={tile}><p className="text-[13px] font-medium text-muted">完成率</p><p className="mt-1.5 text-[24px] font-bold leading-8 tabular-nums text-ink sm:text-[28px]">{rate}<span className="text-[15px] font-semibold text-muted">%</span></p><span className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-stone-100"><span className="block h-full rounded-full bg-primary" style={{ width: `${rate}%` }} /></span></div>
-        <div className={tile}><p className="text-[13px] font-medium text-muted">漏卡</p><p className={`mt-1.5 text-[24px] font-bold leading-8 tabular-nums sm:text-[28px] ${missed ? "text-rose-600" : "text-ink"}`}>{missed}<span className="text-[15px] font-semibold text-muted"> 次</span></p><p className="mt-1 truncate text-[12px] text-muted sm:text-[13px]">{missed ? "休息日不算漏卡" : "一次都没漏"}</p></div>
+      <div className="mt-1.5 grid shrink-0 grid-cols-3 gap-2 desk:mt-3 desk:gap-3">
+        <div className={tile}><p className="text-[13px] font-medium text-muted">{isThisMonth ? "本月" : "这个月"}打卡</p><p className={`${big} text-primary`}>{done}<span className="text-[15px] font-semibold text-muted"> 次</span></p><p className="mt-1 hidden truncate text-[13px] text-muted desk:block">{calendars.length} 个项目</p></div>
+        <div className={tile}><p className="text-[13px] font-medium text-muted">完成率</p><p className={`${big} text-ink`}>{rate}<span className="text-[15px] font-semibold text-muted">%</span></p><span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-stone-100 desk:mt-1.5"><span className="block h-full rounded-full bg-primary" style={{ width: `${rate}%` }} /></span></div>
+        <div className={tile}><p className="text-[13px] font-medium text-muted">漏卡</p><p className={`${big} ${missed ? "text-rose-600" : "text-ink"}`}>{missed}<span className="text-[15px] font-semibold text-muted"> 次</span></p><p className="mt-1 hidden truncate text-[13px] text-muted desk:block">{missed ? "休息日不算漏卡" : "一次都没漏"}</p></div>
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-2 sm:mt-3 sm:gap-3 lg:grid-cols-4">
+      <div className="mt-2 grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-4 desk:mt-3 desk:gap-3">
         {counts.map(({ cal, done: d, missed: m, rate: r, recent }) => (
-          <article key={cal.taskId} className="surface flex min-w-0 flex-col gap-3 p-3 sm:p-4">
+          <article key={cal.taskId} className="surface flex min-w-0 flex-col gap-2 px-3 py-2.5 desk:gap-3 desk:p-4">
             <div className="flex items-start gap-3">
               <div className="min-w-0 flex-1">
-                <h4 className="truncate text-[15px] font-bold text-ink" title={cal.title}>{cal.title}</h4>
-                <p className="mt-1 leading-7 text-ink"><span className="text-[24px] font-bold tabular-nums">{d}</span><span className="text-[13px] text-muted"> 天</span></p>
-                <p className={`text-[12px] sm:text-[13px] ${m ? "text-rose-600" : "text-muted"}`}>{m ? `漏卡 ${m} 天` : "没有漏卡"}</p>
+                <h4 className="truncate text-[14px] font-bold text-ink desk:text-[15px]" title={cal.title}>{cal.title}</h4>
+                <p className="leading-7 text-ink desk:mt-1"><span className="text-[20px] font-bold tabular-nums desk:text-[24px]">{d}</span><span className="text-[13px] text-muted"> 天</span><span className={`ml-1.5 text-[12px] desk:hidden ${m ? "text-rose-600" : "text-muted"}`}>{m ? `漏 ${m}` : ""}</span></p>
+                <p className={`hidden text-[13px] desk:block ${m ? "text-rose-600" : "text-muted"}`}>{m ? `漏卡 ${m} 天` : "没有漏卡"}</p>
               </div>
               <div className="relative">
-                <RateRing rate={r} />
+                <RateRing rate={r} size={44} />
                 <span className="absolute inset-0 flex items-center justify-center text-[12px] font-bold tabular-nums text-ink">{Math.round(r * 100)}%</span>
               </div>
             </div>
             <div className="mt-auto">
-              <p className="text-[12px] text-muted">最近 7 天</p>
-              <div className="mt-1 flex gap-1">
+              <p className="hidden text-[12px] text-muted desk:block">最近 7 天</p>
+              <div className="flex gap-1 desk:mt-1" title="最近 7 天">
                 {recent.map((day) => (
                   <span key={day.date} title={`${Number(day.date.slice(5, 7))}月${Number(day.date.slice(8))}日 ${STATUS_TEXT[day.status]}`}
                     className={`h-2 flex-1 rounded-full ${day.status === "done" ? "bg-primary" : day.status === "missed" ? "bg-rose-300" : "bg-stone-200"}`} />
@@ -193,8 +195,8 @@ function HabitMatrix({ calendars, restDays }: { calendars: HabitCalendar[]; rest
           : "bg-stone-200";
 
   return (
-    <div className="surface mt-2 overflow-hidden">
-      <div ref={scroller} className="overflow-x-auto">
+    <div className="surface mt-2 flex min-h-0 flex-col overflow-hidden">
+      <div ref={scroller} className="min-h-0 flex-1 overflow-auto">
         <table className="w-full border-separate border-spacing-0 text-center">
           <thead>
             <tr>
@@ -229,7 +231,7 @@ function HabitMatrix({ calendars, restDays }: { calendars: HabitCalendar[]; rest
                     </td>
                   );
                 })}
-                <td className="border-b border-ink/[0.07] py-1.5 pl-1 pr-3 text-right text-[14px] font-semibold sm:py-2.5 sm:text-[15px] tabular-nums text-ink sm:px-4">{cal.monthCompletedDays}<span className="text-[13px] font-medium text-muted"> 天</span></td>
+                <td className="whitespace-nowrap border-b border-ink/[0.07] py-1.5 pl-1 pr-3 text-right text-[14px] font-semibold sm:py-2.5 sm:text-[15px] tabular-nums text-ink sm:px-4">{cal.monthCompletedDays}<span className="text-[13px] font-medium text-muted"> 天</span></td>
               </tr>
             ))}
           </tbody>

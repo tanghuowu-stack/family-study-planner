@@ -175,6 +175,27 @@ body::before {
    跟 pb-28 同为 padding-bottom，本文件排在 utilities 之后，这条生效。 */
 .pb-content { padding-bottom: calc(6rem + env(safe-area-inset-bottom)); }
 
+/*
+ * 一屏放下（2026-11-25 用户：iPad 上很多页面一页显示不全，顶栏和标题太占地方；手机统计页也要一屏）。
+ * 只在手机和 iPad（非电脑布局）生效：顶栏 49px（h-12 + 底线）、底部标签栏 53px（48 + 4 + 底线）加上安全区域，
+ * 剩下的高度整页铺满、不再往下拉；放不下的内容在各自卡片里滚动。
+ * .fit-screen：手机和 iPad 都一屏（统计、课表）；.fit-tablet：只在 iPad（宽 ≥640）一屏（月历、记账）；
+ * .fit-fill：铺满剩下的高度。
+ */
+:root { --topbar-h: 49px; --bottomnav-h: 53px; --fit-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+@media (max-width: 1023px), (hover: none), (pointer: coarse) {
+  .page-header { height: auto; min-height: 2.75rem; margin-bottom: 0.625rem; padding-bottom: 0.5rem; }
+  .page-title { font-size: 1.375rem; line-height: 1.75rem; }
+  .fit-screen { height: var(--fit-h); display: flex; flex-direction: column; overflow: hidden; padding-top: 0.625rem !important; padding-bottom: 0.5rem !important; }
+  .fit-screen .fit-fill { flex: 1 1 auto; min-height: 0; }
+  .fit-screen [role="tablist"] { margin-bottom: 0.5rem; }
+}
+@media (min-width: 640px) and (max-width: 1023px), (min-width: 640px) and (hover: none), (min-width: 640px) and (pointer: coarse) {
+  .fit-tablet { height: var(--fit-h); display: flex; flex-direction: column; overflow: hidden; padding-top: 0.75rem !important; padding-bottom: 0.5rem !important; }
+  .fit-tablet .fit-fill { flex: 1 1 auto; min-height: 0; }
+  .fit-tablet [role="tablist"] { margin-bottom: 0.5rem; }
+}
+
 /* 提示条只在挂着底部导航时抬高（手机、iPad）；电脑有 desk:bottom-* 负责，这里必须让位，
    否则本文件在 @tailwind utilities 之后、同优先级下会盖掉 desk 断点的定位。 */
 @media (max-width: 1023px), (hover: none), (pointer: coarse) {
@@ -187,8 +208,8 @@ body::before {
   .school-timetable-page:not(.is-editing) {
     display: flex;
     flex-direction: column;
-    height: calc(100svh - 113px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-    padding: 16px 12px 6px;
+    height: var(--fit-h);
+    padding: 10px 12px 6px;
   }
   .school-timetable-page:not(.is-editing) .timetable-header { flex-shrink: 0; }
   .school-timetable-page:not(.is-editing) .timetable-edit-button {
@@ -229,9 +250,8 @@ body::before {
     line-height: 1.15;
   }
   .school-timetable-page:not(.is-editing) .timetable-course > span { font-size: 14px; line-height: 1.15; }
-  /* 手机：课程色块铺满格子、不留圆角外的空白；带课本的小圆点缩小贴角 */
+  /* 手机：课程色块铺满格子、不留圆角外的空白 */
   .school-timetable-page:not(.is-editing) .timetable-course > span:first-child { min-height: 0; height: 100%; padding: 2px 1px; border-radius: 6px; }
-  .school-timetable-page:not(.is-editing) .timetable-carry { top: 4px; right: 4px; width: 6px; height: 6px; }
   .school-timetable-page:not(.is-editing) .timetable-course-note {
     display: block;
     margin-left: 0;
@@ -262,6 +282,22 @@ body::before {
     padding-right: 0.5rem;
     font-size: 0;
   }
+}
+
+/* iPad（非电脑布局、宽 ≥640）：课表一屏放下，行高跟着屏幕高度自动分（2026-11-25） */
+@media (min-width: 640px) and (max-width: 1023px), (min-width: 640px) and (hover: none), (min-width: 640px) and (pointer: coarse) {
+  .school-timetable-page:not(.is-editing) { height: var(--fit-h); display: flex; flex-direction: column; overflow: hidden; padding-top: 0.75rem !important; padding-bottom: 0.5rem !important; }
+  .school-timetable-page:not(.is-editing) .timetable-header { flex-shrink: 0; }
+  .school-timetable-page:not(.is-editing) .timetable-surface { flex: 1; min-height: 0; }
+  .school-timetable-page:not(.is-editing) .timetable-scroll { height: 100%; overflow: visible; }
+  .school-timetable-page:not(.is-editing) table { height: 100%; min-width: 0; }
+  .school-timetable-page:not(.is-editing) thead th { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+  .school-timetable-page:not(.is-editing) .timetable-slot { padding-top: 2px; padding-bottom: 2px; }
+  .school-timetable-page:not(.is-editing) .timetable-course { padding: 3px 4px; }
+  .school-timetable-page:not(.is-editing) .timetable-course > span:first-child { min-height: 0; height: 100%; padding-top: 2px; padding-bottom: 2px; }
+  .school-timetable-page:not(.is-editing) .timetable-break > th,
+  .school-timetable-page:not(.is-editing) .timetable-break > td { padding-top: 2px; padding-bottom: 2px; }
+  .school-timetable-page:not(.is-editing) .timetable-legend { margin-top: 0.375rem; }
 }
 
 @media (max-width: 639px) and (max-height: 700px) {

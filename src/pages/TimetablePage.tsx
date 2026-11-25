@@ -51,6 +51,12 @@ function CourseName({ course }: { course: string }) {
   return <>{match[1]}<span className="timetable-course-note ml-0.5 inline-block text-[10px] font-semibold opacity-75">{match[2]}</span></>;
 }
 
+/**
+ * 要带课本或工具的课（2026-11-25 用户：黄点不显眼，"一看课表就知道要带什么"）：
+ * 整块换成浅黄底 + 2px 琥珀色粗框 + 深琥珀字，比学科色块醒目得多；编辑课表时用"高亮显示"复选框设置。
+ */
+const CARRY_STYLE = { color: "#8A4B00", background: "#FFF1CC", boxShadow: "inset 0 0 0 2px #E39A1C" } as const;
+
 const displayTime = (value: string) => value.replace("-", "–");
 const termLabel = (value: string) => /^[（(].+[）)]$/.test(value.trim()) ? value.trim() : `（${value.trim()}）`;
 
@@ -181,7 +187,7 @@ export function TimetablePage({ tabs }: { tabs?: ReactNode } = {}) {
                 if (slot.id === "extended-2" && mergedDays.has(day)) return null;
                 const merged = slot.id === "extended-1" && mergedDays.has(day);
                 const slotIds = merged ? ["extended-1", "extended-2"] : [slot.id];
-                return <td key={day} rowSpan={merged ? 3 : 1} className={`timetable-course relative border-b border-r border-ink/[0.08] px-1.5 py-1.5 text-center align-middle last:border-r-0 ${tomorrow === day ? "bg-primary/[0.04]" : "bg-white"}`}>{editing ? <div className="flex flex-col items-center gap-1"><input aria-label={`${DAY_LABELS[day]}${section.label}${slot.label}`} value={slot.courses[day]} onChange={(event) => updateCourse(slotIds, day, event.target.value)} className="w-full rounded-md border px-1.5 py-2 text-center text-base font-bold text-ink" /><label className="flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-muted"><input type="checkbox" aria-label={`${DAY_LABELS[day]}${section.label}${slot.label}高亮显示`} checked={slot.highlights[day]} onChange={(event) => updateHighlight(slotIds, day, event.target.checked)} className="accent-primary" />高亮显示</label></div> : <><span className="flex min-h-[2.75rem] w-full items-center justify-center rounded-lg px-1 py-1.5 text-[16px] font-bold leading-tight" style={courseTone(slot.courses[day])}><CourseName course={slot.courses[day]} /></span>{slot.highlights[day] && <span role="img" aria-label="要带课本或工具" title="要带课本或工具" className="timetable-carry absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-white" />}</>}</td>;
+                return <td key={day} rowSpan={merged ? 3 : 1} className={`timetable-course relative border-b border-r border-ink/[0.08] px-1.5 py-1.5 text-center align-middle last:border-r-0 ${tomorrow === day ? "bg-primary/[0.04]" : "bg-white"}`}>{editing ? <div className="flex flex-col items-center gap-1"><input aria-label={`${DAY_LABELS[day]}${section.label}${slot.label}`} value={slot.courses[day]} onChange={(event) => updateCourse(slotIds, day, event.target.value)} className="w-full rounded-md border px-1.5 py-2 text-center text-base font-bold text-ink" /><label className="flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-muted"><input type="checkbox" aria-label={`${DAY_LABELS[day]}${section.label}${slot.label}高亮显示`} checked={slot.highlights[day]} onChange={(event) => updateHighlight(slotIds, day, event.target.checked)} className="accent-primary" />高亮显示</label></div> : <span className={`flex min-h-[2.75rem] w-full items-center justify-center rounded-lg px-1 py-1.5 text-[16px] font-bold leading-tight ${slot.highlights[day] ? "timetable-carry" : ""}`} style={slot.highlights[day] ? CARRY_STYLE : courseTone(slot.courses[day])} title={slot.highlights[day] ? "要带课本或工具" : undefined}><CourseName course={slot.courses[day]} /></span>}</td>;
               })}
             </tr>,
             breakMeta && editing ? <tr key={`${slot.id}-break`} className={`timetable-break ${breakMeta.long ? "bg-amber-50/75" : "bg-[#F5F4F1]"}`}><th aria-hidden="true" className={`sticky left-0 z-20 border-b border-r border-ink/[0.08] px-3 py-1 ${breakMeta.long ? "bg-amber-50" : "bg-[#F5F4F1]"}`} /><td colSpan={5} className="border-b border-ink/[0.08] px-2 py-1.5 text-center">{breakEditor}</td></tr> : breakMeta && (breakMeta.splitByDay ? <tr key={`${slot.id}-break`} className="timetable-break timetable-break-split bg-[#F5F4F1]"><th aria-hidden="true" className="sticky left-0 z-20 border-b border-r border-ink/[0.08] bg-[#F5F4F1] px-3 py-1" />{TIMETABLE_DAYS.map((day) => {
@@ -192,7 +198,7 @@ export function TimetablePage({ tabs }: { tabs?: ReactNode } = {}) {
           ];
         })}</tbody>
       </table></div></section>
-      <p className="mt-2.5 flex items-center justify-center gap-1.5 text-[12px] font-medium text-muted"><span aria-hidden className="h-2 w-2 rounded-full bg-amber-500" />要带课本或工具</p>
+      <p className="timetable-legend mt-2.5 flex shrink-0 items-center justify-center gap-2 text-[12px] font-medium text-muted"><span aria-hidden className="inline-flex h-5 items-center rounded-md px-2 text-[11px] font-bold" style={CARRY_STYLE}>课名</span>粗框黄底的课要带课本或工具</p>
     </main>
   );
 }

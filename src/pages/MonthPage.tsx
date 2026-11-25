@@ -56,9 +56,9 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask
    * - 做完的安排灰字、色点变淡，不划线（原来过去的日子满屏删除线）；没做的正文色，时间在前面灰色小字。
    */
   return (
-    <main className="mx-auto w-full max-w-7xl overflow-x-hidden px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
+    <main className="fit-tablet mx-auto w-full max-w-7xl overflow-x-hidden px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
       {tabs}
-      <header className="mb-3 flex items-end justify-between gap-3 sm:mb-4">
+      <header className="mb-3 flex shrink-0 items-end justify-between gap-3 sm:mb-4">
         <div className="min-w-0">
           <h1 className="flex items-baseline gap-2 text-ink"><span className="text-[30px] font-bold leading-9 tracking-tight sm:text-[36px] sm:leading-10">{format(monthDate, "M月")}</span><span className="text-[17px] font-semibold text-muted sm:text-xl">{format(monthDate, "yyyy")}</span></h1>
           <p className="mt-1 text-[13px] text-muted">{isThisMonth ? "本月" : "这个月"} {monthLabels.length} 项安排{isThisMonth && upcomingCount > 0 && ` · 今天起还有 ${upcomingCount} 项`}</p>
@@ -70,13 +70,13 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask
         </div>
       </header>
 
-      <div ref={swipeRef} className="overflow-hidden rounded-xl border border-ink/[0.08] bg-white shadow-[0_1px_2px_rgba(32,41,37,0.04),0_12px_32px_-20px_rgba(32,41,37,0.25)]">
+      <div ref={swipeRef} className="fit-fill flex flex-col overflow-hidden rounded-xl border border-ink/[0.08] bg-white shadow-[0_1px_2px_rgba(32,41,37,0.04),0_12px_32px_-20px_rgba(32,41,37,0.25)]">
         <div className="grid grid-cols-7 border-b border-ink/[0.08]">
           {["一", "二", "三", "四", "五", "六", "日"].map((day, index) => (
-            <div key={day} className={`py-2.5 text-center text-[12px] font-semibold tracking-wide sm:py-3 sm:text-[13px] ${index >= 5 ? "bg-[#FBF8F4] text-alert/80" : "text-muted"}`}><span className="hidden sm:inline">周</span>{day}</div>
+            <div key={day} className={`py-2.5 text-center text-[12px] font-semibold tracking-wide sm:py-3 sm:text-[13px] ${index >= 5 ? "bg-[#F6ECE4] text-alert" : "text-muted"}`}><span className="hidden sm:inline">周</span>{day}</div>
           ))}
         </div>
-        <div className="grid grid-cols-7 gap-px bg-ink/[0.06]">
+        <div className="grid flex-1 grid-cols-7 gap-px bg-ink/[0.06]" style={{ gridTemplateRows: `repeat(${gridDates.length / 7}, minmax(0, 1fr))` }}>
           {gridDates.map((key, index) => {
             const tasks = items[key] ?? [];
             const labels = calendarLabels(tasks);
@@ -87,18 +87,19 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask
             const isToday = key === today;
             const weekend = index % 7 >= 5;
             const past = key < today;
-            const bg = !inMonth ? "bg-[#FAF9F7]" : isToday ? "bg-[#E9F3ED]" : isSelected ? "bg-mint/60" : weekend ? "bg-[#FDFBF8]" : "bg-white";
+            // 周末两列明显的暖色底 + 玫红日期（2026-11-25 用户：周六日和平时看不出区别）
+            const bg = !inMonth ? (weekend ? "bg-[#F7F1EC]" : "bg-[#FAF9F7]") : isToday ? "bg-[#E9F3ED]" : isSelected ? "bg-mint/60" : weekend ? "bg-[#FBF3EC]" : "bg-white";
             return (
               <button
                 key={key}
                 onClick={() => handleDayClick(key)}
                 aria-current={isToday ? "date" : undefined}
                 aria-label={`${format(fromDateKey(key), "M月d日")}${labels.length ? `，${labels.length} 项安排` : ""}`}
-                className={`relative flex min-h-[3.75rem] flex-col p-1.5 text-left align-top transition-colors sm:min-h-[7.5rem] sm:p-2.5 ${bg} ${inMonth && !isToday ? "hover:bg-mint/30" : ""} ${isSelected ? "ring-2 ring-inset ring-primary/40" : ""}`}
+                className={`relative flex min-h-[3.75rem] flex-col overflow-hidden p-1.5 text-left align-top transition-colors sm:min-h-[5.5rem] sm:p-2 desk:min-h-[7.5rem] desk:p-2.5 ${bg} ${inMonth && !isToday ? "hover:bg-mint/30" : ""} ${isSelected ? "ring-2 ring-inset ring-primary/40" : ""}`}
               >
                 {isToday && <span aria-hidden className="absolute inset-x-0 top-0 h-[3px] bg-primary" />}
                 <div className="flex min-w-0 items-center gap-1">
-                  <span className={`text-[14px] leading-6 tabular-nums sm:text-[15px] ${!inMonth ? "text-stone-300" : isToday ? "font-bold text-primary" : past ? "font-medium text-muted" : "font-semibold text-ink"}`}>{fromDateKey(key).getDate()}</span>
+                  <span className={`text-[14px] leading-6 tabular-nums sm:text-[15px] ${!inMonth ? "text-stone-300" : isToday ? "font-bold text-primary" : weekend ? `font-semibold ${past ? "text-alert/60" : "text-alert"}` : past ? "font-medium text-muted" : "font-semibold text-ink"}`}>{fromDateKey(key).getDate()}</span>
                   {isToday && <span className="hidden text-[12px] font-semibold text-primary sm:inline">今天</span>}
                   {inMonth && annotation.holidayStatus && (
                     <span className={`rounded px-1 text-[11px] font-bold leading-4 sm:text-[12px] ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{annotation.holidayStatus}</span>
@@ -114,7 +115,7 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask
                 )}
 
                 {/* 电脑 / iPad：色点 + 时间 + 名称 */}
-                {inMonth && <div className="mt-1 hidden space-y-[3px] sm:block">
+                {inMonth && <div className="mt-1 hidden min-h-0 space-y-[3px] overflow-hidden sm:block">
                   {labels.slice(0, 4).map((label) => (
                     <div key={`${label.type}:${label.text}`} title={label.time ? `${label.time} ${label.name}` : label.name} className={`flex min-w-0 items-center gap-1.5 text-[13px] leading-[18px] ${label.done ? "text-stone-400" : "text-ink"}`}>
                       <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${label.done ? "opacity-40" : ""}`} style={{ backgroundColor: label.dot }} />

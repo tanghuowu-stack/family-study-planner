@@ -1,4 +1,4 @@
-import { CalendarPlus, CalendarX, ChevronDown, Copy, GripVertical, MoreHorizontal, Pencil, Search, Trash2, X } from "lucide-react";
+import { BookOpen, CalendarDays, CalendarPlus, CalendarX, ChevronDown, Copy, GraduationCap, GripVertical, ListChecks, MoreHorizontal, Music, Pencil, Search, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { taskRepository } from "../data/taskRepository";
 import { getRepository } from "../data/repositoryProvider";
@@ -12,6 +12,13 @@ import { useSortableList } from "../hooks/useSortableList";
 
 interface Props { tabs?: ReactNode; refreshKey: number; onRefresh: () => void; notify: (text: string) => void; onEdit: (task: Task) => void; onDelete: (task: Task) => void; onEnd: (task: Task) => void; onExtend: (task: Task) => void; onCopy: (task: Task) => void; }
 const order: MainCategory[] = ["school", "extraHomework", "interestClass", "temporary"];
+/** 分类卡的图标和颜色（2026-11-25 全部任务重新设计） */
+const CATEGORY_TILE: Record<string, { icon: typeof BookOpen; color: string }> = {
+  school: { icon: BookOpen, color: "#5868C8" },
+  extraHomework: { icon: GraduationCap, color: "#2B7656" },
+  interestClass: { icon: Music, color: "#9364C7" },
+  temporary: { icon: CalendarDays, color: "#E0883A" },
+};
 
 type KindFilter = "all" | "repeat" | "weekly" | "range" | "once";
 const KIND_LABEL: Record<Exclude<KindFilter, "all">, string> = { repeat: "重复", weekly: "每周几次", range: "时段", once: "单日" };
@@ -91,45 +98,64 @@ export function TaskManagementPage(props: Props) {
   const chip = (active: boolean) => `inline-flex min-h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 text-[13px] xl:px-2.5 font-semibold transition-colors ${active ? "bg-ink text-white" : "bg-white text-muted ring-1 ring-inset ring-ink/10 hover:text-ink"}`;
   return <main className="task-management mx-auto w-full max-w-4xl xl:max-w-6xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
     {props.tabs}
-    <header className="page-header"><h1 className="page-title shrink-0">全部任务</h1>{selecting
-      ? <div className="flex items-center gap-2"><button onClick={batchDelete} disabled={!selected.size} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-rose-600 px-3 text-sm font-semibold text-white disabled:opacity-40 sm:px-4"><Trash2 className="h-4 w-4" />删除{selected.size ? `（${selected.size}）` : ""}</button><button onClick={() => { setSelecting(false); setSelected(new Set()); }} className="min-h-10 rounded-lg border border-ink/10 bg-white px-3 text-sm font-semibold text-ink sm:px-4">完成</button></div>
-      : <button onClick={() => setSelecting(true)} className="min-h-10 rounded-lg border border-ink/10 bg-white px-3 text-sm font-semibold text-muted hover:text-ink sm:px-4">批量管理</button>}</header>
-    {selecting && <p className="-mt-2 mb-3 text-[13px] text-muted">点任务选中，可以按组全选，再点"删除"。</p>}
-    <div className="mb-5 space-y-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+    {/* 2026-11-25 重新设计（用户：全部任务还是老样子，和其他页面统一）：
+        大标题 + 概况；四张分类卡（点一下只看这一类，再点回到全部）；搜索、平时 / 假期、安排方式放在同一张白卡里 */}
+    <header className="mb-3 flex items-end justify-between gap-3 sm:mb-4">
+      <div className="min-w-0">
+        <h1 className="text-[26px] font-bold leading-9 tracking-tight text-ink sm:text-[30px]">全部任务</h1>
+        <p className="mt-0.5 text-[13px] text-muted">进行中 {active.length} 项{ended.length > 0 && ` · 已结束 ${ended.length}`}{completed.length > 0 && ` · 已完成 ${completed.length}`}</p>
+      </div>
+      {selecting
+        ? <div className="flex items-center gap-2"><button onClick={batchDelete} disabled={!selected.size} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-rose-600 px-4 text-sm font-semibold text-white disabled:opacity-40"><Trash2 className="h-4 w-4" />删除{selected.size ? `（${selected.size}）` : ""}</button><button onClick={() => { setSelecting(false); setSelected(new Set()); }} className="min-h-11 rounded-full border border-ink/10 bg-white px-4 text-sm font-semibold text-ink">完成</button></div>
+        : <button onClick={() => setSelecting(true)} className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-ink/10 bg-white px-4 text-sm font-semibold text-ink hover:bg-stone-50"><ListChecks className="h-4 w-4" />批量管理</button>}
+    </header>
+    {selecting && <p className="-mt-1 mb-3 text-[13px] text-muted">点任务选中，可以按组全选，再点"删除"。</p>}
+
+    <div className="mb-3 grid grid-cols-2 gap-2 sm:mb-4 sm:grid-cols-4 sm:gap-3">
+      {order.map((value) => {
+        const meta = CATEGORY_TILE[value];
+        const active = category === value;
+        return <button key={value} type="button" aria-pressed={active} onClick={() => setCategory(active ? "all" : value)}
+          className={`surface flex min-h-16 items-center gap-3 px-3 py-2.5 text-left transition-colors sm:px-4 ${active ? "ring-2 ring-primary/50" : "hover:bg-stone-50"}`}
+          style={active ? { backgroundColor: `${meta.color}12` } : undefined}>
+          <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ background: `${meta.color}1A`, color: meta.color }}><meta.icon className="h-5 w-5" /></span>
+          <span className="min-w-0">
+            <span className="block truncate text-[13px] font-medium text-muted">{MAIN_CATEGORY_META[value].label}</span>
+            <span className="block text-[22px] font-bold leading-7 tabular-nums text-ink">{categoryCounts[value] ?? 0}</span>
+          </span>
+        </button>;
+      })}
+    </div>
+
+    <div className="surface mb-4 space-y-2.5 p-2.5 sm:mb-5 sm:p-3">
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
         <label className="relative block min-w-0 flex-1">
           <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
           <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索任务名称" aria-label="搜索任务"
-            className="h-10 w-full rounded-lg border border-ink/10 bg-white pl-9 pr-9 text-[15px] text-ink outline-none placeholder:text-stone-400 focus:border-primary/50 [&::-webkit-search-cancel-button]:hidden" />
-          {query && <button type="button" onClick={() => setQuery("")} aria-label="清空搜索" className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-stone-400 hover:bg-stone-100 hover:text-ink"><X className="h-4 w-4" /></button>}
+            className="h-11 w-full rounded-full border border-ink/10 bg-stone-50 pl-9 pr-9 text-[15px] text-ink outline-none placeholder:text-stone-400 focus:border-primary/50 focus:bg-white [&::-webkit-search-cancel-button]:hidden" />
+          {query && <button type="button" onClick={() => setQuery("")} aria-label="清空搜索" className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-stone-400 hover:bg-stone-100 hover:text-ink"><X className="h-4 w-4" /></button>}
         </label>
-        <div className="inline-flex shrink-0 self-start rounded-lg bg-stone-100 p-0.5 sm:self-auto" role="tablist" aria-label="平时 / 假期">
+        <div className="inline-flex shrink-0 self-start rounded-full bg-stone-100 p-1 sm:self-auto" role="tablist" aria-label="平时 / 假期">
           {(["regular", "holiday", "all"] as const).map((value) => <button key={value} role="tab" aria-selected={filter === value} onClick={() => setFilterChoice(value)}
-            className={`min-h-9 rounded-md px-3 text-[13px] font-semibold ${filter === value ? "bg-white text-ink shadow-sm" : "text-muted hover:text-ink"}`}>
+            className={`min-h-9 rounded-full px-3.5 text-[13px] font-semibold ${filter === value ? "bg-white text-ink shadow-sm" : "text-muted hover:text-ink"}`}>
             {{ all: "全部", regular: "平时", holiday: "假期" }[value]}{value === currentPhase && filter !== value ? <span className="ml-1 font-medium text-stone-400">·当前</span> : ""}
           </button>)}
         </div>
       </div>
-      {/* 分类和安排方式放在同一行（2026-11-21），中间一道竖线隔开；放不下时这一行横向滑动，不换行 */}
-      <div className="-mx-3 flex items-center gap-1 overflow-x-auto px-3 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden">
-        <div className="contents" role="group" aria-label="按分类筛选">
-          {(["all", ...order] as const).map((value) => <button key={value} onClick={() => setCategory(value)} aria-pressed={category === value} className={chip(category === value)}>
-            {value === "all" ? "全部" : MAIN_CATEGORY_META[value].label}<span className={`tabular-nums ${category === value ? "text-white/70" : "text-stone-400"}`}>{categoryCounts[value] ?? 0}</span>
-          </button>)}
-        </div>
-        <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-ink/15" />
-        <div className="contents" role="group" aria-label="按安排方式筛选">
-          {(["all", "repeat", "weekly", "range", "once"] as const).map((value) => <button key={value} onClick={() => setKind(value)} aria-pressed={kind === value} className={chip(kind === value)}>
-            {value === "all" ? "全部" : KIND_LABEL[value]}<span className={`tabular-nums ${kind === value ? "text-white/70" : "text-stone-400"}`}>{kindCounts[value]}</span>
-          </button>)}
-        </div>
+      {/* 安排方式一行，放不下时横向滑动；分类改由上面的分类卡筛选 */}
+      <div className="-mx-2.5 flex items-center gap-1.5 overflow-x-auto px-2.5 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden" role="group" aria-label="按安排方式筛选">
+        <span className="mr-0.5 shrink-0 text-[13px] font-medium text-muted">安排方式</span>
+        {(["all", "repeat", "weekly", "range", "once"] as const).map((value) => <button key={value} onClick={() => setKind(value)} aria-pressed={kind === value} className={chip(kind === value)}>
+          {value === "all" ? "全部" : KIND_LABEL[value]}<span className={`tabular-nums ${kind === value ? "text-white/70" : "text-stone-400"}`}>{kindCounts[value]}</span>
+        </button>)}
+        {category !== "all" && <button onClick={() => setCategory("all")} className="ml-auto inline-flex min-h-8 shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2.5 text-[13px] font-semibold text-primary">只看{MAIN_CATEGORY_META[category].label}<X className="h-3.5 w-3.5" /></button>}
       </div>
     </div>
     {pending.length === 0 && ended.length === 0 && completed.length === 0
       ? <p className="surface px-4 py-8 text-center text-[15px] text-muted">{searching ? `没有找到“${query.trim()}”` : "这里还没有任务"}</p>
-      : <div className="space-y-5">{shownOrder.map((category) => <TaskGroup key={category} category={category} reorderable={canReorder} onReorder={reorder} tasks={pending.filter((task) => task.mainCategory === category)} {...groupProps} />)}</div>}
-    {ended.length > 0 && <section className="mt-6 rounded-lg border border-stone-100 bg-white p-3 opacity-75 shadow-card"><button onClick={() => setShowEnded(!showEnded)} className="flex w-full items-center justify-between px-1 py-2 text-sm font-semibold text-stone-500">已结束的重复任务 · {ended.length}<ChevronDown className={`h-4 w-4 transition ${showEnded || searching ? "rotate-180" : ""}`} /></button>{(showEnded || searching) && <div className="mt-2 space-y-4">{shownOrder.map((category) => <TaskGroup key={category} category={category} tasks={ended.filter((task) => task.mainCategory === category)} {...groupProps} />)}</div>}</section>}
-    {completed.length > 0 && <section className="mt-6 rounded-lg border border-stone-100 bg-white p-3 opacity-75 shadow-card"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-1 py-2 text-sm font-semibold text-stone-500">已完成任务 · {visibleCompleted.length}{!showAllDone && !searching && earlierCompletedCount > 0 ? `（另有 ${earlierCompletedCount} 项更早记录）` : ""}<ChevronDown className={`h-4 w-4 transition ${showDone || searching ? "rotate-180" : ""}`} /></button>{(showDone || searching) && <div className="mt-2 space-y-4">{shownOrder.map((category) => <TaskGroup key={category} category={category} tasks={visibleCompleted.filter((task) => task.mainCategory === category)} {...groupProps} />)}{!searching && earlierCompletedCount > 0 && <button onClick={() => setShowAllDone(!showAllDone)} className="mx-auto block rounded-lg border px-4 py-2 text-[13px] font-semibold text-stone-500">{showAllDone ? "只显示最近 30 天" : "显示更早已完成任务"}</button>}</div>}</section>}
+      : <div className="grid items-start gap-4 lg:grid-cols-2">{shownOrder.map((category) => <TaskGroup key={category} category={category} reorderable={canReorder} onReorder={reorder} tasks={pending.filter((task) => task.mainCategory === category)} {...groupProps} />)}</div>}
+    {ended.length > 0 && <section className="surface mt-4 px-3 py-1 sm:px-4"><button onClick={() => setShowEnded(!showEnded)} className="flex min-h-12 w-full items-center justify-between text-[15px] font-semibold text-ink">已结束的重复任务 · {ended.length}<ChevronDown className={`h-4 w-4 transition ${showEnded || searching ? "rotate-180" : ""}`} /></button>{(showEnded || searching) && <div className="mt-2 space-y-4">{shownOrder.map((category) => <TaskGroup key={category} category={category} tasks={ended.filter((task) => task.mainCategory === category)} {...groupProps} />)}</div>}</section>}
+    {completed.length > 0 && <section className="surface mt-3 px-3 py-1 sm:px-4"><button onClick={() => setShowDone(!showDone)} className="flex min-h-12 w-full items-center justify-between text-[15px] font-semibold text-ink">已完成任务 · {visibleCompleted.length}{!showAllDone && !searching && earlierCompletedCount > 0 ? `（另有 ${earlierCompletedCount} 项更早记录）` : ""}<ChevronDown className={`h-4 w-4 transition ${showDone || searching ? "rotate-180" : ""}`} /></button>{(showDone || searching) && <div className="mt-2 space-y-4">{shownOrder.map((category) => <TaskGroup key={category} category={category} tasks={visibleCompleted.filter((task) => task.mainCategory === category)} {...groupProps} />)}{!searching && earlierCompletedCount > 0 && <button onClick={() => setShowAllDone(!showAllDone)} className="mx-auto block rounded-lg border px-4 py-2 text-[13px] font-semibold text-stone-500">{showAllDone ? "只显示最近 30 天" : "显示更早已完成任务"}</button>}</div>}</section>}
   </main>;
 }
 
@@ -149,7 +175,7 @@ function TaskGroup({ category, tasks, selected, selecting, onToggle, onSelectGro
     ...subgroupOptions.map((option) => ({ value: option.value, label: option.label })),
     ...customValues.map((value) => ({ value, label: subCategoryLabel(category, value) })),
   ].map((group) => ({ ...group, tasks: tasks.filter((task) => task.subCategory === group.value) })).filter((group) => group.tasks.length);
-  return <section className="surface overflow-visible"><header className="flex items-center gap-2 rounded-t-lg border-b border-ink/10 bg-white px-4 py-3"><h2 className="text-base font-bold text-ink">{MAIN_CATEGORY_META[category].label}</h2><span className="text-[13px] tabular-nums text-muted">{tasks.length}</span>{selecting && <button onClick={() => onSelectGroup(tasks.map((task) => task.id))} className="ml-auto min-h-9 text-[13px] font-semibold text-primary">{tasks.every((task) => selected.has(task.id)) ? "取消本组" : "全选本组"}</button>}</header><div className="divide-y divide-ink/[0.07]">{groups.map((subgroup) => <SortableSubgroup key={subgroup.value} label={subgroup.label} tasks={subgroup.tasks} reorderable={reorderable} onReorder={onReorder} renderRow={(task, dragHandle) => <TaskRow key={task.id} task={task} selected={selected.has(task.id)} selecting={selecting} onToggle={() => onToggle(task.id)} dragHandle={dragHandle} {...props} />} />)}</div></section>;
+  return <section className="surface overflow-visible"><header className="flex items-center gap-2.5 rounded-t-lg border-b border-ink/10 bg-white px-4 py-3">{(() => { const meta = CATEGORY_TILE[category]; return meta ? <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ background: `${meta.color}1A`, color: meta.color }}><meta.icon className="h-4 w-4" /></span> : null; })()}<h2 className="text-[17px] font-bold text-ink">{MAIN_CATEGORY_META[category].label}</h2><span className="text-[13px] tabular-nums text-muted">{tasks.length}</span>{selecting && <button onClick={() => onSelectGroup(tasks.map((task) => task.id))} className="ml-auto min-h-9 text-[13px] font-semibold text-primary">{tasks.every((task) => selected.has(task.id)) ? "取消本组" : "全选本组"}</button>}</header><div className="divide-y divide-ink/[0.07]">{groups.map((subgroup) => <SortableSubgroup key={subgroup.value} label={subgroup.label} tasks={subgroup.tasks} reorderable={reorderable} onReorder={onReorder} renderRow={(task, dragHandle) => <TaskRow key={task.id} task={task} selected={selected.has(task.id)} selecting={selecting} onToggle={() => onToggle(task.id)} dragHandle={dragHandle} {...props} />} />)}</div></section>;
 }
 
 // 组内拖拽排序（与今日页同一套 useSortableList：只从手柄拖、其他行实时让位、松手立即生效）。

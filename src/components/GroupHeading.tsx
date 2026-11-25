@@ -35,7 +35,7 @@ interface Props {
 /** 分组小标题：13px 半粗、无底色，靠色点与留白分区 */
 /** 琥珀色礼物小胶囊："提前完成加 3"（本周课外作业）、"每项全部完成另外加 2"（每周练习），两处同一个样式 */
 export function RewardHint({ text }: { text: string }) {
-  return <span className="inline-flex min-w-0 items-center gap-1 rounded-full bg-sun/35 px-2 py-0.5 text-[12px] font-bold text-amber-800 sm:px-2.5 sm:text-[13px]"><Gift aria-hidden className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" strokeWidth={2.5} /><span className="truncate">{text}</span></span>;
+  return <span className="inline-flex min-w-0 items-center gap-1 rounded-full bg-sun/35 px-2 py-0.5 text-[12px] font-bold text-amber-800 desk:px-2.5 desk:text-[13px]"><Gift aria-hidden className="h-3 w-3 shrink-0 desk:h-3.5 desk:w-3.5" strokeWidth={2.5} /><span className="truncate">{text}</span></span>;
 }
 
 export function GroupHeading({ label, suffix, hint, count, dot, handle, highlight, action }: Props) {

@@ -52,14 +52,14 @@ export function PointsHeader({ ctx }: { ctx: PointsContext }) {
   return (
     <>
       <button type="button" onClick={() => setDetail(true)} data-testid="points-header" aria-label={`上周 ${lastWeek ? lastWeek.total : "没有"} 分，本周 ${summary.weekTotal} 分，点开看积分明细`}
-        className="flex min-h-9 items-stretch overflow-hidden rounded-full border border-primary/20 bg-white shadow-[0_6px_16px_-12px_rgba(43,118,86,0.8)] hover:border-primary/40 sm:min-h-11">
-        <span className="flex items-center gap-1 px-3 py-1 text-muted sm:px-4 sm:py-2">
-          <span className="text-[11px] font-medium sm:text-[12px]">上周</span>
-          <span className="text-[15px] font-bold tabular-nums text-ink sm:text-[17px]">{lastWeek ? lastWeek.total : "–"}</span><span className="text-[12px]">分</span>
+        className="flex min-h-9 items-stretch overflow-hidden rounded-full border border-primary/20 bg-white shadow-[0_6px_16px_-12px_rgba(43,118,86,0.8)] hover:border-primary/40 desk:min-h-11">
+        <span className="flex items-center gap-1 px-3 py-1 text-muted desk:px-4 desk:py-2">
+          <span className="text-[11px] font-medium desk:text-[12px]">上周</span>
+          <span className="text-[15px] font-bold tabular-nums text-ink desk:text-[17px]">{lastWeek ? lastWeek.total : "–"}</span><span className="text-[12px]">分</span>
         </span>
-        <span className="flex items-center gap-1 bg-primary px-3 py-1 text-white sm:px-4 sm:py-2">
-          <span className="text-[11px] font-medium text-white/75 sm:text-[12px]">本周</span>
-          <span className="text-[15px] font-bold tabular-nums sm:text-[17px]">{summary.weekTotal}</span><span className="text-[12px] text-white/75">分</span>
+        <span className="flex items-center gap-1 bg-primary px-3 py-1 text-white desk:px-4 desk:py-2">
+          <span className="text-[11px] font-medium text-white/75 desk:text-[12px]">本周</span>
+          <span className="text-[15px] font-bold tabular-nums desk:text-[17px]">{summary.weekTotal}</span><span className="text-[12px] text-white/75">分</span>
         </span>
       </button>
       {detail && <PointsDetailDialog ctx={ctx} onClose={() => setDetail(false)} />}

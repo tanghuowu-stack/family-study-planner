@@ -2,6 +2,7 @@ import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { HabitSection } from "../components/HabitSection";
 import { taskRepository } from "../data/taskRepository";
+import { DESK_QUERY, useMediaQuery } from "../hooks/useMediaQuery";
 import { todayKey } from "../utils/date";
 
 type CourseStats = Awaited<ReturnType<typeof taskRepository.getCourseStatistics>>;
@@ -56,6 +57,8 @@ function CourseTotals({ refreshKey }: { refreshKey: number }) {
   const [months, setMonths] = useState<CourseStats[] | null>(null);
   const [yearToDate, setYearToDate] = useState<CourseStats | null>(null);
   const [first, setFirst] = useState(() => Math.min(Math.max(thisMonth - 1, 1), 10));
+  // Mac（电脑布局）1–12 月全显示；手机、iPad 只显示三个月，‹ › 翻（2026-11-25 用户）
+  const desk = useMediaQuery(DESK_QUERY);
   useEffect(() => {
     const ranges = Array.from({ length: 12 }, (_, index) => {
       const month = index + 1;
@@ -75,9 +78,9 @@ function CourseTotals({ refreshKey }: { refreshKey: number }) {
   [...months.flatMap((stats) => stats.items), ...yearToDate.items].forEach((item) => all.set(key(item), { group: item.group, label: item.label }));
   const groups = COURSE_GROUPS.map((group) => ({ group, items: [...all.values()].filter((item) => item.group === group).sort((a, b) => (yearCount.get(key(b)) ?? 0) - (yearCount.get(key(a)) ?? 0)) })).filter((group) => group.items.length);
   if (!groups.length) return <div className="surface p-6 text-center text-sm text-muted">今年还没有课程</div>;
-  const shown = [first, first + 1, first + 2];
+  const shown = desk ? Array.from({ length: 12 }, (_, index) => index + 1) : [first, first + 1, first + 2];
   const isPlan = (month: number) => month > thisMonth;
-  const cell = "w-[3.25rem] px-1 text-right tabular-nums sm:w-20";
+  const cell = desk ? "w-14 px-1 text-right tabular-nums" : "w-[3.25rem] px-1 text-right tabular-nums sm:w-20";
   const monthValue = (month: number, value: number) => <td key={month} className={`${cell} ${month === thisMonth ? "bg-mint/40 font-bold text-ink" : isPlan(month) ? "text-stone-400" : value ? "text-ink" : "text-stone-300"}`}>{value}</td>;
   return (
     <section className="surface flex min-h-0 shrink flex-col overflow-hidden">
@@ -87,10 +90,10 @@ function CourseTotals({ refreshKey }: { refreshKey: number }) {
             <tr className="h-11 text-[12px] font-semibold text-muted sm:text-[13px]">
               <th className="border-b border-ink/[0.08] pl-3 text-left sm:pl-4">
                 <span className="flex items-center gap-1">课程
-                  <span className="ml-auto flex gap-0.5">
+                  {!desk && <span className="ml-auto flex gap-0.5">
                     <button type="button" aria-label="往前看一个月" disabled={first <= 1} onClick={() => setFirst(first - 1)} className="flex h-8 w-8 items-center justify-center rounded-full text-ink hover:bg-white disabled:text-stone-300"><ChevronLeft className="h-4 w-4" /></button>
                     <button type="button" aria-label="往后看一个月" disabled={first >= 10} onClick={() => setFirst(first + 1)} className="flex h-8 w-8 items-center justify-center rounded-full text-ink hover:bg-white disabled:text-stone-300"><ChevronRight className="h-4 w-4" /></button>
-                  </span>
+                  </span>}
                 </span>
               </th>
               {shown.map((month) => (
@@ -103,7 +106,7 @@ function CourseTotals({ refreshKey }: { refreshKey: number }) {
           </thead>
           <tbody>
             {groups.map(({ group, items }) => [
-              <tr key={group}><td colSpan={5} className="bg-[#FBFAF8] px-3 pb-1 pt-2 text-[12px] font-bold text-muted sm:px-4"><span className="inline-flex items-center gap-1.5"><span aria-hidden className="h-2 w-2 rounded-full" style={{ backgroundColor: GROUP_COLOR[group] ?? GROUP_COLOR.其他 }} />{group}</span></td></tr>,
+              <tr key={group}><td colSpan={shown.length + 2} className="bg-[#FBFAF8] px-3 pb-1 pt-2 text-[12px] font-bold text-muted sm:px-4"><span className="inline-flex items-center gap-1.5"><span aria-hidden className="h-2 w-2 rounded-full" style={{ backgroundColor: GROUP_COLOR[group] ?? GROUP_COLOR.其他 }} />{group}</span></td></tr>,
               ...items.map((item) => (
                 <tr key={key(item)} className="h-10">
                   <td className="max-w-0 truncate border-b border-ink/[0.05] pl-3 pr-2 text-ink sm:pl-4">{item.label}</td>

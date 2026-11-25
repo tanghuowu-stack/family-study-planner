@@ -410,7 +410,7 @@ function ChecklistRow({ item, animState, readOnly, unsynced, onToggle, onRetrySy
       {/* 整行可点；触屏上行高 44px，鼠标设备保持紧凑 */}
       <button type="button" role="checkbox" aria-checked={item.done} disabled={readOnly} onClick={onToggle} className="flex min-h-8 min-w-0 flex-1 items-center gap-2.5 rounded-md px-1.5 py-1 text-left hover:bg-stone-100/70 disabled:cursor-default disabled:hover:bg-transparent [@media(pointer:coarse)]:min-h-11">
         <span className={checkboxClass(animState, item.done, "sm")}><Check className="h-3.5 w-3.5" strokeWidth={3} /></span>
-        <span className={`min-w-0 flex-1 text-[14px] leading-6 sm:text-[15px] ${item.done ? "line-through" : ""}`}>{item.title}</span>
+        <span className={`min-w-0 flex-1 text-[14px] leading-6 desk:text-[15px] ${item.done ? "line-through" : ""}`}>{item.title}</span>
       </button>
       {unsynced && <UnsyncedBadge onRetry={onRetrySync} />}
     </div>

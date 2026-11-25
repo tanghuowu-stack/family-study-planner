@@ -36,11 +36,10 @@ function CardHeader({ title, hint, badge, badgeDone, completed, total }: { title
   const percentage = total === 0 ? 0 : Math.min(100, (completed / total) * 100);
   return (
     <div className="border-b border-ink/10 px-3 pb-3 pt-3.5 sm:px-4">
-      {/* 手机上提示胶囊放不下时换到标题下面一行（不截字），宽屏和标题同一行 */}
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1.5">
-        <h2 className="shrink-0 text-[17px] font-bold leading-6 text-ink">{title}</h2>
-        {hint && <span className="order-last basis-full sm:order-none sm:basis-auto">{hint}</span>}
-        {badge !== undefined && <span className={`ml-auto shrink-0 rounded-full px-2.5 py-0.5 text-[13px] font-semibold tabular-nums ${badgeDone ? "bg-primary/10 text-primary" : "bg-stone-100 text-ink"}`}>{badge}</span>}
+      <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
+        <h2 className="shrink-0 text-[15px] font-bold leading-6 text-ink sm:text-[17px]">{title}</h2>
+        {hint && <span className="min-w-0">{hint}</span>}
+        {badge !== undefined && <span className={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-[12px] font-semibold tabular-nums sm:px-2.5 sm:text-[13px] ${badgeDone ? "bg-primary/10 text-primary" : "bg-stone-100 text-ink"}`}>{badge}</span>}
       </div>
       {total > 0 && <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-stone-200/80" role="meter" aria-label={`${title}进度，已完成 ${completed}/${total}`} aria-valuemin={0} aria-valuemax={total} aria-valuenow={completed}>
         <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${percentage}%` }} />
@@ -172,7 +171,7 @@ export function DayPage(props: Props) {
   const carryKey = toDateKey(carryDate);
   const carryBase = isToday && timetable ? carryItemsFor(timetable, carryDate, getCalendarAnnotation(carryKey).holidayStatus === "休").map((item) => item.label) : [];
   const carryItems = buildCarryList(carryBase, carryReminders.pinned, carryReminders.days[carryKey]);
-  const carryLabel = `明天（周${"日一二三四五六"[carryDate.getDay()]}）`;
+  const carryLabel = "明日必带";
   const scoreById = new Map((points?.summary.weekScores ?? []).map((score) => [score.taskId, score]));
   // 当天学校作业全部做完（只看今天的学校作业，不看本周作业和提醒）→ 原来"今天的作业都做完了"一行改成"还可以再做"
   const schoolToday = daily.filter((task) => task.mainCategory === "school");
@@ -217,9 +216,9 @@ export function DayPage(props: Props) {
     <header className="page-header">
       {/* 2026-11-25：上周 / 本周积分放在表头中间（宽屏 lg 起；窄屏放在日期下面一行居中） */}
       <div className="day-header-content grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2 sm:gap-x-4 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
-        <div className="min-w-0"><div className="flex min-w-0 flex-wrap content-center items-center gap-x-2 gap-y-1"><h1 className="page-title"><span className="whitespace-nowrap">{dateLabel}</span><span className="block whitespace-nowrap sm:ml-2 sm:inline">{weekdayLabel}</span></h1>{annotationLabels.length > 0 && <span title={annotationLabels.join(" · ")} className="max-w-full truncate text-[13px] font-semibold text-amber-700">{annotationLabels.join(" · ")}</span>}{annotation.holidayStatus && <span className={`shrink-0 rounded px-1.5 py-0.5 text-[13px] font-bold leading-4 ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{annotation.holidayStatus}</span>}</div></div>
+        <div className="min-w-0"><div className="flex min-w-0 flex-wrap content-center items-center gap-x-2 gap-y-1"><h1 className="page-title day-title"><span className="hidden whitespace-nowrap sm:inline">{dateLabel}</span><span className="whitespace-nowrap sm:hidden">{dateLabel.replace(/^\d{4}年/, "")}</span><span className="day-title-weekday ml-1.5 whitespace-nowrap sm:ml-2">{weekdayLabel}</span></h1>{annotationLabels.length > 0 && <span title={annotationLabels.join(" · ")} className="max-w-full truncate text-[13px] font-semibold text-amber-700">{annotationLabels.join(" · ")}</span>}{annotation.holidayStatus && <span className={`shrink-0 rounded px-1.5 py-0.5 text-[13px] font-bold leading-4 ${annotation.holidayStatus === "休" ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>{annotation.holidayStatus}</span>}</div></div>
         {pointsOn && points && <div className="col-span-2 row-start-2 justify-self-center lg:col-span-1 lg:col-start-2 lg:row-start-1"><PointsHeader ctx={points} /></div>}
-        <div className="day-header-actions flex flex-nowrap items-center gap-1 justify-self-end sm:gap-2 lg:col-start-3 lg:row-start-1"><button onClick={() => move(-1)} aria-label="前一天" title="前一天" className={navButton}><ChevronLeft className="h-5 w-5" /></button><button onClick={() => props.onDateChange(todayKey())} aria-label={isToday ? "今天" : "回到今天"} title="回到今天" disabled={isToday} className={`h-8 w-20 shrink-0 rounded-lg border text-sm font-bold transition-colors sm:h-10 sm:w-20 ${isToday ? "border-primary bg-primary text-white" : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"}`}>今天</button><button onClick={() => move(1)} aria-label="后一天" title="后一天" className={navButton}><ChevronRight className="h-5 w-5" /></button><button onClick={props.onOpenMonth} aria-label="打开月视图" title="打开月视图" className={`${navButton} hidden sm:flex`}><CalendarDays className="h-5 w-5" /></button><button onClick={props.onAddTask} aria-label="新建当日任务" title="新建任务" className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-alert text-white hover:bg-[#cf5b40] desk:flex desk:h-10 desk:w-10"><Plus className="h-5 w-5" /></button></div>
+        <div className="day-header-actions flex flex-nowrap items-center gap-1 justify-self-end sm:gap-2 lg:col-start-3 lg:row-start-1"><button onClick={() => move(-1)} aria-label="前一天" title="前一天" className={navButton}><ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" /></button><button onClick={() => props.onDateChange(todayKey())} aria-label={isToday ? "今天" : "回到今天"} title="回到今天" disabled={isToday} className={`h-8 w-14 shrink-0 rounded-lg border text-[13px] font-bold transition-colors sm:h-10 sm:w-20 sm:text-sm ${isToday ? "border-primary bg-primary text-white" : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"}`}>今天</button><button onClick={() => move(1)} aria-label="后一天" title="后一天" className={navButton}><ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" /></button><button onClick={props.onOpenMonth} aria-label="打开月视图" title="打开月视图" className={`${navButton} hidden sm:flex`}><CalendarDays className="h-5 w-5" /></button><button onClick={props.onAddTask} aria-label="新建当日任务" title="新建任务" className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-alert text-white hover:bg-[#cf5b40] desk:flex desk:h-10 desk:w-10"><Plus className="h-5 w-5" /></button></div>
       </div>
     </header>
     {!isToday && <div role="status" className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-sun/60 bg-sun/20 px-3 py-2 sm:px-4"><p className="min-w-0 text-sm font-semibold text-ink">正在看 {formatCompactDate(props.date)}（{relativeDayLabel(props.date)}），不是今天</p><button onClick={() => props.onDateChange(todayKey())} className="h-9 shrink-0 rounded-lg bg-primary px-3 text-sm font-bold text-white [@media(pointer:coarse)]:h-11">回到今天</button></div>}
@@ -228,20 +227,20 @@ export function DayPage(props: Props) {
         窄屏依次排下来：逾期、家庭作业、每周练习、已完成——两栏外壳在窄屏是 display:contents，靠 order 排序 */}
     {/* 明天要带（2026-11-25）：课表里明天高亮的课 + 手动补充 − 删掉的；最后一个笔图标改那一天的（补充或删除） */}
     {isToday && timetable && (
-      <div data-testid="carry-reminder" className="mb-3 flex min-h-11 flex-wrap items-center gap-x-2.5 gap-y-1.5 rounded-lg border border-[#3F8F86]/25 bg-[#EAF4F2] px-3 py-2 sm:mb-4 sm:px-4">
-        <button type="button" onClick={props.onOpenTimetable} className="flex items-center gap-2 text-[14px] font-bold text-[#2D6F68] hover:underline" title="打开课表"><Backpack aria-hidden className="h-[18px] w-[18px]" />{carryLabel}要带</button>
+      <div data-testid="carry-reminder" className="mb-3 flex min-h-10 flex-wrap items-center gap-x-2 gap-y-1.5 rounded-lg border border-[#3F8F86]/25 bg-[#EAF4F2] px-3 py-1.5 sm:mb-4 sm:min-h-11 sm:gap-x-2.5 sm:px-4 sm:py-2">
+        <button type="button" onClick={props.onOpenTimetable} className="flex items-center gap-1.5 text-[13px] font-bold text-[#2D6F68] hover:underline sm:gap-2 sm:text-[14px]" title="打开课表"><Backpack aria-hidden className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />{carryLabel}</button>
         {carryItems.length === 0 && <span className="text-[13px] text-muted">没有要带的</span>}
         {carryItems.map((item) => (
-          <span key={item.label} className="relative rounded-full bg-white px-2.5 py-0.5 text-[13px] font-semibold text-ink ring-1 ring-inset ring-[#3F8F86]/25" title={item.pinned ? "常驻：每天都提醒" : undefined}>
+          <span key={item.label} className="relative rounded-full bg-white px-2 py-0.5 text-[12px] font-semibold sm:px-2.5 sm:text-[13px] text-ink ring-1 ring-inset ring-[#3F8F86]/25" title={item.pinned ? "常驻：每天都提醒" : undefined}>
             {item.label}
             {item.pinned && <span aria-label="常驻" className="absolute -right-1 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-white ring-2 ring-[#EAF4F2]"><Pin className="h-2.5 w-2.5" strokeWidth={3} /></span>}
           </span>
         ))}
         <button type="button" onClick={() => setCarryEditing(true)} aria-label="补充或删除明天要带的东西" title="补充或删除"
-          className="-my-1 ml-auto flex h-9 w-9 items-center justify-center rounded-full text-[#2D6F68] hover:bg-white/70"><Pencil className="h-4 w-4" /></button>
+          className="-my-1 ml-auto flex h-8 w-8 items-center justify-center rounded-full text-[#2D6F68] hover:bg-white/70 sm:h-9 sm:w-9"><Pencil className="h-4 w-4" /></button>
       </div>
     )}
-    {carryEditing && <CarryEditor title={`${carryLabel}要带`} items={carryItems} base={carryBase} onClose={() => setCarryEditing(false)}
+    {carryEditing && <CarryEditor title={carryLabel} items={carryItems} base={carryBase} onClose={() => setCarryEditing(false)}
       onSave={async (edited) => { const split = splitCarryEdit(carryBase, edited); setCarryReminders(await saveCarryReminders(carryKey, split.day, split.pinned, todayKey())); setCarryEditing(false); }} />}
     {pointsOn && points && <WeekSummaryBanner ctx={points} />}
     <div ref={swipeRef} className={`flex flex-col gap-4 ${hasPractice ? "lg:grid lg:grid-cols-2 lg:items-stretch" : ""}`}>
@@ -249,13 +248,13 @@ export function DayPage(props: Props) {
         {overdueShown.length > 0 && <section className="surface overflow-visible border-alert/35 order-1 lg:order-none"><div className="flex items-center justify-between border-b border-alert/20 bg-alert/[0.06] px-3 py-2.5 sm:px-4"><h2 className="text-base font-bold text-alert">逾期未完成</h2><span className="text-[13px] font-semibold tabular-nums text-alert">{overdue.length}</span></div>{overdueShown.map((task) => renderTask(task))}</section>}
         <section className="surface order-2 overflow-visible lg:order-none lg:flex-1">
           {/* 2026-11-25 用户："今日任务"改名"家庭作业"（看别的日子也叫"家庭作业"） */}
-          <CardHeader title="家庭作业" completed={progress.completed} total={progress.total} badge={progress.total > 0 ? (remaining === 0 ? "全部完成" : `还剩 ${remaining} 项`) : undefined} badgeDone={remaining === 0} />
+          <CardHeader title="学校家庭作业" completed={progress.completed} total={progress.total} badge={progress.total > 0 ? (remaining === 0 ? "全部完成" : `还剩 ${remaining} 项`) : undefined} badgeDone={remaining === 0} />
           {pending.length > 0 && <GroupedTaskGrid tasks={pending} renderTask={renderTask} order={order} onReorder={updateOrder} onTaskReorder={reorderTasks} />}
           {moreLine && leftPending > 0
             ? <div className={pending.length > 0 ? "border-t border-ink/[0.07]" : ""}>{moreLine}</div>
             : pending.length === 0 && weekPending.length > 0 && done.length > 0 && <p className="px-4 py-3 text-[15px] font-semibold text-primary">{isToday ? "今天" : "这一天"}的作业都做完了</p>}
           {weekPending.length > 0 && <div className={pending.length > 0 || done.length > 0 ? "border-t border-ink/[0.07]" : ""}>
-            <GroupHeading label="本周课外作业" hint={pointsOn ? "提前完成加 3" : undefined} dot={NEUTRAL_DOT} count={weekPending.length} />
+            <GroupHeading label="本周课外作业" hint={pointsOn ? "提前完成加3分" : undefined} dot={NEUTRAL_DOT} count={weekPending.length} />
             <SortableTaskList tasks={weekPending} renderTask={renderTask} onReorder={reorderTasks} />
           </div>}
           {leftPending === 0 && (isToday && allDone.length > 0 && overdueShown.length === 0 ? <>{<AllDoneCelebration count={allDone.length} />}{moreLine && moreText && <div className="border-t border-ink/[0.07]">{moreLine}</div>}</> : allDone.length > 0 ? <p className="px-4 py-4 text-[15px] font-semibold text-primary">这一天的事都做完了</p> : <div className="p-3"><EmptyState compact /></div>)}
@@ -264,7 +263,7 @@ export function DayPage(props: Props) {
       </div>
       {hasPractice && <div className="contents lg:flex lg:min-w-0 lg:flex-col">
         <section aria-label="每周练习" className="surface order-3 overflow-visible lg:order-none lg:flex-1">
-          <CardHeader title="每周练习" hint={pointsOn ? <RewardHint text="每项全部完成另外加 2" /> : undefined} completed={practice.done} total={practice.target} badgeDone={practiceAllDone}
+          <CardHeader title="每周练习" hint={pointsOn ? <RewardHint text="每项全完成另加3分" /> : undefined} completed={practice.done} total={practice.target} badgeDone={practiceAllDone}
             // 2026-11-25：分数已在表头"上周 / 本周"胶囊里，这里只写进度（各项本周已做次数之和 / 目标之和）
             badge={<span title="本周已做次数 / 本周目标次数（各项加起来）">{practiceAllDone ? `本周都做够了 ${practice.done}/${practice.target}` : `已做 ${practice.done}/${practice.target} 次`}</span>} />
           <SortableTaskList tasks={timesPending} renderTask={renderTask} onReorder={reorderTasks} />
@@ -407,35 +406,33 @@ function CarryEditor({ title, items, base, onClose, onSave }: { title: string; i
     setDraft("");
   };
   const togglePin = (label: string) => setList(list.map((item) => item.label === label ? { ...item, pinned: !item.pinned } : item));
-  const changedFromTimetable = list.some((item) => !item.fromTimetable) || base.some((label) => !list.some((item) => item.label === label));
+  // 2026-11-25 用户：不要解释文字；自己加的东西名字后面一个图钉，点亮 = 常驻（每天都提醒），点灭 = 只这一天
   return (
-    <Sheet title={title} description="课表里勾了“高亮显示”的课自动列出；自己加的可以设成📌常驻（每天都提醒）或只提醒明天。" onClose={onClose}>
+    <Sheet title={title} onClose={onClose}>
       <div className="space-y-3">
-        {list.length === 0 ? <p className="text-sm text-muted">现在没有要带的。</p> : (
+        {list.length > 0 && (
           <ul className="space-y-1.5">
             {list.map((item) => (
-              <li key={item.label} className="flex min-h-11 items-center gap-2 rounded-lg bg-white px-3 ring-1 ring-inset ring-ink/10">
-                <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-ink">{item.label}</span>
-                {item.fromTimetable ? <span className="shrink-0 text-[12px] text-muted">课表</span> : (
-                  <button type="button" onClick={() => togglePin(item.label)} aria-pressed={item.pinned} title={item.pinned ? "常驻：每天都提醒（点一下改成仅明天）" : "仅明天（点一下改成常驻）"}
-                    className={`inline-flex min-h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-[12px] font-semibold ${item.pinned ? "bg-amber-100 text-amber-800" : "bg-stone-100 text-muted"}`}>
-                    <Pin className="h-3.5 w-3.5" />{item.pinned ? "常驻" : "仅明天"}
+              <li key={item.label} className="flex min-h-11 items-center gap-1 rounded-lg bg-white pl-3 pr-1 ring-1 ring-inset ring-ink/10">
+                <span className="min-w-0 truncate text-[15px] font-semibold text-ink">{item.label}</span>
+                {!item.fromTimetable && (
+                  <button type="button" onClick={() => togglePin(item.label)} aria-pressed={item.pinned} aria-label={item.pinned ? `取消常驻 ${item.label}` : `设为常驻 ${item.label}`}
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${item.pinned ? "text-amber-500" : "text-stone-300 hover:text-muted"}`}>
+                    <Pin className="h-4 w-4" fill={item.pinned ? "currentColor" : "none"} />
                   </button>
                 )}
+                <span className="flex-1" />
                 <button type="button" aria-label={`删掉 ${item.label}`} onClick={() => setList(list.filter((value) => value.label !== item.label))} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted hover:bg-rose-50 hover:text-rose-700"><X className="h-4 w-4" /></button>
               </li>
             ))}
           </ul>
         )}
-        <div className="space-y-2">
-          <input value={draft} maxLength={20} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); add(false); } }} placeholder="加一样，例如：水杯、跳绳" aria-label="加一样要带的东西"
-            className="min-h-11 w-full rounded-lg border border-ink/15 bg-white px-3 text-[15px] text-ink outline-none focus:border-primary" />
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => add(false)} disabled={!draft.trim()} className="min-h-11 rounded-lg bg-white text-sm font-semibold text-primary ring-1 ring-inset ring-primary/30 disabled:opacity-40">加，仅明天</button>
-            <button type="button" onClick={() => add(true)} disabled={!draft.trim()} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-amber-50 text-sm font-semibold text-amber-800 ring-1 ring-inset ring-amber-300 disabled:opacity-40"><Pin className="h-4 w-4" />加，每天都带</button>
-          </div>
+        <input value={draft} maxLength={20} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); add(false); } }} placeholder="加一样" aria-label="加一样要带的东西"
+          className="min-h-11 w-full rounded-lg border border-ink/15 bg-white px-3 text-[15px] text-ink outline-none focus:border-primary" />
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" onClick={() => add(false)} disabled={!draft.trim()} className="min-h-11 rounded-lg bg-white text-sm font-semibold text-primary ring-1 ring-inset ring-primary/30 disabled:opacity-40">加，仅明天</button>
+          <button type="button" onClick={() => add(true)} disabled={!draft.trim()} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-amber-50 text-sm font-semibold text-amber-800 ring-1 ring-inset ring-amber-300 disabled:opacity-40"><Pin className="h-4 w-4" />加，每天都带</button>
         </div>
-        {changedFromTimetable && <button type="button" onClick={() => setList(base.map((label) => ({ label, pinned: false, fromTimetable: true })))} className="text-[13px] font-semibold text-muted hover:text-ink">恢复成课表里的（常驻的也去掉）</button>}
         <button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await onSave(list); } finally { setBusy(false); } }} className="min-h-11 w-full rounded-lg bg-primary text-sm font-bold text-white hover:bg-[#256a4d] disabled:opacity-50">保存</button>
       </div>
     </Sheet>

@@ -1,4 +1,4 @@
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { HabitSection } from "../components/HabitSection";
 import { taskRepository } from "../data/taskRepository";
@@ -29,10 +29,10 @@ export function StatsPage({ refreshKey, tab, tabs }: { refreshKey: number; tab: 
   return <main className="fit-screen mx-auto w-full max-w-5xl lg:max-w-none xl:max-w-6xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">
     {tabs}
     {tab === "habits" && <HabitSection />}
-    {tab === "courses" && <div className="fit-fill flex flex-col gap-2 desk:gap-4">
+    {tab === "courses" && <div className="fit-fill flex min-h-0 flex-col gap-2 desk:gap-4">
       <CourseTotals refreshKey={refreshKey} />
       <section className="surface shrink-0 px-3 py-0.5 sm:px-5">
-        <button onClick={() => setShowCustom(!showCustom)} aria-expanded={showCustom} className="flex min-h-12 w-full items-center gap-1 text-[14px] font-semibold text-ink">按时间段统计<span className="ml-1 text-[13px] font-normal text-muted">自己选开始和结束日期</span><ChevronDown className={`ml-auto h-4 w-4 text-muted transition ${showCustom ? "rotate-180" : ""}`} /></button>
+        <button onClick={() => setShowCustom(!showCustom)} aria-expanded={showCustom} className="flex min-h-12 w-full items-center gap-1 text-[14px] font-semibold text-ink">按时间段统计<ChevronDown className={`ml-auto h-4 w-4 text-muted transition ${showCustom ? "rotate-180" : ""}`} /></button>
         {showCustom && <><div className="mt-1 flex flex-wrap items-end gap-2"><label className="text-[13px] text-muted">开始日期<input type="date" value={courseStart} onChange={(event) => setCourseStart(event.target.value)} className="mt-1 block min-h-11 rounded-lg border px-2.5 text-sm text-stone-700" /></label><label className="text-[13px] text-muted">结束日期<input type="date" value={courseEnd} onChange={(event) => setCourseEnd(event.target.value)} className="mt-1 block min-h-11 rounded-lg border px-2.5 text-sm text-stone-700" /></label><button onClick={countCourses} className="min-h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-white">统计</button></div>{message && <p role="alert" className="mt-3 text-sm text-rose-700">{message}</p>}{courseStats && <CourseStatistics data={courseStats} />}<div className="h-3" /></>}
       </section>
     </div>}
@@ -44,61 +44,86 @@ const COURSE_GROUPS = ["语文", "数学", "英语", "兴趣班", "其他"];
 const GROUP_COLOR: Record<string, string> = { 语文: "#D96A52", 数学: "#5868C8", 英语: "#9364C7", 兴趣班: "#2B7656", 其他: "#8A948F" };
 
 /**
- * 上课（2026-11-25 用户："统计下的上课页面也非常丑"，重新设计）：
- * - 三张概览卡：本月几节、今年几节、今年上得最多的课；
- * - 每个分组一张卡（语文 / 数学 / 英语 / 兴趣班 / 其他，左上学科色点），每门课一行：课名、今年节数条形（按全年最多那门的比例）、
- *   右边“本月 N 节”和“今年 N 节”；本月没上的本月数字变灰。宽屏两列。
- * 都算到今天为止（含今天），口径同 getCourseStatistics（按实际排到的节数，取消 / 顺延的不算、顺延到的那天算）。
+ * 上课（2026-11-25 第三版，用户：彩色横条、每项"11月多少节、今年多少节"太乱）：一张按月的表。
+ * 行 = 课程（按 语文 / 数学 / 英语 / 兴趣班 / 其他 分组），列 = 三个月（默认上个月、这个月、下个月）+ 本年合计；
+ * 表头 ‹ › 在今年 1–12 月里左右翻。过去的月份是实际上了几节；这个月算到今天；以后的月份是任务里排了几节（标"计划"，灰字）。
+ * 本年合计 = 今年 1 月 1 日到今天实际上的。口径同 getCourseStatistics（取消 / 顺延的不算、顺延到的那天算）。
  */
 function CourseTotals({ refreshKey }: { refreshKey: number }) {
-  const [data, setData] = useState<{ month: CourseStats; year: CourseStats } | null>(null);
-  useEffect(() => {
-    const today = todayKey();
-    void Promise.all([taskRepository.getCourseStatistics(`${today.slice(0, 7)}-01`, today), taskRepository.getCourseStatistics(`${today.slice(0, 4)}-01-01`, today)])
-      .then(([month, year]) => setData({ month, year }));
-  }, [refreshKey]);
-  if (!data) return null;
   const today = todayKey();
-  const monthName = `${Number(today.slice(5, 7))}月`;
-  const monthCount = new Map(data.month.items.map((item) => [`${item.group}:${item.label}`, item.count]));
-  const groups = COURSE_GROUPS.map((group) => ({ group, items: data.year.items.filter((item) => item.group === group).sort((a, b) => b.count - a.count) })).filter((group) => group.items.length);
+  const year = today.slice(0, 4);
+  const thisMonth = Number(today.slice(5, 7));
+  const [months, setMonths] = useState<CourseStats[] | null>(null);
+  const [yearToDate, setYearToDate] = useState<CourseStats | null>(null);
+  const [first, setFirst] = useState(() => Math.min(Math.max(thisMonth - 1, 1), 10));
+  useEffect(() => {
+    const ranges = Array.from({ length: 12 }, (_, index) => {
+      const month = index + 1;
+      const start = `${year}-${String(month).padStart(2, "0")}-01`;
+      const last = new Date(Number(year), month, 0).getDate();
+      const end = month === thisMonth ? today : `${year}-${String(month).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
+      return [start, end] as const;
+    });
+    void Promise.all([...ranges.map(([start, end]) => taskRepository.getCourseStatistics(start, end)), taskRepository.getCourseStatistics(`${year}-01-01`, today)])
+      .then((results) => { setMonths(results.slice(0, 12)); setYearToDate(results[12]); });
+  }, [refreshKey, today]);
+  if (!months || !yearToDate) return null;
+  const key = (item: { group: string; label: string }) => `${item.group}:${item.label}`;
+  const counts = months.map((stats) => new Map(stats.items.map((item) => [key(item), item.count])));
+  const yearCount = new Map(yearToDate.items.map((item) => [key(item), item.count]));
+  const all = new Map<string, { group: string; label: string }>();
+  [...months.flatMap((stats) => stats.items), ...yearToDate.items].forEach((item) => all.set(key(item), { group: item.group, label: item.label }));
+  const groups = COURSE_GROUPS.map((group) => ({ group, items: [...all.values()].filter((item) => item.group === group).sort((a, b) => (yearCount.get(key(b)) ?? 0) - (yearCount.get(key(a)) ?? 0)) })).filter((group) => group.items.length);
   if (!groups.length) return <div className="surface p-6 text-center text-sm text-muted">今年还没有课程</div>;
-  const top = [...data.year.items].sort((a, b) => b.count - a.count)[0];
-  const max = Math.max(...data.year.items.map((item) => item.count), 1);
-  const tile = "surface min-w-0 px-3 py-2 desk:p-4";
-  return <>
-    <div className="grid shrink-0 grid-cols-3 gap-2 sm:gap-3">
-      <div className={tile}><p className="text-[13px] font-medium text-muted">{monthName}上课</p><p className="mt-0.5 text-[20px] font-bold leading-7 tabular-nums text-primary desk:mt-1.5 desk:text-[28px] desk:leading-8">{data.month.total}<span className="text-[15px] font-semibold text-muted"> 节</span></p><p className="mt-1 truncate text-[12px] text-muted sm:text-[13px]">截至 {Number(today.slice(5, 7))}月{Number(today.slice(8))}日</p></div>
-      <div className={tile}><p className="text-[13px] font-medium text-muted">{today.slice(0, 4)}年</p><p className="mt-0.5 text-[20px] font-bold leading-7 tabular-nums text-ink desk:mt-1.5 desk:text-[28px] desk:leading-8">{data.year.total}<span className="text-[15px] font-semibold text-muted"> 节</span></p><p className="mt-1 truncate text-[12px] text-muted sm:text-[13px]">{data.year.items.length} 门课</p></div>
-      <div className={tile}><p className="text-[13px] font-medium text-muted">上得最多</p><p className="mt-0.5 truncate text-[16px] font-bold leading-7 text-ink desk:mt-1.5 desk:text-[20px] desk:leading-8" title={top.label}>{top.label}</p><p className="mt-1 truncate text-[12px] text-muted sm:text-[13px]">今年 {top.count} 节</p></div>
-    </div>
-    <div className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto sm:grid-cols-2 desk:gap-4 desk:overflow-visible">
-      {groups.map(({ group, items }) => {
-        const color = GROUP_COLOR[group] ?? GROUP_COLOR.其他;
-        const groupMonth = items.reduce((sum, item) => sum + (monthCount.get(`${item.group}:${item.label}`) ?? 0), 0);
-        const groupYear = items.reduce((sum, item) => sum + item.count, 0);
-        return <section key={group} className="surface overflow-hidden">
-          <header className="flex items-center gap-2 border-b border-ink/[0.07] px-3 py-2 sm:px-4 desk:py-3">
-            <span aria-hidden className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
-            <h3 className="text-[15px] font-bold text-ink">{group}</h3>
-            <span className="ml-auto text-[13px] tabular-nums text-muted">{monthName} <span className="font-semibold text-ink">{groupMonth}</span> · 今年 <span className="font-semibold text-ink">{groupYear}</span> 节</span>
-          </header>
-          <ul className="divide-y divide-ink/[0.05]">
-            {items.map((item) => {
-              const month = monthCount.get(`${item.group}:${item.label}`) ?? 0;
-              // 一行：课名、条形（按全年最多那门的比例）、本月、今年（2026-11-25 手机上收紧，一门课一行）
-              return <li key={item.label} className="flex min-h-9 items-center gap-2 px-3 py-1 sm:px-4 desk:min-h-11">
-                <span className="w-[6.5rem] shrink-0 truncate text-[14px] font-medium text-ink desk:w-32 desk:text-[15px]">{item.label}</span>
-                <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-stone-100"><span className="block h-full rounded-full" style={{ width: `${(item.count / max) * 100}%`, backgroundColor: color, opacity: 0.75 }} /></span>
-                <span className={`w-[3.25rem] shrink-0 text-right text-[13px] tabular-nums ${month ? "text-ink" : "text-stone-300"}`}>{monthName} <span className="font-bold">{month}</span></span>
-                <span className="w-[3.75rem] shrink-0 text-right text-[13px] tabular-nums text-muted">今年 <span className="font-bold text-ink">{item.count}</span></span>
-              </li>;
-            })}
-          </ul>
-        </section>;
-      })}
-    </div>
-  </>;
+  const shown = [first, first + 1, first + 2];
+  const isPlan = (month: number) => month > thisMonth;
+  const cell = "w-[3.25rem] px-1 text-right tabular-nums sm:w-20";
+  const monthValue = (month: number, value: number) => <td key={month} className={`${cell} ${month === thisMonth ? "bg-mint/40 font-bold text-ink" : isPlan(month) ? "text-stone-400" : value ? "text-ink" : "text-stone-300"}`}>{value}</td>;
+  return (
+    <section className="surface flex min-h-0 shrink flex-col overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-auto">
+        <table className="w-full border-separate border-spacing-0 text-[14px] sm:text-[15px]">
+          <thead className="sticky top-0 z-10 bg-[#F7F6F3]">
+            <tr className="h-11 text-[12px] font-semibold text-muted sm:text-[13px]">
+              <th className="border-b border-ink/[0.08] pl-3 text-left sm:pl-4">
+                <span className="flex items-center gap-1">课程
+                  <span className="ml-auto flex gap-0.5">
+                    <button type="button" aria-label="往前看一个月" disabled={first <= 1} onClick={() => setFirst(first - 1)} className="flex h-8 w-8 items-center justify-center rounded-full text-ink hover:bg-white disabled:text-stone-300"><ChevronLeft className="h-4 w-4" /></button>
+                    <button type="button" aria-label="往后看一个月" disabled={first >= 10} onClick={() => setFirst(first + 1)} className="flex h-8 w-8 items-center justify-center rounded-full text-ink hover:bg-white disabled:text-stone-300"><ChevronRight className="h-4 w-4" /></button>
+                  </span>
+                </span>
+              </th>
+              {shown.map((month) => (
+                <th key={month} className={`${cell} border-b border-ink/[0.08] ${month === thisMonth ? "bg-mint/60 text-primary" : ""}`}>
+                  {month}月{isPlan(month) && <span className="block text-[10px] font-medium leading-3 text-stone-400">计划</span>}
+                </th>
+              ))}
+              <th className="w-16 whitespace-nowrap border-b border-l border-ink/[0.08] px-2 text-right text-ink sm:w-24 sm:px-4">本年合计</th>
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map(({ group, items }) => [
+              <tr key={group}><td colSpan={5} className="bg-[#FBFAF8] px-3 pb-1 pt-2 text-[12px] font-bold text-muted sm:px-4"><span className="inline-flex items-center gap-1.5"><span aria-hidden className="h-2 w-2 rounded-full" style={{ backgroundColor: GROUP_COLOR[group] ?? GROUP_COLOR.其他 }} />{group}</span></td></tr>,
+              ...items.map((item) => (
+                <tr key={key(item)} className="h-10">
+                  <td className="max-w-0 truncate border-b border-ink/[0.05] pl-3 pr-2 text-ink sm:pl-4">{item.label}</td>
+                  {shown.map((month) => monthValue(month, counts[month - 1].get(key(item)) ?? 0))}
+                  <td className="border-b border-l border-ink/[0.05] px-2 text-right font-bold tabular-nums text-ink sm:px-4">{yearCount.get(key(item)) ?? 0}</td>
+                </tr>
+              )),
+            ])}
+          </tbody>
+          <tfoot className="sticky bottom-0 bg-white">
+            <tr className="h-11 font-bold">
+              <td className="border-t border-ink/10 pl-3 text-ink sm:pl-4">合计</td>
+              {shown.map((month) => <td key={month} className={`${cell} border-t border-ink/10 ${month === thisMonth ? "bg-mint/40 text-ink" : isPlan(month) ? "text-stone-400" : "text-ink"}`}>{months[month - 1].total}</td>)}
+              <td className="border-l border-t border-ink/10 px-2 text-right tabular-nums text-primary sm:px-4">{yearToDate.total}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+  );
 }
 
 function CourseStatistics({ data }: { data: CourseStats }) {

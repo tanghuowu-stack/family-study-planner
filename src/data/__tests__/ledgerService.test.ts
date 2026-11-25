@@ -45,7 +45,7 @@ beforeEach(async () => {
 });
 
 describe("练习奖励：结算后待转账，家长点已转账才入账", () => {
-  it("1. 1 分 = 1 元：上周 8 分练习 + 2 分奖励 → 待转账 10 元；孩子不能确认，家长确认后进零钱，不能重复入账", async () => {
+  it("1. 1 分 = 1 元：上周 9 分练习（达标 +3）+ 2 分奖励 → 待转账 11 元；孩子不能确认，家长确认后进零钱，不能重复入账", async () => {
     await taskRepository.create(practice({ weeklyLog: { "2026-11-23": 1, "2026-11-24": 1, "2026-11-25": 1 } }));
     vi.setSystemTime(new Date("2026-11-25T12:00:00+08:00"));
     await addBonus(2, "主动整理书包", undefined, "2026-11-25");
@@ -53,15 +53,15 @@ describe("练习奖励：结算后待转账，家长点已转账才入账", () =
     expect(await settlePendingWeeks(await loadPointsContext(TODAY), TODAY)).toBe(true);
 
     let ctx = await loadLedgerContext(TODAY);
-    expect(ctx.pending.map((item) => [item.id, item.amountCents])).toEqual([["allowance-2026-11-23", 1000]]);
+    expect(ctx.pending.map((item) => [item.id, item.amountCents])).toEqual([["allowance-2026-11-23", 1100]]);
     expect(ctx.balances).toEqual({ cash: 0, savings: 0 });
 
     await expect(confirmTransfer("allowance-2026-11-23", child)).rejects.toThrow("只有家长");
     await confirmTransfer("allowance-2026-11-23", parent);
     ctx = await loadLedgerContext(TODAY);
     expect(ctx.pending).toEqual([]);
-    expect(ctx.balances.cash).toBe(1000);
-    expect(ctx.month.incomeCents).toBe(1000);
+    expect(ctx.balances.cash).toBe(1100);
+    expect(ctx.month.incomeCents).toBe(1100);
     await expect(confirmTransfer("allowance-2026-11-23", parent)).rejects.toThrow("已经入账");
   });
 
@@ -71,7 +71,7 @@ describe("练习奖励：结算后待转账，家长点已转账才入账", () =
     await taskRepository.writeWeeklyLog(task.id, "2026-11-26", 1); // 家长在 Mac 上补勾上周
     await addBonus(5, "结算后才加", undefined, "2026-11-27");
     const ctx = await loadLedgerContext(TODAY);
-    expect(ctx.pending.map((item) => item.amountCents)).toEqual([800]);
+    expect(ctx.pending.map((item) => item.amountCents)).toEqual([900]);
   });
 });
 

@@ -52,14 +52,14 @@ export function PointsHeader({ ctx }: { ctx: PointsContext }) {
   return (
     <>
       <button type="button" onClick={() => setDetail(true)} data-testid="points-header" aria-label={`上周 ${lastWeek ? lastWeek.total : "没有"} 分，本周 ${summary.weekTotal} 分，点开看积分明细`}
-        className="flex min-h-11 items-stretch overflow-hidden rounded-full border border-primary/20 bg-white shadow-[0_6px_16px_-12px_rgba(43,118,86,0.8)] hover:border-primary/40">
-        <span className="flex items-baseline gap-1 px-3.5 py-2 text-muted sm:px-4">
-          <span className="text-[12px] font-medium">上周</span>
-          <span className="text-[17px] font-bold tabular-nums text-ink">{lastWeek ? lastWeek.total : "–"}</span><span className="text-[12px]">分</span>
+        className="flex min-h-9 items-stretch overflow-hidden rounded-full border border-primary/20 bg-white shadow-[0_6px_16px_-12px_rgba(43,118,86,0.8)] hover:border-primary/40 sm:min-h-11">
+        <span className="flex items-center gap-1 px-3 py-1 text-muted sm:px-4 sm:py-2">
+          <span className="text-[11px] font-medium sm:text-[12px]">上周</span>
+          <span className="text-[15px] font-bold tabular-nums text-ink sm:text-[17px]">{lastWeek ? lastWeek.total : "–"}</span><span className="text-[12px]">分</span>
         </span>
-        <span className="flex items-baseline gap-1 bg-primary px-3.5 py-2 text-white sm:px-4">
-          <span className="text-[12px] font-medium text-white/75">本周</span>
-          <span className="text-[17px] font-bold tabular-nums">{summary.weekTotal}</span><span className="text-[12px] text-white/75">分</span>
+        <span className="flex items-center gap-1 bg-primary px-3 py-1 text-white sm:px-4 sm:py-2">
+          <span className="text-[11px] font-medium text-white/75 sm:text-[12px]">本周</span>
+          <span className="text-[15px] font-bold tabular-nums sm:text-[17px]">{summary.weekTotal}</span><span className="text-[12px] text-white/75">分</span>
         </span>
       </button>
       {detail && <PointsDetailDialog ctx={ctx} onClose={() => setDetail(false)} />}

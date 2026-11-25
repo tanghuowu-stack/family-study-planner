@@ -10,7 +10,7 @@ import type { Task } from "../types/task";
 import { getWeekStartKey, todayKey, toLocalDateKey } from "../utils/date";
 import { isWeekPlanTask } from "../utils/taskGrouping";
 import {
-  activeBonuses, buildWeekSnapshot, computePointsSummary, earlyItemsForWeek, EARLY_POINTS, DEFAULT_PRACTICE_EXTRA_SCORES, DEFAULT_PRACTICE_POINTS, isEarlyCompleted, isSettleTime,
+  activeBonuses, REACH_BONUS, buildWeekSnapshot, computePointsSummary, earlyItemsForWeek, EARLY_POINTS, DEFAULT_PRACTICE_EXTRA_SCORES, DEFAULT_PRACTICE_POINTS, isEarlyCompleted, isSettleTime,
   matchPracticePresets, moreToDoToday, POINTS_START_WEEK, practiceDisplayName, practiceSettingsOf, practiceShortName, practiceVerb, PRACTICE_PRESETS,
   scorePracticeWeek, weeksNeedingSnapshot, type PointsLedger, type PointsSummary,
 } from "../utils/points";
@@ -141,7 +141,7 @@ async function claimCelebrations(keys: string[]): Promise<Set<string>> {
 }
 
 /**
- * 每周练习当天记了一次之后：某项本周刚达标 → 中档庆祝"钢琴本周练够了！达标奖励 +2。本周已挣 N 元"。补记（过去日期）不调用。
+ * 每周练习当天记了一次之后：某项本周刚达标 → 中档庆祝"钢琴本周练够了！达标奖励 +3。本周已挣 N 元"。补记（过去日期）不调用。
  * priorLog 是记之前界面上的那份记录，用它判断"刚达标"（不用在写入前多读一次库）。
  */
 export async function practiceCelebrations(taskId: string, priorLog: Record<string, number> | undefined, today = todayKey()): Promise<Celebration[]> {
@@ -156,7 +156,7 @@ export async function practiceCelebrations(taskId: string, priorLog: Record<stri
   const fresh = await claimCelebrations([key]);
   if (!fresh.has(key)) return [];
   const name = practiceShortName(taskAfter);
-  return [{ id: key, title: `${name}本周${practiceVerb(name)}够了！`, detail: `达标奖励 +2。本周已挣 ${after.summary.weekAllowance} 元` }];
+  return [{ id: key, title: `${name}本周${practiceVerb(name)}够了！`, detail: `达标奖励 +${REACH_BONUS}。本周已挣 ${after.summary.weekAllowance} 元` }];
 }
 
 /** 当天学校作业（不含本周作业、提醒）的完成情况；没有学校作业时 total = 0 */

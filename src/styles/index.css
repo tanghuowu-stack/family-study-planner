@@ -182,6 +182,15 @@ body::before {
  * .fit-screen：手机和 iPad 都一屏（统计、课表）；.fit-tablet：只在 iPad（宽 ≥640）一屏（月历、记账）；
  * .fit-fill：铺满剩下的高度。
  */
+/* 手机上整体字号小一档（2026-11-25 用户：手机上字都偏大，像其他 App 那样）：rem 基准 16px → 15px，
+   text-base / text-sm 和 rem 间距一起缩约 6%；少数写死 px 的字号在组件里另设手机值 */
+@media (max-width: 639px) { html { font-size: 15px; } }
+/* 手机今日页日期一行：“11月25日 星期三”，日期 19px、星期 15px 灰 */
+@media (max-width: 639px) {
+  .day-title { font-size: 19px; line-height: 1.75rem; }
+  .day-title-weekday { font-size: 15px; font-weight: 600; color: var(--color-muted, #6E7772); }
+}
+
 :root { --topbar-h: 49px; --bottomnav-h: 53px; --fit-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
 @media (max-width: 1023px), (hover: none), (pointer: coarse) {
   .page-header { height: auto; min-height: 2.75rem; margin-bottom: 0.625rem; padding-bottom: 0.5rem; }

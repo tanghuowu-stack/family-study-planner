@@ -10,7 +10,8 @@
  *   多做的部分是否计分 practiceExtraScores（默认计分）。
  * - 单位是"次"的（钢琴、背诗、听写）每天最多算一次；本 / 页 / 篇 / 题 / 分钟按记的数量算。
  * - 每完成一次得"每次分值"；本周达到目标再 +2（哪天达标都一样）；超过目标的部分，计分的照样按分值得分，
- *   不计分的不得分（界面只提示"多读了 N 本"）；没达标做多少得多少，不扣分。
+ *   不计分的（RAZ、FCE 语用）平时不得分（界面只提示"多读了 N 本"）；**本周所有练习都达标后，它们多做的部分也按分值计分**
+ *   （2026-11-25，`unlockExtrasWhenAllReached`）；没达标做多少得多少，不扣分。
  * - 只看本周内的记录，不结转到下周。
  * - 家长奖励可加可减、必须写原因、可撤回（撤回的不算）。
  * - 1 分 = 1 元：每周结算后，那周得分（练习 + 家长奖励，不低于 0）就是那周的零花钱，记在快照的 allowance 里，
@@ -150,6 +151,19 @@ export function scorePracticeWeek(task: PracticeTask & Partial<Pick<Task, "pract
   return { taskId: task.id, title: practiceDisplayName(task), unit, target, ...settings, count, ...scoreFromCount(count, target, settings) };
 }
 
+/**
+ * 本周所有练习都达标了 → 多做不计分的项目（RAZ、FCE 语用）多出来的部分也按分值计分（2026-11-25 用户新增）。
+ * 任何一项没达标，就仍然不计。对已经算过的结果再算一次结果不变。
+ */
+export function unlockExtrasWhenAllReached(items: PracticeWeekScore[]): PracticeWeekScore[] {
+  const allReached = items.length > 0 && items.every((item) => item.reached);
+  return items.map((item) => {
+    if (item.extraScores) return item;
+    const extraPoints = allReached ? item.extraCount * item.points : 0;
+    return { ...item, extraPoints, total: item.completionPoints + item.reachBonus + extraPoints };
+  });
+}
+
 const hasLogIn = (task: PracticeTask, weekStart: string) => weekDays(weekStart).some((day) => (task.weeklyLog?.[day] ?? 0) > 0);
 
 /** 参与某周计分的练习：每周几次、没删、没取消、不是旧阅读计划；那周在有效期内，或那周有记录 */
@@ -180,7 +194,7 @@ export interface WeekSnapshot {
 export const allowanceFor = (weekTotal: number) => Math.max(0, weekTotal) * YUAN_PER_POINT;
 
 export function buildWeekSnapshot(tasks: Task[], weekStart: string, settledAt: string, bonus = 0, early = 0): WeekSnapshot {
-  const items = practiceTasksForWeek(tasks, weekStart).map((task) => scorePracticeWeek(task, weekStart));
+  const items = unlockExtrasWhenAllReached(practiceTasksForWeek(tasks, weekStart).map((task) => scorePracticeWeek(task, weekStart)));
   const total = items.reduce((sum, item) => sum + item.total, 0);
   return { weekStart, settledAt, items, total, reachedCount: items.filter((item) => item.reached).length, bonus, early, allowance: allowanceFor(total + bonus + early) };
 }
@@ -191,7 +205,7 @@ export const isSettleTime = (now: Date) => now.getDay() === 0 && now.getHours() 
 /** 某周每项的得分：没结算的按现在的设置算；结算过的按快照设置重算，任务已删的用快照里的分数 */
 export function weekPracticeScores(tasks: Task[], weekStart: string, snapshot?: WeekSnapshot): PracticeWeekScore[] {
   const live = practiceTasksForWeek(tasks, weekStart);
-  if (!snapshot) return live.map((task) => scorePracticeWeek(task, weekStart));
+  if (!snapshot) return unlockExtrasWhenAllReached(live.map((task) => scorePracticeWeek(task, weekStart)));
   const byId = new Map(tasks.filter((task) => !task.deletedAt).map((task) => [task.id, task]));
   const frozen = snapshot.items.map((item) => {
     const task = byId.get(item.taskId);
@@ -200,7 +214,7 @@ export function weekPracticeScores(tasks: Task[], weekStart: string, snapshot?: 
   const known = new Set(snapshot.items.map((item) => item.taskId));
   // 结算时还没有、之后才补记到那周的练习（少见）：按现在的设置算
   const added = live.filter((task) => !known.has(task.id) && hasLogIn(task, weekStart)).map((task) => scorePracticeWeek(task, weekStart));
-  return [...frozen, ...added];
+  return unlockExtrasWhenAllReached([...frozen, ...added]);
 }
 
 /** 从 POINTS_START_WEEK 到 untilWeekStart（含）的每个周一 */
@@ -392,12 +406,18 @@ export function practiceVerb(title: string): string {
   return "做";
 }
 
-/** 记一次后多得几分（可能为 0：已达标且多做不计分；"次"当天已记过） */
-export function gainForLog(task: Pick<Task, "id" | "title" | "weeklyQuota" | "weeklyLog" | "practicePoints" | "practiceExtraScores">, date: string, delta: number): number {
+/**
+ * 记一次后本周多得几分（可能为 0：已达标且多做不计分；"次"当天已记过）。
+ * 传入本周所有练习，因为最后一项达标时，RAZ、FCE 语用多做的部分会一起开始计分（unlockExtrasWhenAllReached）。
+ */
+export function gainForLog(tasks: Task[], taskId: string, date: string, delta: number): number {
   const weekStart = getWeekStartKey(date);
-  const before = scorePracticeWeek(task, weekStart).total;
-  const log = { ...(task.weeklyLog ?? {}) };
-  log[date] = Math.max(0, (log[date] ?? 0) + delta);
-  const after = scorePracticeWeek({ ...task, weeklyLog: log }, weekStart).total;
-  return after - before;
+  const weekTotal = (list: Task[]) => weekPracticeScores(list, weekStart).reduce((sum, item) => sum + item.total, 0);
+  const after = tasks.map((task) => {
+    if (task.id !== taskId) return task;
+    const log = { ...(task.weeklyLog ?? {}) };
+    log[date] = Math.max(0, (log[date] ?? 0) + delta);
+    return { ...task, weeklyLog: log };
+  });
+  return weekTotal(after) - weekTotal(tasks);
 }

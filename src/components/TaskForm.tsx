@@ -542,7 +542,7 @@ function PracticePointsFields({ draft, set, label, chip }: { draft: TaskDraft; s
     </div>
     <div>
       <p className={label}>超过目标的部分</p>
-      <div className="mt-1.5 flex gap-1.5"><button type="button" onClick={() => save({ extraScores: true })} className={chip(extraScores)}>也计分</button><button type="button" onClick={() => save({ extraScores: false })} className={chip(!extraScores)}>不计分</button></div>
+      <div className="mt-1.5 flex gap-1.5"><button type="button" onClick={() => save({ extraScores: true })} className={chip(extraScores)}>也计分</button><button type="button" onClick={() => save({ extraScores: false })} className={chip(!extraScores)}>全部达标后计分</button></div>
     </div>
   </div>;
 }

@@ -91,6 +91,7 @@ App.tsx                 正式任务动作汇聚点（增删改查、勾选、�
 - **删除父任务必须级联同步子任务到云端**：本地软删父任务时子任务也会被级联软删，`cloudRepository.ts` 里的删除逻辑必须把这些子任务一并 `upsert`（写入 `deleted_at`）到云端，否则下次全量拉取子任务会复活。
 - **批量删除 / 任意增删改一律走 `getRepository()`**：页面组件不要直接 import 调用 `taskRepository` 的写方法，必须通过 `getRepository()` 按当前登录状态选正确的数据层，否则云端模式下会被绕过、写操作不同步。
 - **checklist 更新用 upsert + id 差集删除，不用先删后插**：`cloudRepository.ts` 更新任务小项时应先按 `id` upsert 现有小项，再用 id 差集删除不再存在的旧项，避免"先删全部再插入"在网络中断时丢数据。
+- **页面先显示本机数据，再核对云端**（2026-11-25）：`loadJsonSetting` 每次都要等 Supabase 往返（新加坡节点，1 秒左右），页面打开时不能干等它。课表、记账先用本机缓存显示（`peekJsonSetting` / `peekSchoolTimetable` / `peekPointsLedger` / `peekLedgerSettings`、`loadLedgerContext(today, true)`），再在后台读云端、有变化再更新；课表正在编辑时不覆盖。写死不变的一次性标记（如课表更正记录）本机有就不再问云端。除今日外的页面文件在今日页显示后空闲时预先下载。
 - **云端写操作失败不允许静默吞掉**：所有 `supabase` 写操作（`upsert`/`insert`/`update`/`delete`）的失败都必须调用 `notifySyncError` 提示用户，禁止 `.catch(() => {})` 之类的静默处理；只有纯本地 IndexedDB 缓存写入可以静默重试/忽略。
 
 ---

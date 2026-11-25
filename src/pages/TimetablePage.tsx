@@ -1,5 +1,5 @@
 import { Check, Flag, Pencil, X } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { formatFullDate, fromDateKey, todayKey } from "../utils/date";
 import { getCalendarAnnotation } from "../data/calendarAnnotations";
 import { currentScheduleItem, durationText, SCHOOL_AFTER_BY_DAY, SCHOOL_AFTERNOON, SCHOOL_DISMISS, SCHOOL_LUNCH, SCHOOL_MORNING, SCHOOL_NAP, type ScheduleItem } from "../data/schoolSchedule";
@@ -7,6 +7,7 @@ import {
   applyTimetableAfterSchoolFixOnce,
   cloneSchoolTimetable,
   loadSchoolTimetable,
+  peekSchoolTimetable,
   saveSchoolTimetable,
   TIMETABLE_DAYS,
   type SchoolTimetable,
@@ -49,9 +50,11 @@ const termLabel = (value: string) => /^[（(].+[）)]$/.test(value.trim()) ? val
 
 export function TimetablePage({ tabs }: { tabs?: ReactNode } = {}) {
   const [today, setToday] = useState(todayKey);
-  const [saved, setSaved] = useState<SchoolTimetable | null>(null);
-  const [draft, setDraft] = useState<SchoolTimetable | null>(null);
+  const [saved, setSaved] = useState<SchoolTimetable | null>(() => peekSchoolTimetable());
+  const [draft, setDraft] = useState<SchoolTimetable | null>(() => { const cached = peekSchoolTimetable(); return cached ? cloneSchoolTimetable(cached) : null; });
   const [editing, setEditing] = useState(false);
+  const editingRef = useRef(false);
+  editingRef.current = editing;
   const [saving, setSaving] = useState(false);
   const [savedHint, setSavedHint] = useState(false);
 
@@ -65,10 +68,11 @@ export function TimetablePage({ tabs }: { tabs?: ReactNode } = {}) {
     return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", updateDate); };
   }, []);
 
+  // 先用本机缓存马上显示（initial state），再去云端核对；正在编辑时不覆盖
   useEffect(() => {
     let active = true;
     void loadSchoolTimetable().then((loaded) => applyTimetableAfterSchoolFixOnce(loaded).catch(() => loaded)).then((value) => {
-      if (!active) return;
+      if (!active || editingRef.current) return;
       setSaved(value);
       setDraft(cloneSchoolTimetable(value));
     });

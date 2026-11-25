@@ -9,7 +9,7 @@
  *
  * 已取消的小红花 / 愿望（wishes）：代码不再读写它们的内容，但整包写回时原样带上（legacy），不删云端已有的数据。
  */
-import { loadJsonSetting, saveJsonSetting } from "./appSettingsRepository";
+import { loadJsonSetting, peekJsonSetting, saveJsonSetting } from "./appSettingsRepository";
 import { emptyLedger, type BonusEntry, type EarlyDecision, type PointsLedger, type WeekSnapshot } from "../utils/points";
 
 export const POINTS_LEDGER_KEY = "points_ledger_v1";
@@ -65,6 +65,9 @@ export function mergeLedgers(localValue: unknown, remoteValue: unknown): PointsL
   const legacy = remote.legacy ?? local.legacy;
   return { version: 1, bonuses: mergeById(local.bonuses, remote.bonuses), earlyDecisions: decisions, celebrated, snapshots, ...(legacy ? { legacy } : {}) };
 }
+
+/** 本机缓存里的积分账本（不等网络），页面先显示用 */
+export const peekPointsLedger = (): PointsLedger => normalizeLedger(peekJsonSetting<unknown>(POINTS_LEDGER_KEY));
 
 export async function loadPointsLedger(): Promise<PointsLedger> {
   return normalizeLedger(await loadJsonSetting<unknown>(POINTS_LEDGER_KEY, (local, remote) => serializeLedger(mergeLedgers(local, remote))));

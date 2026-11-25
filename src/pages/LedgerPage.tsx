@@ -105,6 +105,9 @@ export function LedgerPage({ refreshKey, onChanged, notify }: { refreshKey: numb
 
   const reload = async () => {
     const id = ++request.current;
+    // 先用本机数据马上显示（不等云端往返），下面补结算、核对云端后再更新
+    const quick = await loadLedgerContext(undefined, true);
+    if (id === request.current) setCtx(quick);
     // 记账页也要先补结算（周日晚 8 点后 / 上周还没结算的），"待转账"的练习奖励取自结算快照
     await loadPointsContext().then((points) => settlePendingWeeks(points)).catch(() => false);
     const next = await loadLedgerContext();

@@ -28,6 +28,11 @@ const TimetablePage = lazy(() => loadPage(() => import("./pages/TimetablePage"))
 const LedgerPage = lazy(() => loadPage(() => import("./pages/LedgerPage")).then((module) => ({ default: module.LedgerPage })));
 const StatsPage = lazy(() => loadPage(() => import("./pages/StatsPage")).then((module) => ({ default: module.StatsPage })));
 const SettingsPage = lazy(() => loadPage(() => import("./pages/SettingsPage")).then((module) => ({ default: module.SettingsPage })));
+// 今日页显示出来以后，趁空闲把其他页面的文件先下好（2026-11-25：课表、记账第一次点开要等下载）
+if (typeof window !== "undefined") {
+  const prefetch = () => { void import("./pages/TimetablePage"); void import("./pages/LedgerPage"); void import("./pages/MonthPage"); void import("./pages/StatsPage"); void import("./pages/TaskManagementPage"); void import("./pages/SettingsPage"); };
+  window.addEventListener("load", () => { window.setTimeout(() => ("requestIdleCallback" in window ? window.requestIdleCallback(prefetch) : prefetch()), 1500); }, { once: true });
+}
 import type { Task, TaskDisplay, TaskDraft, TaskStatus } from "./types/task";
 import { fromDateKey, shouldReturnToToday, todayKey, toDateKey } from "./utils/date";
 import { isOccurrenceSchedule, itemSyncKey, taskSyncKey } from "./utils/taskMeta";

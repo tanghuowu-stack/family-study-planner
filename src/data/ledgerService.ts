@@ -4,8 +4,8 @@
  * 家长判断沿用 docs/TASK_09_points.md §7：非触摸设备（Mac）= 家长。每个操作都可以传 parent 覆盖（测试用），
  * 默认按当前设备判断；界面上不给孩子看的按钮，这里也再拦一道。
  */
-import { listLedgerEntries, loadLedgerSettings, putLedgerEntry, saveLedgerSettings } from "./ledgerRepository";
-import { loadPointsLedger } from "./pointsLedger";
+import { listLedgerEntries, loadLedgerSettings, peekLedgerSettings, putLedgerEntry, saveLedgerSettings } from "./ledgerRepository";
+import { loadPointsLedger, peekPointsLedger } from "./pointsLedger";
 import { getWeekStartKey, todayKey } from "../utils/date";
 import { isParentDevice } from "../utils/device";
 import { activeBonuses, allowanceFor, POINTS_START_WEEK, type PointsLedger } from "../utils/points";
@@ -36,8 +36,14 @@ export function settledAllowances(points: PointsLedger): { weekStart: string; al
   });
 }
 
-export async function loadLedgerContext(today = todayKey()): Promise<LedgerContext> {
-  const [entries, settings, points] = await Promise.all([listLedgerEntries(), loadLedgerSettings(), loadPointsLedger()]);
+/**
+ * cached = true：设置和积分账本只用本机缓存、不等云端（记账页先用它马上显示，2026-11-25）；
+ * 记录本来就在本机 Dexie。之后页面再不带 cached 读一次，云端有变化就更新。
+ */
+export async function loadLedgerContext(today = todayKey(), cached = false): Promise<LedgerContext> {
+  const [entries, settings, points] = cached
+    ? [await listLedgerEntries(), peekLedgerSettings(), peekPointsLedger()]
+    : await Promise.all([listLedgerEntries(), loadLedgerSettings(), loadPointsLedger()]);
   return {
     today,
     entries,

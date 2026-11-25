@@ -5,15 +5,22 @@ import type { TaskSubjectGroup } from "../utils/taskGrouping";
 
 const SETTINGS_KEY = "group_sort_order";
 
+/**
+ * 只读本机缓存，不等网络（2026-11-25：课表、记账每次打开都要等云端往返 1–2 秒）。
+ * 页面先用它马上显示，再用 loadJsonSetting 去云端核对、有变化再更新。没有缓存时返回 null。
+ */
+export function peekJsonSetting<T>(key: string): T | null {
+  const cacheKey = `app_settings:${key}`;
+  const cached = localStorage.getItem(cacheKey);
+  if (!cached) return null;
+  try { return JSON.parse(cached) as T; }
+  catch { localStorage.removeItem(cacheKey); return null; }
+}
+
 /** 通用 jsonb 设置读取：本地 localStorage 缓存 + 云端 app_settings（family_id+key 唯一） */
 export async function loadJsonSetting<T>(key: string, reconcile?: (cached: T | null, remote: T) => T): Promise<T | null> {
   const cacheKey = `app_settings:${key}`;
-  const cached = localStorage.getItem(cacheKey);
-  let cachedValue: T | null = null;
-  if (cached) {
-    try { cachedValue = JSON.parse(cached) as T; }
-    catch { localStorage.removeItem(cacheKey); }
-  }
+  const cachedValue = peekJsonSetting<T>(key);
 
   if (!isCloudMode() || !supabase) return cachedValue;
 
@@ -331,6 +338,12 @@ export async function loadSchoolTimetable(): Promise<SchoolTimetable> {
   return normalizeSchoolTimetable(await loadJsonSetting<SchoolTimetable>(SCHOOL_TIMETABLE_KEY));
 }
 
+/** 本机缓存里的课表（不等网络）；这台设备从没读过课表时为 null */
+export function peekSchoolTimetable(): SchoolTimetable | null {
+  const cached = peekJsonSetting<SchoolTimetable>(SCHOOL_TIMETABLE_KEY);
+  return cached ? normalizeSchoolTimetable(cached) : null;
+}
+
 export async function saveSchoolTimetable(value: SchoolTimetable): Promise<void> {
   return saveJsonSetting(SCHOOL_TIMETABLE_KEY, normalizeSchoolTimetable(value), "课表云端同步失败");
 }
@@ -342,7 +355,8 @@ export async function saveSchoolTimetable(value: SchoolTimetable): Promise<void>
  */
 export const TIMETABLE_AFTER_SCHOOL_FIX_KEY = "timetable_after_school_fix_2026_11_25";
 export async function applyTimetableAfterSchoolFixOnce(value: SchoolTimetable): Promise<SchoolTimetable> {
-  if (await loadJsonSetting<{ appliedAt: string }>(TIMETABLE_AFTER_SCHOOL_FIX_KEY)) return value;
+  // 本机记过“已更正”就不再问云端（这条记录写下后不会变）
+  if (peekJsonSetting(TIMETABLE_AFTER_SCHOOL_FIX_KEY) || await loadJsonSetting<{ appliedAt: string }>(TIMETABLE_AFTER_SCHOOL_FIX_KEY)) return value;
   const next = cloneSchoolTimetable(value);
   const third = next.slots.find((slot) => slot.id === "extended-3");
   const changed: string[] = [];

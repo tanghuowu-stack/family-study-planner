@@ -10,7 +10,7 @@
 import { db } from "./db";
 import { isCloudMode } from "./repositoryProvider";
 import { cloudRepository, guardedCloudWrite, notifySyncError } from "./cloudRepository";
-import { loadJsonSetting, saveJsonSetting } from "./appSettingsRepository";
+import { loadJsonSetting, peekJsonSetting, saveJsonSetting } from "./appSettingsRepository";
 import { supabase } from "../lib/supabase";
 import { LEDGER_TABLE, ledgerEntryToRow } from "../lib/ledgerRows";
 import { defaultLedgerSettings, type LedgerEntry, type LedgerSettings, type RateChange } from "../utils/ledger";
@@ -59,6 +59,9 @@ export function mergeLedgerSettings(local: unknown, remote: unknown): LedgerSett
   });
   return { version: 1, rates: [...byMonth.values()].sort((a, b) => a.from.localeCompare(b.from)) };
 }
+
+/** 本机缓存里的月利率设置（不等网络） */
+export const peekLedgerSettings = (): LedgerSettings => normalizeLedgerSettings(peekJsonSetting<unknown>(LEDGER_SETTINGS_KEY));
 
 export async function loadLedgerSettings(): Promise<LedgerSettings> {
   return normalizeLedgerSettings(await loadJsonSetting<unknown>(LEDGER_SETTINGS_KEY, mergeLedgerSettings));

@@ -13,11 +13,11 @@ const quietButton = "min-h-10 rounded-lg bg-white px-3 text-sm font-semibold tex
 /** 一项练习的灰色小字："N 分"；超出目标但不计分的再加"多读了 N 本" */
 /**
  * 每周练习每行右边的小字（2026-11-25 B4）：不再写“已得 N 分”（名字后面有每次几分，本周总分在表头胶囊里），
- * 只在超过目标、多做又不计分时写“本周多读了 N 本”。
+ * 只在超过目标、多做又不计分时写“本周多读了 N 本”（本周练习全部达标后这些也计分，就不再写）。
  */
 export function practiceScoreLabels(score?: PracticeWeekScore): { extra?: string } | undefined {
   if (!score) return undefined;
-  return { extra: score.extraCount > 0 && !score.extraScores ? `本周多${practiceVerb(score.title)}了 ${score.extraCount} ${score.unit}` : undefined };
+  return { extra: score.extraCount > 0 && !score.extraScores && score.extraPoints === 0 ? `本周多${practiceVerb(score.title)}了 ${score.extraCount} ${score.unit}` : undefined };
 }
 
 /**
@@ -187,7 +187,7 @@ function PointsDetailDialog({ ctx, onClose }: { ctx: PointsContext; onClose: () 
           {summary.weekScores.map((score) => (
             <tr key={score.taskId}>
               <td className="py-1.5 pr-2"><span className="text-ink">{score.title}</span><span className="block text-[13px] text-muted">{score.count}/{score.target} {score.unit} · 每{score.unit === "次" ? "次" : score.unit} {score.points} 分{score.extraScores ? "" : " · 多做不计分"}</span></td>
-              <td className={td}>{score.completionPoints}</td><td className={td}>{score.reachBonus || "–"}</td><td className={td}>{score.extraScores ? score.extraPoints || "–" : score.extraCount ? `多${score.extraCount}` : "–"}</td><td className={`${td} font-bold`}>{score.total}</td>
+              <td className={td}>{score.completionPoints}</td><td className={td}>{score.reachBonus || "–"}</td><td className={td}>{score.extraPoints || (score.extraCount && !score.extraScores ? `多${score.extraCount}` : "–")}</td><td className={`${td} font-bold`}>{score.total}</td>
             </tr>
           ))}
           <tr><td className="py-1.5 pr-2 text-ink">提前完成（每项 +3）</td><td /><td /><td /><td className={`${td} font-bold`}>{signed(summary.weekEarly)}</td></tr>

@@ -202,7 +202,7 @@ export function DayPage(props: Props) {
     key={dayTaskKey(task)}
     dragHandle={dragHandle}
     dueLabel={dueLabelFor(task)}
-    weekly={task.timeType === "weeklyTimes" ? { progress: weeklyTimesProgress(task, props.date), onLog: (date, delta) => props.onWeeklyLog(task, delta, date), score: pointsOn && weeklyTimesProgress(task, props.date).weekStart === points?.summary.weekStart ? practiceScoreLabels(scoreById.get(task.id)) : undefined, pointValue: pointsOn ? practiceSettingsOf(task).points : undefined, gainFor: pointsOn ? (date, delta) => gainForLog(task, date, delta) : undefined, allowPast: parentDevice } : undefined}
+    weekly={task.timeType === "weeklyTimes" ? { progress: weeklyTimesProgress(task, props.date), onLog: (date, delta) => props.onWeeklyLog(task, delta, date), score: pointsOn && weeklyTimesProgress(task, props.date).weekStart === points?.summary.weekStart ? practiceScoreLabels(scoreById.get(task.id)) : undefined, pointValue: pointsOn ? practiceSettingsOf(task).points : undefined, gainFor: pointsOn ? (date, delta) => gainForLog(weeklyTimes, task.id, date, delta) : undefined, allowPast: parentDevice } : undefined}
     task={task}
     unsynced={props.unsyncedTasks?.has(taskSyncKey(task))}
     unsyncedItemIds={props.unsyncedItems && task.checklistItems ? new Set(task.checklistItems.filter((item) => props.unsyncedItems!.has(itemSyncKey(task.id, item.id))).map((item) => item.id)) : undefined}
@@ -230,10 +230,7 @@ export function DayPage(props: Props) {
         <button type="button" onClick={props.onOpenTimetable} className="flex items-center gap-1.5 text-[13px] font-bold text-[#2D6F68] hover:underline desk:gap-2 desk:text-[14px]" title="打开课表"><Backpack aria-hidden className="h-4 w-4 desk:h-[18px] desk:w-[18px]" />{carryLabel}</button>
         {carryItems.length === 0 && <span className="text-[13px] text-muted">没有要带的</span>}
         {carryItems.map((item) => (
-          <span key={item.label} className="relative rounded-full bg-white px-2 py-0.5 text-[12px] font-semibold desk:px-2.5 desk:text-[13px] text-ink ring-1 ring-inset ring-[#3F8F86]/25" title={item.pinned ? "常驻：每天都提醒" : undefined}>
-            {item.label}
-            {item.pinned && <span aria-label="常驻" className="absolute -right-1 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-white ring-2 ring-[#EAF4F2]"><Pin className="h-2.5 w-2.5" strokeWidth={3} /></span>}
-          </span>
+          <span key={item.label} className="rounded-full bg-white px-2 py-0.5 text-[12px] font-semibold desk:px-2.5 desk:text-[13px] text-ink ring-1 ring-inset ring-[#3F8F86]/25">{item.label}</span>
         ))}
         <button type="button" onClick={() => setCarryEditing(true)} aria-label="补充或删除明天要带的东西" title="补充或删除"
           className="-my-1 ml-auto flex h-8 w-8 items-center justify-center rounded-full text-[#2D6F68] hover:bg-white/70 desk:h-9 desk:w-9"><Pencil className="h-4 w-4" /></button>

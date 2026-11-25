@@ -209,11 +209,40 @@ describe("还可以再做 / 打勾能得几分", () => {
     expect(more.map((item) => [item.title, item.gain, item.reachesTarget])).toEqual([["钢琴练习", 2, false], ["我爱背诗", 3, true]]);
     expect(formatMoreToDo(more)).toBe("钢琴 +2　背诗再背 1 次 +3");
   });
-  it("打勾能得的分：达标那一下含 +2；不计分的多做为 0", () => {
+  it("打勾能得的分：达标那一下含 +2；还有练习没达标时，不计分的多做为 0", () => {
     const piano = practice("p", "钢琴练习", 2, "次", { [day(W1, 0)]: 1 }, { practicePoints: 2 });
-    expect(gainForLog(piano, today, 1)).toBe(4);
     const raz = practice("r", "RAZ阅读", 2, "本", { [day(W1, 0)]: 2 }, { practiceExtraScores: false });
-    expect(gainForLog(raz, today, 1)).toBe(0);
+    expect(gainForLog([piano], "p", today, 1)).toBe(4);
+    expect(gainForLog([piano, raz], "r", today, 1)).toBe(0);
+  });
+  it("最后一项达标的那一下，RAZ 已经多读的部分一起开始计分", () => {
+    const piano = practice("p", "钢琴练习", 2, "次", { [day(W1, 0)]: 1 }, { practicePoints: 2 });
+    const raz = practice("r", "RAZ阅读", 2, "本", { [day(W1, 0)]: 4 }, { practiceExtraScores: false });
+    // 钢琴 +2（这次）+2（达标）+ RAZ 多读 2 本 ×1
+    expect(gainForLog([piano, raz], "p", today, 1)).toBe(6);
+  });
+});
+
+describe("本周练习全部达标后，多做不计分的项目也计分（2026-11-25）", () => {
+  const tasksWith = (pianoDays: number) => [
+    practice("p", "钢琴练习", 2, "次", Object.fromEntries(Array.from({ length: pianoDays }, (_, i) => [day(W1, i), 1])), { practicePoints: 2 }),
+    practice("r", "RAZ阅读", 3, "本", { [day(W1, 0)]: 5 }, { practiceExtraScores: false }),
+    practice("y", "FCE语用", 2, "篇", { [day(W1, 1)]: 3 }, { practiceExtraScores: false }),
+  ];
+  it("还有一项没达标：RAZ、语用多做的不计分", () => {
+    const snap = buildWeekSnapshot(tasksWith(1), W1, `${day(W1, 6)}T12:00:00.000Z`);
+    expect(snap.items.find((item) => item.taskId === "r")).toMatchObject({ extraCount: 2, extraPoints: 0, total: 5 });
+    expect(snap.items.find((item) => item.taskId === "y")).toMatchObject({ extraCount: 1, extraPoints: 0, total: 4 });
+  });
+  it("全部达标：RAZ、语用多做的按分值计分", () => {
+    const snap = buildWeekSnapshot(tasksWith(2), W1, `${day(W1, 6)}T12:00:00.000Z`);
+    expect(snap.items.find((item) => item.taskId === "r")).toMatchObject({ extraCount: 2, extraPoints: 2, total: 7 });
+    expect(snap.items.find((item) => item.taskId === "y")).toMatchObject({ extraCount: 1, extraPoints: 1, total: 5 });
+    expect(snap.total).toBe(6 + 7 + 5);
+  });
+  it("积分汇总里本周也按这条算", () => {
+    const summary = computePointsSummary(tasksWith(2), emptyLedger(), day(W1, 3));
+    expect(summary.weekScores.find((item) => item.taskId === "r")?.extraPoints).toBe(2);
   });
 });
 

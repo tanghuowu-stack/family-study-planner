@@ -4,6 +4,14 @@
 
 ## 2026-11-25
 
+- **项目整理（安全清理，界面不变）**：
+  - 删掉不用的计时器代码（`context/TimerContext.tsx`、`timerStore.ts` 及测试；计时功能早已从界面去掉，任务上的旧计时字段保留）。
+  - 删掉没人用的导出：`getCalendarAnnotations`、`getLedgerEntry`、`loadBalances`、`WEEKDAY_NAMES`、`PlanOverviewItem`、`getMonthKey`、`getMonthBounds`、`getUpcomingDateKeys`、`ROLLOVER_META`、`taskDisplayName`。
+  - 删掉连续天数计算（`computeGroupStreak` / `computeWeeklyStreak`、`currentStreak` / `streakUnit` 字段，页面早已不显示）和只测它的用例。
+  - 删掉已经跑过的一次性代码：给已有练习套分值预设（`applyPracticePresetsOnce`）、小白鸥改 3 分（`applyPracticePointChangesOnce`）及其测试。课表周三 / 周五更正、明日必带旧格式读取暂时保留（还不确定两台设备都打开过）。
+  - 除今日页外的页面按需加载（`React.lazy`）：首次下载 939 KB → 约 776 KB（gzip 267 → 225 KB），每页 9–37 KB 第一次点开时再下；应用一直开着期间推了新版本、旧页面文件加载失败时自动整页刷新一次。
+  - 文档：ARCHITECTURE_RULES 计时器一节改为历史例子、去掉 timerStore 测试；TASK_08 §5 连续计算改为“已删除”；TASK_09、PROJECT_GUIDE 去掉一次性代码的说明。npm test 462 全过（删掉的都是只测已删代码的用例）、`tsc -b`、build 通过；本地预览各页（计划 / 课表 / 统计 / 记账 / 设置 / 全部任务 / 打卡）都能打开。
+
 - 作息时间每节后面写上那天的课名（“第一节 数学”“延时2 语文”），取自课表、跟着星期切换；`schoolSchedule.ts` 每项加 `slotId` 对应课表的节；课后几段改叫“延时1 / 2 / 3”。本地预览周一：第一节 数学 … 延时3 数学；npm test、`tsc -b`、build 通过。
 - **更正：每项达标仍是 +2**（用户：“应该 2 分”）。前面把“每项全完成另加3分”误当成改规则、把 `REACH_BONUS` 改成了 3，这次改回 2，测试恢复原来的数字，`TASK_09` / style.md 同步；今日页胶囊自动显示“每项全完成另加2分”。本周还没结算，本周分数按 +2 重新算，已发的零花钱不受影响。提前完成仍是每项 +3。
 - iPad 也按手机紧凑：根字号 15px、日期一行、小按钮、积分胶囊、表头和奖励胶囊的紧凑尺寸都用到电脑 `desk` 断点为止（原来 `sm` 起就变大）；今日页内边距收紧。

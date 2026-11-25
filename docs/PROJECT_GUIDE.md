@@ -156,7 +156,7 @@ App.tsx                 正式任务动作汇聚点（增删改查、勾选、�
 - **学校作业**：语文、数学、英语、其他
 - **课外**：语文、数学、英语、其他；内容类型有上课、作业、练习、听写、背诵、阅读、其他。阅读只在"课外→其他"下，标题可空，空标题显示"课外·其他｜阅读"。
 - **兴趣班**：钢琴课、游泳课、轮滑课、钢琴练习，以及用户通过加号创建的自定义分类。新建入口不再提供“其他兴趣班”；历史值仍可读取。钢琴课 / 游泳课 / 轮滑课固定算上课；自定义分类看“算作上课”标记（`extraContentType = "class"`，绑定课程时取课程的 isClass）。空标题显示分类名称。
-- **每周练习积分**（2026-11-24）：只有每周几次计分；每项的分值 / 多做是否计分存任务 metadata（`practicePoints` / `practiceExtraScores`）；账本存 `app_settings` 的 `points_ledger_v1`，按显示名套分值预设的结果存 `practice_points_preset_v2`（v1 按标题完全相同匹配，已废弃）。不改数据库结构。**规则唯一依据：`docs/TASK_09_points.md`**；家长操作只在 Mac（非触摸设备）上。2026-11-24 起积分奖励改为零花钱（小红花、愿望已取消）。
+- **每周练习积分**（2026-11-24）：只有每周几次计分；每项的分值 / 多做是否计分存任务 metadata（`practicePoints` / `practiceExtraScores`）；账本存 `app_settings` 的 `points_ledger_v1`，新建 / 编辑练习时按显示名套分值预设（`PRACTICE_PRESETS`）；给已有任务套一次预设的一次性代码已跑过并删除（`practice_points_preset_v2` 记录留在 app_settings，不再读写）。不改数据库结构。**规则唯一依据：`docs/TASK_09_points.md`**；家长操作只在 Mac（非触摸设备）上。2026-11-24 起积分奖励改为零花钱（小红花、愿望已取消）。
 - **记账**（2026-11-24，TASK_10）：零钱 / 存款余额由 `ledger_entries` 表的记录算出（每条一行、LWW + 软删，迁移 `docs/supabase-migration-ledger.sql`）；练习奖励、利息先是“待转账”，家长在 Mac 上点“已转账”才入账。**规则唯一依据：`docs/TASK_10_ledger.md`**。
 - **课表、自定义分类与备忘录**：分别存储在现有 `app_settings` 的 `school_timetable_v1` / `custom_task_categories_v1` / `sidebar_memo` 键中，沿用家庭云同步和本地缓存，不需要新增表。课表只突出明天的工作日列。
 - **预览隔离**：`npm run preview:file` 使用 `local-preview` 模式，示例数据和禁用云连接仅作用于预览构建；`npm run build` 为真实项目构建，不包含示例任务。

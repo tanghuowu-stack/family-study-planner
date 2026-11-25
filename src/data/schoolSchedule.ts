@@ -5,8 +5,6 @@
  */
 export type ScheduleKind = "class" | "break" | "big-break" | "activity";
 
-export const WEEKDAY_NAMES = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-
 export interface ScheduleItem {
   label: string;
   start: string;

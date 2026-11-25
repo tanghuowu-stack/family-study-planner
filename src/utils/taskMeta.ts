@@ -1,4 +1,4 @@
-import type { ChecklistItem, CourseStatus, ExtraContentType, MainCategory, PlanPeriod, RolloverMode, SchedulePattern, TaskDraft, TaskStatus, TaskTimeType, SubCategory } from "../types/task";
+import type { ChecklistItem, CourseStatus, ExtraContentType, MainCategory, PlanPeriod, SchedulePattern, TaskDraft, TaskStatus, TaskTimeType, SubCategory } from "../types/task";
 import { todayKey } from "./date";
 
 export function schoolHomeworkTitle(subCategory: string): string {
@@ -185,10 +185,6 @@ export const TIME_TYPE_META: Record<TaskTimeType, string> = {
   monthGoal: "每月计划", assignmentWindow: "课后作业周期", recurring: "固定重复", weeklyTimes: "每周几次",
 };
 
-export const ROLLOVER_META: Record<RolloverMode, string> = {
-  autoNextDay: "顺延至次日", keepOverdue: "保留在逾期区", skipIfMissed: "到期结束",
-};
-
 export const WEEKDAY_LABELS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 export const EXTRA_CONTENT_OPTIONS: { value: ExtraContentType; label: string }[] = [
   { value: "class", label: "上课" }, { value: "homework", label: "作业" },
@@ -215,14 +211,6 @@ export const subCategoryLabel = (main: MainCategory, sub: string) =>
   ?? customSubCategoryLabel(sub)
   ?? SUB_CATEGORY_META[sub as keyof typeof SUB_CATEGORY_META]?.label
   ?? "其他";
-
-export const taskDisplayName = (task: { mainCategory: MainCategory; subCategory: string; title: string; extraContentType?: ExtraContentType }) => {
-  const showContentType = task.mainCategory === "extraHomework" && task.subCategory !== "reading";
-  const base = `${MAIN_CATEGORY_META[task.mainCategory].label}·${subCategoryLabel(task.mainCategory, task.subCategory)}${showContentType ? `｜${extraContentLabel(task.extraContentType)}` : ""}`;
-  const title = task.title.trim();
-  const repeatedInterestTitle = task.mainCategory === "interestClass" && title === subCategoryLabel(task.mainCategory, task.subCategory);
-  return title && !repeatedInterestTitle ? `${base} - ${title}` : base;
-};
 
 export const taskShortName = (task: { mainCategory: MainCategory; subCategory: string; title: string; extraContentType?: ExtraContentType }) => {
   const title = task.title.trim();

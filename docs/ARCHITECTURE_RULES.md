@@ -119,7 +119,7 @@
 
 **原则**：任何状态机（计时器 start/pause/resume/stop、任务完成状态 todo/done/cancelled/overdue），每条转换路径必须有**独立、语义明确的实现**，**禁止"某个转换跳过自己的语义、直接复用另一个转换的函数"**。
 
-**计时器状态机（现行，纯转换逻辑在 `context/timerStore.ts`，React 包装在 `TimerContext.tsx`）**：
+**计时器状态机（历史例子：计时功能 2026-11 已从界面去掉，`context/timerStore.ts` / `TimerContext.tsx` 及其测试 2026-11-25 删除；下面的教训仍适用于任何状态机）**：
 
 ```
    (无计时)  ──start──▶  运行中(startedAt=now, accumulated=0)
@@ -140,8 +140,8 @@
 
 **具体要求**：
 1. 改计时器或任务完成状态机时，先在改动说明里画出"各状态之间的转换路径"，确认没有"复用邻居函数"的隐患。
-2. **能抽成纯函数的状态转换就抽出来**（如 `timerStore.ts` 从 `TimerContext.tsx` 抽离），这样可以脱离 React 写纯函数测试（项目目前没有 React 组件测试基础设施，纯函数测试是唯一能自动覆盖这类逻辑的手段）。
-3. 补状态转换测试（参考 `timerStore.test.ts`：暂停继续保留 accumulated、多次暂停继续累加、全新开始恒为 0）。
+2. **能抽成纯函数的状态转换就抽出来**（当年 `timerStore.ts` 就是从 `TimerContext.tsx` 抽离的，现已随计时功能删除），这样可以脱离 React 写纯函数测试（项目目前没有 React 组件测试基础设施，纯函数测试是唯一能自动覆盖这类逻辑的手段）。
+3. 补状态转换测试（每条转换路径一条独立用例）。
 
 ### 3.4 写入覆盖规范（"最新数据做基准"）
 
@@ -243,7 +243,6 @@
 | `data/__tests__/cloudReorder.test.ts` | `reorderTasks` 云端 upsert 行集合、未登录不上传（Supabase mock）|
 | `lib/__tests__/cloudUpload.test.ts` | occurrence 上传过滤（A 类违规行不上传）|
 | `lib/__tests__/cloudFieldParity.test.ts` | `taskToRow`↔`rowToTask` 全字段往返对照（43 例，防单向漏映射）|
-| `context/__tests__/timerStore.test.ts` | 计时器状态机纯函数（暂停继续保留 accumulated 等）|
 | `utils/__tests__/date.test.ts` | 日期工具（toLocalDateKey UTC+8 边界等）|
 | `utils/__tests__/points.test.ts` | 每周练习积分规则（次每天一次、达标 +2、多做计分/不计分、不扣分、1 分 = 1 元、负分零花钱为 0、起始周、快照固定零花钱、周日 20 点结算、提前完成判定、还可以再做）+ 账本跨设备合并（旧愿望数据原样保留） |
 | `data/__tests__/pointsService.test.ts` | 积分数据层：家长奖励加减撤回、提前完成待处理、结算快照（零花钱 = 练习 + 奖励）、按显示名套预设只套一次、庆祝只弹一次 |

@@ -53,8 +53,3 @@ export function getCalendarAnnotation(date: string, settings = getCalendarDispla
     holidayStatus: settings.showHolidayStatus ? holidayStatuses[date] : undefined,
   };
 }
-
-export const getCalendarAnnotations = (date: string) => {
-  const annotation = getCalendarAnnotation(date);
-  return [...annotation.solarTerms, ...annotation.festivals];
-};

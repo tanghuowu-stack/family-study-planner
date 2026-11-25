@@ -96,7 +96,6 @@ describe("travel suspension", () => {
     expect(days["2026-10-03"]).toBe("done");
     expect(days["2026-10-04"]).toBe("off");
     expect(cal.monthCompletedDays).toBe(4);
-    expect(cal.currentStreak).toBe(4);
     expect((await taskRepository.getTasksForDate("2026-10-03")).find((t) => t.id === "habit")?.status).toBe("done");
   });
 });

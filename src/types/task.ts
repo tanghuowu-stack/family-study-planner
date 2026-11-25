@@ -225,17 +225,6 @@ export interface ReadingLog {
   updatedAt: string;
 }
 
-export interface PlanOverviewItem {
-  id: string;
-  label: string;
-  done: number;
-  total: number;
-  unit: string;
-  isReading?: boolean;
-  group: "chinese" | "math" | "english" | "other";
-  isCourse?: boolean;
-}
-
 export type TaskDraft = Omit<Task, "id" | "createdAt" | "updatedAt">;
 
 export type ActivityActionType =

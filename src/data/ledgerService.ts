@@ -49,11 +49,6 @@ export async function loadLedgerContext(today = todayKey()): Promise<LedgerConte
   };
 }
 
-/** 首页积分条用：零钱、存款余额（分） */
-export async function loadBalances(): Promise<Balances> {
-  return balancesOf(await listLedgerEntries());
-}
-
 const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
 interface Options { parent?: boolean; today?: string }

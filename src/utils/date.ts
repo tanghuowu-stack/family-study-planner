@@ -1,12 +1,9 @@
 import {
-  addDays,
   differenceInCalendarDays,
-  endOfMonth,
   endOfWeek,
   format,
   isWithinInterval,
   parseISO,
-  startOfMonth,
   startOfWeek,
 } from "date-fns";
 import { zhCN } from "date-fns/locale";
@@ -55,19 +52,8 @@ export const getWeekStartKey = (value: string | Date) =>
 export const getWeekEndKey = (value: string | Date) =>
   toDateKey(endOfWeek(typeof value === "string" ? fromDateKey(value) : value, { weekStartsOn: 1 }));
 
-export const getMonthKey = (value: string | Date) =>
-  format(typeof value === "string" ? fromDateKey(value) : value, "yyyy-MM");
-
-export const getMonthBounds = (value: string | Date) => {
-  const date = typeof value === "string" ? fromDateKey(value) : value;
-  return { start: toDateKey(startOfMonth(date)), end: toDateKey(endOfMonth(date)) };
-};
-
 export const isDateInRange = (date: string, start: string, end: string) =>
   isWithinInterval(fromDateKey(date), { start: fromDateKey(start), end: fromDateKey(end) });
-
-export const getUpcomingDateKeys = (from: string, days: number) =>
-  Array.from({ length: days }, (_, index) => toDateKey(addDays(fromDateKey(from), index)));
 
 /** 单个日期：今年内只显示 MM-DD，跨年保留完整日期，undefined/null 返回 fallback */
 export function fmtDate(date: string | undefined | null, fallback = "?"): string {

@@ -19,10 +19,6 @@ export async function listLedgerEntries(): Promise<LedgerEntry[]> {
   return db.ledgerEntries.toArray();
 }
 
-export async function getLedgerEntry(id: string): Promise<LedgerEntry | undefined> {
-  return db.ledgerEntries.get(id);
-}
-
 /** 写一条（新建、修改、软删都走这里）。本地先写；云端失败返回 false（数据已在本地，下次拉取时会补传新记录） */
 export async function putLedgerEntry(entry: LedgerEntry): Promise<boolean> {
   await db.ledgerEntries.put(entry);

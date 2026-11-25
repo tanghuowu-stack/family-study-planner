@@ -18,7 +18,7 @@ const memStore = new Map<string, string>();
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "../db";
 import { taskRepository } from "../taskRepository";
-import { getHabitCandidates, setHabitEnabled, setHabitStartDate, getHabitCalendars, toggleRestDay, hideHabitCandidate, unhideHabitCandidate, getHiddenHabitCandidates, getHabitProjects, suggestHabitLinks, linkHabit, unlinkHabit, disableHabitProject, setHabitProjectStartDate, habitLinkScore, STREAK_BREAK_GAP_DAYS } from "../statsRepository";
+import { getHabitCandidates, setHabitEnabled, setHabitStartDate, getHabitCalendars, toggleRestDay, hideHabitCandidate, unhideHabitCandidate, getHiddenHabitCandidates, getHabitProjects, suggestHabitLinks, linkHabit, unlinkHabit, disableHabitProject, setHabitProjectStartDate, habitLinkScore } from "../statsRepository";
 import { saveRestDays } from "../appSettingsRepository";
 import type { Task, TaskOccurrenceStatus } from "../../types/task";
 
@@ -221,7 +221,6 @@ describe("getHabitCalendars", () => {
     expect(m["2026-07-12"]).toBe("missed"); // 应做未完成
     expect(m["2026-07-13"]).toBe("done");
     expect(m["2026-07-20"]).toBe("off");   // 未来
-    expect(cals[0].currentStreak).toBe(1); // 07-13 done，07-12 漏卡截断
     expect(cals[0].monthCompletedDays).toBe(3);
   });
 
@@ -234,7 +233,6 @@ describe("getHabitCalendars", () => {
     const cals = await getHabitCalendars("2026-07", "2026-07-13");
     const m = statusMap(cals[0]);
     expect(m["2026-07-12"]).toBe("off");
-    expect(cals[0].currentStreak).toBe(3); // 07-13、07-11、07-10，休息日穿过
     expect(cals[0].monthCompletedDays).toBe(3);
   });
 
@@ -247,11 +245,10 @@ describe("getHabitCalendars", () => {
     const cals = await getHabitCalendars("2026-07", "2026-07-13");
     const m = statusMap(cals[0]);
     expect(m["2026-07-12"]).toBe("done"); // 完成优先于休息日
-    expect(cals[0].currentStreak).toBe(4); // 4 天全计入
     expect(cals[0].monthCompletedDays).toBe(4);
   });
 
-  it("5. 跨月切换：同一项目不同 month 参数返回对应月，currentStreak 恒从今天算", async () => {
+  it("5. 跨月切换：同一项目不同 month 参数返回对应月", async () => {
     await db.tasks.add(dailyHabit("h", "2026-06-28"));
     for (const d of ["2026-06-28", "2026-06-29", "2026-06-30", "2026-07-01", "2026-07-02"]) {
       await db.taskOccurrenceStatuses.add(occRow("h", d, "done", noonOf(d)));
@@ -269,8 +266,6 @@ describe("getHabitCalendars", () => {
     expect(julyM["2026-07-01"]).toBe("done");
     expect(julyM["2026-07-02"]).toBe("done");
     expect(julyM["2026-07-03"]).toBe("off"); // 未来
-    expect(june[0].currentStreak).toBe(5);   // 跨月连续
-    expect(july[0].currentStreak).toBe(5);   // 与展示月份无关
     expect(june[0].monthCompletedDays).toBe(3);
     expect(july[0].monthCompletedDays).toBe(2);
   });
@@ -290,7 +285,6 @@ describe("getHabitCalendars", () => {
     expect(m["2026-07-04"]).toBe("off");
     expect(m["2026-07-05"]).toBe("done");
     expect(m["2026-07-07"]).toBe("missed"); // 今天应做未完成，显示 missed
-    expect(cals[0].currentStreak).toBe(3);  // 今天未完成不算断，07-05/03/01 连续 3
   });
 
   it("7. 只包含已勾选项目，未勾选任务不出现在月历", async () => {
@@ -352,7 +346,6 @@ describe("打卡分组（钢琴课 piano + 钢琴练习 pianoPractice → 统一
     expect(m["2026-07-13"]).toBe("done"); // practice 完成
     expect(m["2026-07-14"]).toBe("done"); // class 完成（当天 practice 也应做但未做，只要 class 做了就算成功）
     expect(m["2026-07-15"]).toBe("done"); // practice 完成
-    expect(cals[0].currentStreak).toBe(3); // 三天连续，尽管是两个不同任务在贡献
   });
 
   it("16. 只勾选其中一个（如只勾练习，没勾上课）也显示分组标签钢琴，不受影响独立工作", async () => {
@@ -383,7 +376,6 @@ describe("打卡分组（钢琴课 piano + 钢琴练习 pianoPractice → 统一
     const m = statusMap(cals[0]);
     expect(m["2026-07-13"]).toBe("done"); // 练习完成
     expect(m["2026-07-14"]).toBe("done"); // 练习当天取消，但上了钢琴课 → 仍算打卡成功
-    expect(cals[0].currentStreak).toBe(2);
   });
 
   it("17c. 组内无任何任务被勾选时，分组不出现（单次课不会自己冒出一张卡）", async () => {
@@ -541,34 +533,6 @@ describe("间断的打卡：新任务接上以前的项目（2026-11-14）", () 
     expect(projects).toHaveLength(1);
     expect(projects[0].members.map((m) => m.taskId).sort()).toEqual(["new", "old"]);
     expect(projects[0].startDate).toBe("2026-07-01");
-  });
-
-  it("L3. 停超过 14 天再开始，连续天数从头算；停得短（不超过 14 天）接着算；每周一次的项目不受影响", async () => {
-    // 7/20 停，8/10 重新开始：中间 20 天没有安排 → 从头算
-    await db.tasks.bulkAdd([oldTask(), newTask({ startDate: "2026-08-10", recurrence: { frequency: "daily", startDate: "2026-08-10" } })]);
-    await linkHabit("new", "old");
-    await db.taskOccurrenceStatuses.bulkAdd([
-      ...["2026-07-18", "2026-07-19", "2026-07-20"].map((d) => occRow("old", d, "done", noonOf(d))),
-      ...["2026-08-10", "2026-08-11"].map((d) => occRow("new", d, "done", noonOf(d))),
-    ]);
-    const [cal] = await getHabitCalendars("2026-08", "2026-08-11");
-    expect(STREAK_BREAK_GAP_DAYS).toBe(14);
-    expect(cal.currentStreak).toBe(2); // 7 月那 3 天不接着算
-    // 对照：8/1 就重新开始（中间只停 11 天）→ 接着算
-    await db.tasks.put({ ...(await db.tasks.get("new"))!, startDate: "2026-08-01", recurrence: { frequency: "daily", startDate: "2026-08-01" } });
-    await db.taskOccurrenceStatuses.clear();
-    await db.taskOccurrenceStatuses.bulkAdd([
-      ...["2026-07-18", "2026-07-19", "2026-07-20"].map((d) => occRow("old", d, "done", noonOf(d))),
-      ...["2026-08-01", "2026-08-02"].map((d) => occRow("new", d, "done", noonOf(d))),
-    ]);
-    const [shortBreak] = await getHabitCalendars("2026-08", "2026-08-02");
-    expect(shortBreak.currentStreak).toBe(5);
-    // 对照：每周六一次的游泳，连续 3 周都去了，中间各隔 6 天
-    await db.tasks.clear(); await db.taskOccurrenceStatuses.clear();
-    await db.tasks.add(makeTask("swim", { title: "游泳课", mainCategory: "interestClass", subCategory: "swimming", enableStreak: true, streakStartDate: "2026-07-01", timeType: "recurring", schedulePattern: "weeklyRecurring", date: undefined, recurrence: { frequency: "weekly", weekdays: [6], startDate: "2026-07-01" } }));
-    await db.taskOccurrenceStatuses.bulkAdd(["2026-07-18", "2026-07-25", "2026-08-01"].map((d) => occRow("swim", d, "done", noonOf(d))));
-    const [swim] = await getHabitCalendars("2026-08", "2026-08-02");
-    expect(swim.currentStreak).toBe(3);
   });
 
   it("L4. 停掉的月份这一行不显示（hasScheduleInMonth=false）", async () => {

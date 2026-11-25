@@ -1,6 +1,6 @@
 import { BarChart3, CalendarDays, CalendarRange, Cloud, ClipboardList, Flame, GraduationCap, Home, Plus, Settings, Table2, Wallet } from "lucide-react";
 import { addDays } from "date-fns";
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { TaskForm } from "./components/TaskForm";
 import { SidebarMemo } from "./components/SidebarMemo";
 import { ExtendRecurringDialog } from "./components/ExtendRecurringDialog";
@@ -10,19 +10,29 @@ import { cloudRepository, setCloudSyncErrorHandler } from "./data/cloudRepositor
 import { taskRepository } from "./data/taskRepository";
 import { loadAuthState } from "./lib/cloudAuth";
 import { startRealtimeSync, stopRealtimeSync } from "./lib/realtimeSync";
-import { StatsPage, type StatsTab } from "./pages/StatsPage";
+import type { StatsTab } from "./pages/StatsPage";
 import { SegmentedTabs, type SegmentedTab } from "./components/SegmentedTabs";
-import { SettingsPage } from "./pages/SettingsPage";
 import { DayPage } from "./pages/DayPage";
-import { MonthPage } from "./pages/MonthPage";
-import { TaskManagementPage } from "./pages/TaskManagementPage";
-import { TimetablePage } from "./pages/TimetablePage";
-import { LedgerPage } from "./pages/LedgerPage";
+/*
+ * 除今日页外的页面按需加载（2026-11-25 项目整理：原来所有页面打在一个 939 KB 的包里，iPad 第一次打开慢）；
+ * 第一次点开某页时才下载那一页，之后有缓存。
+ */
+/** 应用一直开着、期间推了新版本：旧页面文件已经不在服务器上，按需加载会失败 → 整页刷新一次拿新版本（只试一次，免得死循环） */
+const loadPage = <T,>(load: () => Promise<T>): Promise<T> => load().then((module) => { sessionStorage.removeItem("page-reload-once"); return module; }).catch((error) => {
+  if (!sessionStorage.getItem("page-reload-once")) { sessionStorage.setItem("page-reload-once", "1"); window.location.reload(); }
+  throw error;
+});
+const MonthPage = lazy(() => loadPage(() => import("./pages/MonthPage")).then((module) => ({ default: module.MonthPage })));
+const TaskManagementPage = lazy(() => loadPage(() => import("./pages/TaskManagementPage")).then((module) => ({ default: module.TaskManagementPage })));
+const TimetablePage = lazy(() => loadPage(() => import("./pages/TimetablePage")).then((module) => ({ default: module.TimetablePage })));
+const LedgerPage = lazy(() => loadPage(() => import("./pages/LedgerPage")).then((module) => ({ default: module.LedgerPage })));
+const StatsPage = lazy(() => loadPage(() => import("./pages/StatsPage")).then((module) => ({ default: module.StatsPage })));
+const SettingsPage = lazy(() => loadPage(() => import("./pages/SettingsPage")).then((module) => ({ default: module.SettingsPage })));
 import type { Task, TaskDisplay, TaskDraft, TaskStatus } from "./types/task";
 import { fromDateKey, shouldReturnToToday, todayKey, toDateKey } from "./utils/date";
 import { isOccurrenceSchedule, itemSyncKey, taskSyncKey } from "./utils/taskMeta";
 import { CelebrationLayer } from "./components/CelebrationLayer";
-import { applyPracticePointChangesOnce, applyPracticePresetsOnce, homeworkCelebrations, markPointsDataReady, practiceCelebrations, type Celebration } from "./data/pointsService";
+import { homeworkCelebrations, markPointsDataReady, practiceCelebrations, type Celebration } from "./data/pointsService";
 import { supabase } from "./lib/supabase";
 import { isParentDevice } from "./utils/device";
 import { archiveSidebarMemo, deleteSidebarMemoHistory, loadSidebarMemoState, restoreSidebarMemo, saveSidebarMemo, type MemoHistoryEntry, type SidebarMemoSetting } from "./data/appSettingsRepository";
@@ -226,8 +236,6 @@ export default function App() {
         // 积分：云端数据拉下来以后才结算上周、套用分值预设（没拉到时不做，免得拿不全的本地缓存结算）
         if (pulled) {
           markPointsDataReady();
-          await applyPracticePresetsOnce().catch((e) => console.warn("[App] 积分预设失败", e));
-          await applyPracticePointChangesOnce().catch((e) => console.warn("[App] 积分分值改动失败", e));
         }
         refresh();
         // 进入云端模式后建立 Realtime 订阅，数据变更自动拉取并重渲染
@@ -412,12 +420,14 @@ export default function App() {
     <header className="pt-safe sticky top-0 z-40 border-b border-ink/10 bg-paper/95 backdrop-blur-xl desk:hidden"><div className="flex h-12 items-center justify-between px-3 sm:px-4"><button onClick={() => setPage("today")} className="flex items-center gap-2"><img src="/favicon.svg" alt="" className="h-7 w-7 rounded-lg" /><span className="text-left text-[15px] font-bold">小步计划</span></button><div className="flex items-center gap-2">{!cloudInitializing && <span title={cloudMode ? "云端已连接" : "本地模式"} className={`h-2 w-2 rounded-full ${cloudMode ? "bg-emerald-500" : "bg-stone-300"}`} />}<button type="button" aria-label="设置" title="设置" onClick={() => setPage("settings")} className={`flex h-9 w-9 items-center justify-center rounded-lg border ${page === "settings" ? "border-primary/30 bg-primary/10 text-primary" : "border-ink/10 bg-white text-muted hover:text-primary"}`}><Settings className="h-[18px] w-[18px]" /></button><button aria-label="添加任务" onClick={() => setForm({ open: true })} className="flex h-9 w-9 items-center justify-center rounded-lg bg-alert text-white"><Plus className="h-4 w-4" /></button></div></div></header>
     <div className="app-content">
       {page === "today" && <DayPage date={selectedDate} refreshKey={refreshKey} onCelebrate={celebrate} onOpenLedger={() => setPage("ledger")} onOpenTimetable={() => setPage("timetable")} onDateChange={setSelectedDate} onOpenMonth={() => { setPlanTab("month"); setPage("plan"); }} onAddTask={() => setForm({ open: true })} {...actions} />}
+      <Suspense fallback={<div className="p-6 text-sm text-muted">加载中…</div>}>
       {page === "plan" && planTab === "month" && <MonthPage tabs={planTabs} date={selectedDate} refreshKey={refreshKey} onDateChange={setSelectedDate} onOpenDay={openDay} onAddTask={(date) => { setSelectedDate(date); setForm({ open: true }); }} />}
       {page === "plan" && planTab === "tasks" && <TaskManagementPage tabs={planTabs} refreshKey={refreshKey} onRefresh={refresh} notify={notify} onEdit={(task) => setForm({ open: true, task })} onDelete={deleteTask} onEnd={endTask} onExtend={extendTask} onCopy={copyTask} />}
       {page === "stats" && <StatsPage refreshKey={refreshKey} tab={statsTab} tabs={statsTabs} />}
       {page === "settings" && <SettingsPage refreshKey={refreshKey} onImported={refresh} notify={notify} cloudMode={cloudMode} onAuthChange={syncCloudSession} memoHistory={memoHistory} memoBusy={memoBusy} onRestoreMemo={(id) => updateMemoHistory(() => restoreSidebarMemo(id), "已恢复到当前备忘，有原内容时会追加")} onDeleteMemo={(id) => updateMemoHistory(() => deleteSidebarMemoHistory(id), "历史备忘已永久删除")} />}
       {page === "timetable" && <TimetablePage />}
       {page === "ledger" && <LedgerPage refreshKey={refreshKey} onChanged={refresh} notify={notify} />}
+      </Suspense>
     </div>
     <nav className="bottom-nav-safe fixed inset-x-0 bottom-0 z-40 border-t border-ink/10 bg-white/95 backdrop-blur desk:hidden"><div className="mx-auto grid max-w-2xl grid-cols-5 px-1 pt-1">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`relative flex min-h-12 min-w-0 flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-[12px] font-medium ${page === value ? "text-primary" : "text-muted"}`}>{page === value && <span className="absolute -top-1 h-0.5 w-8 bg-alert" />}<Icon className="h-5 w-5" /><span className="truncate">{label}</span></button>)}</div></nav>
     {form.open && <TaskForm key={form.round ?? 0} task={form.task} initialDate={selectedDate} carry={form.carry} justAdded={form.justAdded} onClose={() => setForm({ open: false })} onSave={saveTask} onContinue={(carry, savedTitle) => setForm((current) => ({ open: true, carry, justAdded: [...(current.justAdded ?? []), savedTitle], round: (current.round ?? 0) + 1 }))} />}

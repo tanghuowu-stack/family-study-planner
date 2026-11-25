@@ -18,20 +18,16 @@ import { db } from "./db";
 import { scheduleOccursOn } from "./taskRepository";
 import { getRepository } from "./repositoryProvider";
 import { isCourseTask, isEndedRecurring, isOccurrenceSchedule, subCategoryLabel, taskShortName, MAIN_CATEGORY_META, WEEKDAY_LABELS } from "../utils/taskMeta";
-import { getWeekStartKey, todayKey, toDateKey, toLocalDateKey } from "../utils/date";
-import { isWeeklyTimes, weeklyTimesActiveIn, weeklyTimesProgress } from "../utils/weeklyTimes";
+import { todayKey, toDateKey, toLocalDateKey } from "../utils/date";
+import { isWeeklyTimes, weeklyTimesActiveIn } from "../utils/weeklyTimes";
 import { createTravelPauseCheck } from "../utils/travelPause";
 import { loadRestDays, saveRestDays, loadHiddenHabitCandidates, saveHiddenHabitCandidates } from "./appSettingsRepository";
 import type { Task, TaskOccurrenceStatus } from "../types/task";
-
-/** 逐日回看上限（防止极旧任务让连续扫描无界） */
-const DAY_SCAN_CAP = 400;
 
 const isActiveTask = (task: Task) => !task.deletedAt;
 /** 打卡基础过滤：软删剔除、readingPlan（阅读走 readingLogs 体系）剔除 */
 const statsEligible = (task: Task) => isActiveTask(task) && task.mainCategory !== "readingPlan";
 
-const prevDayKey = (date: string) => toDateKey(addDays(parseISO(date), -1));
 const nextDayKey = (date: string) => toDateKey(addDays(parseISO(date), 1));
 const listDays = (start: string, end: string): string[] => {
   const days: string[] = [];
@@ -70,68 +66,6 @@ function isApplicable(task: Task, date: string, occByKey: OccMap, startOverride?
   if (isOccurrenceSchedule(task) && occByKey.get(`${task.id}:${date}`)?.status === "cancelled") return false;
   return true;
 }
-
-/** 项目自身回看下界：排期起点 / 打卡生效起点 / 扫描上限三者取最晚 */
-function itemFloor(task: Task, today: string, startOverride?: string): string {
-  const cap = toDateKey(addDays(parseISO(today), -DAY_SCAN_CAP));
-  const scheduleStart = task.date ?? task.recurrence?.startDate ?? task.startDate
-    ?? (task.specificDates?.length ? [...task.specificDates].sort()[0] : cap);
-  return [scheduleStart, startOverride ?? task.streakStartDate ?? cap, cap].reduce((a, b) => (a > b ? a : b));
-}
-
-/**
- * 当前连续天数（单任务或分组均适用，传入数组长度为 1 即单任务）：从今天往回，
- * 应做日完成 +1（休息日完成同样计入）、应做日未完成断——但休息日"免罚"穿过；
- * 非应做日穿过；今天应做但未完成不算断（当天未结束）。分组时"应做/完成"取组内任一任务满足。
- */
-export function computeGroupStreak(tasks: Task[], today: string, occByKey: OccMap, rests: Set<string>, start?: string, paused?: TravelPauseCheck): number {
-  if (tasks.length === 0) return 0;
-  const floor = tasks.map((t) => itemFloor(t, today, start)).reduce((a, b) => (a < b ? a : b));
-  const applicable = (d: string) => groupApplicable(tasks, d, occByKey, start, paused);
-  const ok = (d: string) => groupSatisfied(tasks, d, occByKey, start, paused);
-  let streak = 0;
-  let cursor = today;
-  let gap = 0; // 连着多少天没有安排
-  if (applicable(cursor) && !ok(cursor)) cursor = prevDayKey(cursor); // 今天未完成不算断
-  while (cursor >= floor) {
-    if (!applicable(cursor)) { gap++; cursor = prevDayKey(cursor); continue; }
-    // 停了很久（间断的任务、旅游暂停等）再开始，连续天数从头算（2026-11-14 用户定）；
-    // 每周一次的项目两次之间只隔 6 天，不受影响
-    if (gap > STREAK_BREAK_GAP_DAYS) break;
-    gap = 0;
-    if (ok(cursor)) { streak++; cursor = prevDayKey(cursor); continue; }
-    if (rests.has(cursor)) { cursor = prevDayKey(cursor); continue; } // 休息日未完成：免罚穿过
-    break;
-  }
-  return streak;
-}
-
-/**
- * 每周几次的连续周数：从本周往回，这一周（项目里有效的成员）做够目标 +1；本周还没做够不算断（这周没过完）；
- * 过去哪一周没做够就断。中间停了（那几周没有有效成员）不超过 2 周穿过，超过就从头算（同 STREAK_BREAK_GAP_DAYS）。
- * 接上的项目：一周的次数把所有成员的记录加起来，目标取那一周有效成员里最大的。
- */
-export function computeWeeklyStreak(tasks: Task[], today: string, start?: string): number {
-  const startWeek = start ? getWeekStartKey(start) : undefined;
-  let week = getWeekStartKey(today);
-  let streak = 0;
-  let gapWeeks = 0;
-  for (let i = 0; i < 60; i++, week = toDateKey(addDays(parseISO(week), -7))) {
-    if (startWeek && week < startWeek) break;
-    const active = tasks.filter((t) => weeklyTimesActiveIn(t, week));
-    if (!active.length) { if (++gapWeeks * 7 > STREAK_BREAK_GAP_DAYS) break; continue; }
-    gapWeeks = 0;
-    const target = Math.max(...active.map((t) => weeklyTimesProgress(t, week).target));
-    const done = tasks.reduce((sum, t) => sum + weeklyTimesProgress(t, week).done, 0);
-    if (done >= target) { streak++; continue; }
-    if (i === 0) continue; // 本周还没过完
-    break;
-  }
-  return streak;
-}
-
-/** 中间连续超过这么多天没有安排，连续天数从头算 */
-export const STREAK_BREAK_GAP_DAYS = 14;
 
 const sortTasks = (a: Task, b: Task) =>
   (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || a.createdAt.localeCompare(b.createdAt);
@@ -418,10 +352,6 @@ export interface HabitCalendar {
   /** 单任务时是真实 taskId；命中 HABIT_GROUPS 分组时是合成的组 key（如 "piano"） */
   taskId: string;
   title: string;
-  /** 该项目自身的当前连续天数（与展示月份无关，恒从今天往回算）；streakUnit 为"周"时是连续做够的周数 */
-  currentStreak: number;
-  /** 连续的单位：整个项目都是每周几次时按周算，其余按天 */
-  streakUnit: "天" | "周";
   /** Completion days in the displayed month, counted once per calendar day. */
   monthCompletedDays: number;
   /** 这个月有没有任何一天排了它（停掉的月份为 false，打卡矩阵不显示这一行） */
@@ -490,12 +420,9 @@ export async function getHabitCalendars(month: string, today: string = todayKey(
       else status = "missed";
       return { date, status };
     });
-    const weekly = groupTasks.every(isWeeklyTimes);
     return {
       taskId: key,
       title: projectTitle(groupTasks),
-      currentStreak: weekly ? computeWeeklyStreak(groupTasks, today, start) : computeGroupStreak(groupTasks, today, occByKey, rests, start, paused),
-      streakUnit: weekly ? "周" : "天",
       monthCompletedDays: days.filter((day) => day.status === "done").length,
       hasScheduleInMonth: monthDays.some((date) => groupTasks.some((t) => (isWeeklyTimes(t) ? weeklyTimesActiveIn(t, date) : scheduleOccursOn(t, date)))),
       days,

@@ -2,16 +2,14 @@
  * 积分的读取、结算、家长操作、庆祝判定（2026-11-24）。规则与纯计算在 utils/points.ts，存储在 data/pointsLedger.ts。
  */
 import { db } from "./db";
-import { getRepository } from "./repositoryProvider";
-import { loadJsonSetting, saveJsonSetting } from "./appSettingsRepository";
 import { taskRepository } from "./taskRepository";
-import { loadPointsLedger, loadPresetResult, savePresetResult, updatePointsLedger, type PresetMatch, type PresetResult } from "./pointsLedger";
+import { loadPointsLedger, updatePointsLedger } from "./pointsLedger";
 import type { Task } from "../types/task";
 import { getWeekStartKey, todayKey, toLocalDateKey } from "../utils/date";
 import { isWeekPlanTask } from "../utils/taskGrouping";
 import {
-  activeBonuses, REACH_BONUS, buildWeekSnapshot, computePointsSummary, earlyItemsForWeek, EARLY_POINTS, DEFAULT_PRACTICE_EXTRA_SCORES, DEFAULT_PRACTICE_POINTS, isEarlyCompleted, isSettleTime,
-  matchPracticePresets, moreToDoToday, POINTS_START_WEEK, practiceDisplayName, practiceSettingsOf, practiceShortName, practiceVerb, PRACTICE_PRESETS,
+  activeBonuses, REACH_BONUS, buildWeekSnapshot, computePointsSummary, earlyItemsForWeek, EARLY_POINTS, isEarlyCompleted, isSettleTime,
+  moreToDoToday, practiceShortName, practiceVerb,
   scorePracticeWeek, weeksNeedingSnapshot, type PointsLedger, type PointsSummary,
 } from "../utils/points";
 
@@ -44,78 +42,6 @@ export async function settlePendingWeeks(context: PointsContext, today = todayKe
     return { ...current, snapshots };
   });
   return true;
-}
-
-/**
- * 按显示名给现有每周练习套分值预设（docs/TASK_09_points.md §3）。只套一次，结果记在 app_settings，跨设备只做一次。
- * - 没设过分值的，或者还是默认值（1 分、多做计分）的 → 套预设。第一版没匹配上时，新建 / 编辑保存会把默认 1 分
- *   明确写进任务，所以"等于默认值"也当作没设过。
- * - 家长手动设成别的值的 → 不覆盖（记为 kept）。
- * - 同时命中两项以上的不猜，列在 ambiguousTasks。
- * 返回这次（或以前那次）的结果。
- */
-export async function applyPracticePresetsOnce(): Promise<PresetResult | null> {
-  if (!dataReady) return null;
-  const existing = await loadPresetResult();
-  if (existing) return existing;
-  const tasks = (await db.tasks.toArray()).filter((task) => task.timeType === "weeklyTimes" && !task.deletedAt && task.status !== "cancelled" && task.mainCategory !== "readingPlan"
-    && (!task.endDate || task.endDate >= POINTS_START_WEEK));
-  const matched: PresetMatch[] = [];
-  const unmatchedTasks: string[] = [];
-  const ambiguousTasks: string[] = [];
-  for (const task of tasks) {
-    const name = practiceDisplayName(task);
-    const hits = matchPracticePresets(task);
-    if (hits.length === 0) { unmatchedTasks.push(name); continue; }
-    if (hits.length > 1) { ambiguousTasks.push(name); continue; }
-    const preset = hits[0];
-    const pointsDefault = task.practicePoints === undefined || task.practicePoints === DEFAULT_PRACTICE_POINTS;
-    const extraDefault = task.practiceExtraScores === undefined || task.practiceExtraScores === DEFAULT_PRACTICE_EXTRA_SCORES;
-    const same = task.practicePoints === preset.points && task.practiceExtraScores === preset.extraScores;
-    let action: PresetMatch["action"] = same ? "same" : "kept";
-    if (!same && pointsDefault && extraDefault) {
-      await getRepository().update(task.id, { practicePoints: preset.points, practiceExtraScores: preset.extraScores });
-      action = "applied";
-    }
-    const final = action === "kept" ? practiceSettingsOf(task) : { points: preset.points, extraScores: preset.extraScores };
-    matched.push({ id: task.id, title: name, preset: preset.title, points: final.points, extraScores: final.extraScores, action });
-  }
-  const hitPresets = new Set(matched.map((item) => item.preset));
-  const result: PresetResult = {
-    appliedAt: new Date().toISOString(),
-    matched,
-    unmatchedPresets: PRACTICE_PRESETS.filter((preset) => !hitPresets.has(preset.title)).map((preset) => preset.title),
-    unmatchedTasks,
-    ambiguousTasks,
-  };
-  await savePresetResult(result);
-  return result;
-}
-
-/**
- * 分值改动（只改一次，记在 app_settings，两台设备都不会重复改，之后家长在任务里手动改的也不会被覆盖）：
- * 2026-11-25 用户：小白鸥每页 2 分 → 3 分。分值预设（applyPracticePresetsOnce）早就套过、不会再跑，所以单独改现有的任务。
- * 已经结算的周用快照里固定的金额，不受影响；本周还没结算，按新分值算。
- */
-export const PRACTICE_POINT_CHANGES_KEY = "practice_points_change_2026_11_25";
-export interface PracticePointChangeResult { appliedAt: string; changed: { id: string; title: string; from: number; to: number }[] }
-export async function applyPracticePointChangesOnce(): Promise<PracticePointChangeResult | null> {
-  if (!dataReady) return null;
-  const existing = await loadJsonSetting<PracticePointChangeResult>(PRACTICE_POINT_CHANGES_KEY);
-  if (existing) return existing;
-  const tasks = (await db.tasks.toArray()).filter((task) => task.timeType === "weeklyTimes" && !task.deletedAt && task.status !== "cancelled"
-    && (!task.endDate || task.endDate >= todayKey()));
-  const changed: PracticePointChangeResult["changed"] = [];
-  for (const task of tasks) {
-    if (!/小白[欧鸥]/.test(practiceDisplayName(task))) continue;
-    const from = practiceSettingsOf(task).points;
-    if (from === 3) continue;
-    await getRepository().update(task.id, { practicePoints: 3, practiceExtraScores: task.practiceExtraScores ?? true });
-    changed.push({ id: task.id, title: practiceDisplayName(task), from, to: 3 });
-  }
-  const result = { appliedAt: new Date().toISOString(), changed };
-  await saveJsonSetting(PRACTICE_POINT_CHANGES_KEY, result, "积分分值改动记录云端同步失败");
-  return result;
 }
 
 // ── 庆祝 ─────────────────────────────────────────────────────────────────

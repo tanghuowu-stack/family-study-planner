@@ -18,6 +18,8 @@ interface Props {
     onLog: (date: string, delta: number) => void;
     /** 积分（2026-11-24）：标题右侧灰色小字"N 分"，超出目标但不计分的"多读了 N 本" */
     score?: { points: string; extra?: string };
+    /** 每做一次（一页、一篇…）得几分，写在名字后面（2026-11-25 用户：一目了然） */
+    pointValue?: number;
     /** 记这一下能多得几分：今天打勾时圆点上方飘出"+2"（补记以前的日子不飘） */
     gainFor?: (date: string, delta: number) => number;
     /** 能不能在过去的日子上补记（只有 Mac 上可以，docs/TASK_09_points.md §7） */
@@ -255,6 +257,7 @@ export function TaskItem({ task, compact = false, viewDate, readOnly = false, we
         <div className="flex min-w-0 items-start gap-2">
           <div className="min-w-0 flex-1 text-base font-semibold leading-6">
             <span className={done || effectiveStatus === "cancelled" ? "line-through" : ""}>{taskShortName(task)}</span>
+            {weekly?.pointValue !== undefined && <span className="ml-1.5 whitespace-nowrap text-[13px] font-semibold tabular-nums text-amber-700" title={`每${weekly.progress.unit}得 ${weekly.pointValue} 分`}>{weekly.pointValue} 分</span>}
             {/* 2026-11-21 用户要求去掉标题后的"写当天记录"小本子图标；以前写过的记录仍显示在标题下，可点开修改 */}
             {/* 上课时间放在名称后面（2026-11-18 用户要求），名称在前一眼先看到是什么课；窄屏放不下时整块换行 */}
             {formatTime(task) && <span className="ml-1.5 inline-block whitespace-nowrap rounded bg-ink/[0.05] px-1.5 align-top text-[13px] font-medium leading-6 tabular-nums text-muted">{formatTime(task).trim()}</span>}

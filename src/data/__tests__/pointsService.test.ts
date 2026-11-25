@@ -20,7 +20,7 @@ import { db } from "../db";
 import { taskRepository } from "../taskRepository";
 import type { Task, TaskDraft } from "../../types/task";
 import {
-  addBonus, applyPracticePresetsOnce, HOMEWORK_DONE_BAND, homeworkCelebrations, loadPointsContext, markPointsDataReady, practiceCelebrations,
+  addBonus, applyPracticePointChangesOnce, applyPracticePresetsOnce, HOMEWORK_DONE_BAND, homeworkCelebrations, loadPointsContext, markPointsDataReady, practiceCelebrations,
   revokeBonus, settlePendingWeeks, skipEarly,
 } from "../pointsService";
 import { loadPointsLedger } from "../pointsLedger";
@@ -123,7 +123,7 @@ describe("结算、预设、庆祝", () => {
     expect(result?.matched.map((item) => [item.title, item.preset, item.points, item.extraScores, item.action]).sort()).toEqual([
       ["FCE阅读", "FCE阅读", 5, false, "kept"],
       ["RAZ 阅读", "RAZ阅读", 1, false, "applied"],
-      ["小白欧22页-23页", "小白欧", 2, true, "applied"],
+      ["小白欧22页-23页", "小白鸥", 3, true, "applied"],
       ["我爱背诗", "我爱背诗", 1, true, "same"],
       ["钢琴练习", "钢琴练习", 2, true, "applied"],
     ].sort());
@@ -131,7 +131,7 @@ describe("结算、预设、庆祝", () => {
     expect(result?.ambiguousTasks).toEqual(["FCE阅读和听力"]);
     expect(result?.unmatchedPresets.sort()).toEqual(["FCE听力", "FCE语用", "英语单词听写"].sort());
     expect(await taskRepository.getTask(piano.id)).toMatchObject({ practicePoints: 2, practiceExtraScores: true });
-    expect(await taskRepository.getTask(xbo.id)).toMatchObject({ practicePoints: 2, practiceExtraScores: true });
+    expect(await taskRepository.getTask(xbo.id)).toMatchObject({ practicePoints: 3, practiceExtraScores: true });
     expect(await taskRepository.getTask(raz.id)).toMatchObject({ practicePoints: 1, practiceExtraScores: false });
     expect(await taskRepository.getTask(manual.id)).toMatchObject({ practicePoints: 5, practiceExtraScores: false });
     expect(await taskRepository.getTask(poem.id)).toMatchObject({ practicePoints: 1, practiceExtraScores: true });
@@ -148,10 +148,24 @@ describe("结算、预设、庆祝", () => {
     expect(before.summary.weekPractice).toBe(8);
     await applyPracticePresetsOnce();
     const after = await loadPointsContext();
-    // 修复后：钢琴 3×2 = 6；小白欧 2×2 + 达标 2 + 多做 1×2 = 8
-    expect(after.summary.weekScores.map((item) => [item.title, item.total]).sort()).toEqual([["小白欧22页-23页", 8], ["钢琴练习", 6]]);
-    expect(after.summary.weekPractice).toBe(14);
+    // 修复后：钢琴 3×2 = 6；小白鸥 3 页×3 + 达标 2 = 11（2026-11-25 起每页 3 分；多做的页同样按每页分值算）
+    expect(after.summary.weekScores.map((item) => [item.title, item.total]).sort()).toEqual([["小白欧22页-23页", 11], ["钢琴练习", 6]]);
+    expect(after.summary.weekPractice).toBe(17);
     expect(piano.task.id).toBeTruthy();
+  });
+
+  it("5c. 小白鸥改成每页 3 分：现有任务（2 分或默认 1 分）改成 3 分，只改一次，之后家长手动改的不覆盖", async () => {
+    const { task: old } = await taskRepository.create(practice("小白欧22页-23页", { subCategory: "otherInterest", practicePoints: 2, practiceExtraScores: true }));
+    const { task: renamed } = await taskRepository.create(practice("小白鸥", { subCategory: "otherInterest" }));
+    const { task: piano } = await taskRepository.create(practice("钢琴练习", { practicePoints: 2 }));
+    const result = await applyPracticePointChangesOnce();
+    expect(result?.changed.map((item) => [item.title, item.from, item.to]).sort()).toEqual([["小白欧22页-23页", 2, 3], ["小白鸥", 1, 3]].sort());
+    expect((await taskRepository.getTask(old.id))?.practicePoints).toBe(3);
+    expect((await taskRepository.getTask(renamed.id))?.practicePoints).toBe(3);
+    expect((await taskRepository.getTask(piano.id))?.practicePoints).toBe(2);
+    await taskRepository.update(old.id, { practicePoints: 4 });
+    await applyPracticePointChangesOnce();
+    expect((await taskRepository.getTask(old.id))?.practicePoints).toBe(4);
   });
 
   it("6. 某项本周达标只庆祝一次：取消再勾上不重复弹出", async () => {

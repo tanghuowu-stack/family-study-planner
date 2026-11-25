@@ -19,7 +19,7 @@ import { ParentBonusRow, PointsBar, practiceScoreLabels } from "../components/Po
 import { loadPointsContext, settlePendingWeeks, type Celebration, type PointsContext } from "../data/pointsService";
 import { loadBalances } from "../data/ledgerService";
 import type { Balances } from "../utils/ledger";
-import { formatMoreToDo, gainForLog, moreToDoToday, POINTS_START_WEEK } from "../utils/points";
+import { formatMoreToDo, gainForLog, moreToDoToday, POINTS_START_WEEK, practiceSettingsOf } from "../utils/points";
 import { isParentDevice } from "../utils/device";
 import { GroupHeading, NEUTRAL_DOT, RewardHint, SUBJECT_DOT } from "../components/GroupHeading";
 
@@ -190,7 +190,7 @@ export function DayPage(props: Props) {
     key={dayTaskKey(task)}
     dragHandle={dragHandle}
     dueLabel={dueLabelFor(task)}
-    weekly={task.timeType === "weeklyTimes" ? { progress: weeklyTimesProgress(task, props.date), onLog: (date, delta) => props.onWeeklyLog(task, delta, date), score: pointsOn && weeklyTimesProgress(task, props.date).weekStart === points?.summary.weekStart ? practiceScoreLabels(scoreById.get(task.id)) : undefined, gainFor: pointsOn ? (date, delta) => gainForLog(task, date, delta) : undefined, allowPast: parentDevice } : undefined}
+    weekly={task.timeType === "weeklyTimes" ? { progress: weeklyTimesProgress(task, props.date), onLog: (date, delta) => props.onWeeklyLog(task, delta, date), score: pointsOn && weeklyTimesProgress(task, props.date).weekStart === points?.summary.weekStart ? practiceScoreLabels(scoreById.get(task.id)) : undefined, pointValue: pointsOn ? practiceSettingsOf(task).points : undefined, gainFor: pointsOn ? (date, delta) => gainForLog(task, date, delta) : undefined, allowPast: parentDevice } : undefined}
     task={task}
     unsynced={props.unsyncedTasks?.has(taskSyncKey(task))}
     unsyncedItemIds={props.unsyncedItems && task.checklistItems ? new Set(task.checklistItems.filter((item) => props.unsyncedItems!.has(itemSyncKey(task.id, item.id))).map((item) => item.id)) : undefined}

@@ -22,25 +22,27 @@ import type { Task, TaskDisplay, TaskDraft, TaskStatus } from "./types/task";
 import { fromDateKey, shouldReturnToToday, todayKey, toDateKey } from "./utils/date";
 import { isOccurrenceSchedule, itemSyncKey, taskSyncKey } from "./utils/taskMeta";
 import { CelebrationLayer } from "./components/CelebrationLayer";
-import { applyPracticePresetsOnce, homeworkCelebrations, markPointsDataReady, practiceCelebrations, type Celebration } from "./data/pointsService";
+import { applyPracticePointChangesOnce, applyPracticePresetsOnce, homeworkCelebrations, markPointsDataReady, practiceCelebrations, type Celebration } from "./data/pointsService";
 import { supabase } from "./lib/supabase";
 import { isParentDevice } from "./utils/device";
 import { archiveSidebarMemo, deleteSidebarMemoHistory, loadSidebarMemoState, restoreSidebarMemo, saveSidebarMemo, type MemoHistoryEntry, type SidebarMemoSetting } from "./data/appSettingsRepository";
 
 /**
- * 2026-11-25 页面整理：菜单 6 项 → 4 项（今日 / 计划 / 统计 / 记账），设置位置不变。
- * 计划 = 月历 / 课表 / 全部任务（原月视图、课表、任务管理），统计 = 本周 / 打卡 / 上课（原周计划及打卡）。
+ * 2026-11-25 页面整理：菜单 6 项 → 5 项（今日 / 计划 / 课表 / 统计 / 记账），设置位置不变。
+ * 计划 = 月历 / 全部任务（原月视图、任务管理），统计 = 本周 / 打卡 / 上课（原周计划及打卡）。
+ * 课表常看，单独一项（同日用户："得点好几下才能看到"）。
  * 每页记住上次看的标签（只记本机）。
  */
-type Page = "today" | "plan" | "stats" | "ledger" | "settings";
-type PlanTab = "month" | "timetable" | "tasks";
+type Page = "today" | "plan" | "timetable" | "stats" | "ledger" | "settings";
+type PlanTab = "month" | "tasks";
 const navItems = [
   { page: "today" as const, label: "今日", icon: Home },
   { page: "plan" as const, label: "计划", icon: CalendarDays },
+  { page: "timetable" as const, label: "课表", icon: Table2 },
   { page: "stats" as const, label: "统计", icon: BarChart3 },
   { page: "ledger" as const, label: "记账", icon: Wallet },
 ];
-const PLAN_TABS: SegmentedTab<PlanTab>[] = [{ value: "month", label: "月历", icon: CalendarRange }, { value: "timetable", label: "课表", icon: Table2 }, { value: "tasks", label: "全部任务", icon: ClipboardList }];
+const PLAN_TABS: SegmentedTab<PlanTab>[] = [{ value: "month", label: "月历", icon: CalendarRange }, { value: "tasks", label: "全部任务", icon: ClipboardList }];
 const STATS_TABS: SegmentedTab<StatsTab>[] = [{ value: "week", label: "本周", icon: ListChecks }, { value: "habits", label: "打卡", icon: Flame }, { value: "courses", label: "上课", icon: GraduationCap }];
 const PLAN_TAB_KEY = "nav_plan_tab";
 const STATS_TAB_KEY = "nav_stats_tab";
@@ -225,6 +227,7 @@ export default function App() {
         if (pulled) {
           markPointsDataReady();
           await applyPracticePresetsOnce().catch((e) => console.warn("[App] 积分预设失败", e));
+          await applyPracticePointChangesOnce().catch((e) => console.warn("[App] 积分分值改动失败", e));
         }
         refresh();
         // 进入云端模式后建立 Realtime 订阅，数据变更自动拉取并重渲染
@@ -413,10 +416,10 @@ export default function App() {
       {page === "plan" && planTab === "tasks" && <TaskManagementPage tabs={planTabs} refreshKey={refreshKey} onRefresh={refresh} notify={notify} onEdit={(task) => setForm({ open: true, task })} onDelete={deleteTask} onEnd={endTask} onExtend={extendTask} onCopy={copyTask} />}
       {page === "stats" && <StatsPage refreshKey={refreshKey} onOpenDay={openDay} tab={statsTab} tabs={statsTabs} />}
       {page === "settings" && <SettingsPage refreshKey={refreshKey} onImported={refresh} notify={notify} cloudMode={cloudMode} onAuthChange={syncCloudSession} memoHistory={memoHistory} memoBusy={memoBusy} onRestoreMemo={(id) => updateMemoHistory(() => restoreSidebarMemo(id), "已恢复到当前备忘，有原内容时会追加")} onDeleteMemo={(id) => updateMemoHistory(() => deleteSidebarMemoHistory(id), "历史备忘已永久删除")} />}
-      {page === "plan" && planTab === "timetable" && <TimetablePage tabs={planTabs} />}
+      {page === "timetable" && <TimetablePage />}
       {page === "ledger" && <LedgerPage refreshKey={refreshKey} onChanged={refresh} notify={notify} />}
     </div>
-    <nav className="bottom-nav-safe fixed inset-x-0 bottom-0 z-40 border-t border-ink/10 bg-white/95 backdrop-blur desk:hidden"><div className="mx-auto grid max-w-2xl grid-cols-4 px-1 pt-1">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`relative flex min-h-12 min-w-0 flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-[12px] font-medium ${page === value ? "text-primary" : "text-muted"}`}>{page === value && <span className="absolute -top-1 h-0.5 w-8 bg-alert" />}<Icon className="h-5 w-5" /><span className="truncate">{label}</span></button>)}</div></nav>
+    <nav className="bottom-nav-safe fixed inset-x-0 bottom-0 z-40 border-t border-ink/10 bg-white/95 backdrop-blur desk:hidden"><div className="mx-auto grid max-w-2xl grid-cols-5 px-1 pt-1">{navItems.map(({ page: value, label, icon: Icon }) => <button key={value} onClick={() => setPage(value)} className={`relative flex min-h-12 min-w-0 flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-[12px] font-medium ${page === value ? "text-primary" : "text-muted"}`}>{page === value && <span className="absolute -top-1 h-0.5 w-8 bg-alert" />}<Icon className="h-5 w-5" /><span className="truncate">{label}</span></button>)}</div></nav>
     {form.open && <TaskForm key={form.round ?? 0} task={form.task} initialDate={selectedDate} carry={form.carry} justAdded={form.justAdded} onClose={() => setForm({ open: false })} onSave={saveTask} onContinue={(carry, savedTitle) => setForm((current) => ({ open: true, carry, justAdded: [...(current.justAdded ?? []), savedTitle], round: (current.round ?? 0) + 1 }))} />}
     {extendTarget && <ExtendRecurringDialog task={extendTarget} onClose={() => setExtendTarget(null)} onConfirm={confirmExtend} />}
     {datePick && <DatePickDialog {...datePick} onClose={() => setDatePick(null)} />}

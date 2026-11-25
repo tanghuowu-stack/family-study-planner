@@ -15,7 +15,7 @@ const quietButton = "min-h-10 rounded-lg bg-white px-3 text-sm font-semibold tex
 /** 一项练习的灰色小字："N 分"；超出目标但不计分的再加"多读了 N 本" */
 export function practiceScoreLabels(score?: PracticeWeekScore): { points: string; extra?: string } | undefined {
   if (!score) return undefined;
-  return { points: `${score.total} 分`, extra: score.extraCount > 0 && !score.extraScores ? `本周多${practiceVerb(score.title)}了 ${score.extraCount} ${score.unit}` : undefined };
+  return { points: `已得 ${score.total} 分`, extra: score.extraCount > 0 && !score.extraScores ? `本周多${practiceVerb(score.title)}了 ${score.extraCount} ${score.unit}` : undefined };
 }
 
 /**

@@ -1,23 +1,25 @@
 import { addDays, format, parseISO } from "date-fns";
 import { zhCN } from "date-fns/locale";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useState } from "react";
-import { getWeekReview, type WeekReview } from "../data/weekReview";
+import { CheckCircle2, ChevronLeft, ChevronRight, Circle, ClipboardCheck, Dumbbell, Hourglass } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { getWeekReview, type WeekReview, type WeekReviewDay, type WeekReviewItem } from "../data/weekReview";
 import { formatCompactDate, todayKey, toDateKey } from "../utils/date";
 import { sumWeeklyTimes } from "../utils/weeklyTimes";
 import { SUBJECT_DOT } from "./GroupHeading";
 
 /**
- * "周计划及打卡"页顶部的"本周"条（2026-11-18 从月视图搬来）：7 天各自完成几件。默认只显示这一行；点某一天，下方展开那天还没完成的事
- * （未来的日子是还没做的安排），再点一次收起。展开区里点某件事或"打开这一天"进入那天的今日页。
+ * 统计 › 本周（2026-11-25 用户："只有一横条，非常不专业，至少也得铺满屏"）。自上而下：
+ * 1. 周切换（‹ 本周 11月23日–11月29日 ›）；
+ * 2. 三张概览卡：作业完成（到今天为止 done/total + 进度条）、每周练习（做了几次 / 目标）、还没做完（到今天为止）；
+ * 3. 每天一张卡：星期、日期、完成数、进度条，下面列出那天的每件事（做完的打勾变灰、没做的空心圈），点一下进那天的今日页；
+ *    Mac 宽屏 7 天一排，iPad / 窄 Mac 两到四列，手机一列；
+ * 4. 每周练习：每项一行进度条（做够的打勾，过去的周没做够标红）。
  * 口径见 data/weekReview.ts：每件事只算一次，完成看现在的状态。
  */
 export function WeekReviewStrip({ refreshKey, onOpenDay }: { refreshKey: number; onOpenDay: (date: string) => void }) {
   const [anchor, setAnchor] = useState(todayKey);
   const [review, setReview] = useState<WeekReview | null>(null);
-  const [openDate, setOpenDate] = useState<string | null>(null);
   useEffect(() => { void getWeekReview(anchor).then(setReview); }, [anchor, refreshKey]);
-  useEffect(() => { setOpenDate(null); }, [anchor]);
   if (!review) return null;
 
   const today = todayKey();
@@ -25,95 +27,109 @@ export function WeekReviewStrip({ refreshKey, onOpenDay }: { refreshKey: number;
   const counted = review.days.filter((day) => !day.isFuture);
   const done = counted.reduce((sum, day) => sum + day.done, 0);
   const total = counted.reduce((sum, day) => sum + day.total, 0);
+  const upcoming = review.days.filter((day) => day.isFuture).reduce((sum, day) => sum + day.total, 0);
   const shift = (days: number) => setAnchor(toDateKey(addDays(parseISO(review.weekStart), days)));
   const title = isThisWeek ? "本周" : review.weekEnd < today ? "那一周" : "下一周";
-  const openDay = review.days.find((day) => day.date === openDate) ?? null;
-  // 每周几次的总量（各项目标之和 / 已做之和），放在 7 天后面的第 8 列
-  const hasTimes = review.weeklyTimes.length > 0;
   const times = sumWeeklyTimes(review.weeklyTimes);
   const timesAllDone = times.target > 0 && times.done >= times.target;
-  const timesMissed = !timesAllDone && review.weekEnd < today;
+  const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
 
   return (
-    <section className="surface mb-3 overflow-hidden sm:mb-4" aria-label="本周完成情况">
-      <header className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-ink/10 py-1.5 pl-3 pr-1.5 sm:gap-x-3 sm:px-4 sm:py-3">
-        <h2 className="text-base font-bold text-ink">{title}</h2>
-        <span className="text-[13px] text-muted">{formatCompactDate(review.weekStart)}–{formatCompactDate(review.weekEnd)}</span>
-        {total > 0 && <span className="text-[13px] font-semibold text-ink">已完成 {done}/{total}</span>}
-        <div className="ml-auto flex items-center gap-0.5 sm:gap-1">
-          <button onClick={() => shift(-7)} aria-label="上一周" className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg text-muted hover:bg-stone-100 hover:text-ink"><ChevronLeft className="h-4 w-4" /></button>
-          {!isThisWeek && <button onClick={() => setAnchor(today)} className="h-8 sm:h-9 rounded-lg px-2 text-[13px] font-semibold text-primary hover:bg-primary/10">回到本周</button>}
-          <button onClick={() => shift(7)} aria-label="下一周" className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg text-muted hover:bg-stone-100 hover:text-ink"><ChevronRight className="h-4 w-4" /></button>
+    <section aria-label="本周完成情况" className="space-y-3 sm:space-y-4">
+      <div className="flex items-center gap-2">
+        <button onClick={() => shift(-7)} aria-label="上一周" className="flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:bg-white hover:text-ink"><ChevronLeft className="h-5 w-5" /></button>
+        <div className="min-w-0 text-center sm:text-left">
+          <h2 className="text-[17px] font-bold leading-6 text-ink">{title}</h2>
+          <p className="text-[13px] leading-4 text-muted">{formatCompactDate(review.weekStart)}–{formatCompactDate(review.weekEnd)}</p>
         </div>
-      </header>
-
-      <div className={`grid divide-x divide-ink/[0.07] ${hasTimes ? "grid-cols-[repeat(7,minmax(0,1fr))_minmax(0,1.5fr)]" : "grid-cols-7"}`}>
-        {review.days.map((day) => {
-          const ratio = day.total ? day.done / day.total : 0;
-          const allDone = day.total > 0 && day.done === day.total;
-          return (
-            <button key={day.date} onClick={() => setOpenDate(openDate === day.date ? null : day.date)} aria-expanded={openDate === day.date} aria-label={`${format(parseISO(day.date), "M月d日 EEEE", { locale: zhCN })}，${day.isFuture ? `安排了 ${day.total} 件` : `完成 ${day.done}/${day.total}`}`}
-              className={`relative flex min-h-[4rem] flex-col items-center gap-0.5 px-0.5 py-1.5 hover:bg-mint/30 sm:min-h-[4.75rem] sm:gap-1 sm:py-2 ${openDate === day.date ? "bg-primary/10" : day.isToday ? "bg-mint/40" : ""}`}>
-              {openDate === day.date && <span aria-hidden className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary" />}
-              <span className={`text-[12px] leading-4 sm:text-[13px] sm:leading-5 ${day.isToday ? "font-bold text-primary" : "text-muted"}`}>{format(parseISO(day.date), "EEEEE", { locale: zhCN })}</span>
-              <span className={`text-[13px] leading-4 tabular-nums sm:leading-5 ${day.isToday ? "font-bold text-primary" : "font-semibold text-ink"}`}>{parseISO(day.date).getDate()}</span>
-              {day.total === 0 ? <span className="text-[13px] leading-4 text-stone-300">–</span>
-                : day.isFuture ? <span className="text-[12px] leading-4 tabular-nums text-muted sm:text-[13px]">{day.total} 件</span>
-                : <>
-                  <span className={`h-1 overflow-hidden rounded-full bg-stone-200 ${hasTimes ? "w-6 sm:w-10" : "w-8 sm:w-12"}`}><span className="block h-full rounded-full bg-primary" style={{ width: `${ratio * 100}%` }} /></span>
-                  <span className={`text-[12px] font-semibold leading-4 tabular-nums sm:text-[13px] ${allDone ? "text-primary" : "text-ink"}`}>{allDone ? "✓" : `${day.done}/${day.total}`}</span>
-                </>}
-            </button>
-          );
-        })}
-        {hasTimes && (
-          <div aria-label={`每周练习，这一周做了 ${times.done}/${times.target} 次`} className="flex min-h-[4rem] flex-col items-center gap-0.5 bg-stone-50/70 px-0.5 py-1.5 sm:min-h-[4.75rem] sm:gap-1 sm:py-2">
-            <span className="whitespace-nowrap text-[12px] leading-4 text-muted sm:text-[13px] sm:leading-5"><span className="sm:hidden">练习</span><span className="hidden sm:inline">每周练习</span></span>
-            <span className={`text-[13px] font-semibold leading-4 tabular-nums sm:leading-5 ${timesAllDone ? "text-primary" : timesMissed ? "text-rose-700" : "text-ink"}`}>{times.done}/{times.target}</span>
-            <span className="h-1 w-8 overflow-hidden rounded-full bg-stone-200 sm:w-14"><span className="block h-full rounded-full bg-primary" style={{ width: `${times.target ? (times.done / times.target) * 100 : 0}%` }} /></span>
-            <span className={`text-[12px] font-semibold leading-4 sm:text-[13px] ${timesAllDone ? "text-primary" : "text-muted"}`}>{timesAllDone ? "✓" : `差 ${times.target - times.done}`}</span>
-          </div>
-        )}
+        <button onClick={() => shift(7)} aria-label="下一周" className="flex h-11 w-11 items-center justify-center rounded-lg text-muted hover:bg-white hover:text-ink"><ChevronRight className="h-5 w-5" /></button>
+        {!isThisWeek && <button onClick={() => setAnchor(today)} className="ml-auto min-h-11 rounded-lg border border-ink/10 bg-white px-3 text-[13px] font-semibold text-primary hover:bg-primary/5">回到本周</button>}
       </div>
 
-      {hasTimes && (
-        // 每周几次不排到哪一天：单独一行，看这一周做了几次（过去的周没做够标出来）
-        // 2026-11-21：去掉开头的"每周几次 N/M"（总数已在上面第 8 列），各项排成一行，放不下时横向滑动
-        <div className="flex items-center gap-1.5 overflow-x-auto border-t border-ink/10 px-3 py-2 [scrollbar-width:none] sm:gap-x-2 sm:px-4 sm:py-2.5 [&::-webkit-scrollbar]:hidden" aria-label="每周几次">
-          {review.weeklyTimes.map((item) => {
-            const missed = !item.reached && review.weekEnd < today;
-            return (
-              <span key={item.taskId} title={`${item.title}：这一周做了 ${item.done}/${item.target} ${item.unit}`}
-                className={`inline-flex min-h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 text-[12px] ring-1 ring-inset sm:min-h-7 sm:gap-1.5 sm:px-2.5 sm:text-[13px] ${item.reached ? "bg-mint/60 ring-primary/20" : missed ? "bg-rose-50 ring-rose-200" : "bg-white ring-ink/10"}`}>
-                <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: SUBJECT_DOT[item.subject] }} />
-                <span className="max-w-[5.5rem] truncate text-ink sm:max-w-[7rem]">{item.title}</span>
-                <span className={`font-semibold tabular-nums ${item.reached ? "text-primary" : missed ? "text-rose-700" : "text-ink"}`}>{item.reached ? `✓ ${item.done}/${item.target}` : `${item.done}/${item.target}`}</span>
-              </span>
-            );
-          })}
-        </div>
-      )}
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <StatTile icon={ClipboardCheck} color="#2B7656" label="作业完成" value={<>{done}<span className="text-[15px] font-semibold text-muted">/{total}</span></>} ratio={total ? done / total : 0}
+          note={total ? `完成 ${pct(done, total)}%` : upcoming ? `后面还有 ${upcoming} 件` : "没有安排"} />
+        <StatTile icon={Dumbbell} color="#9364C7" label="每周练习" value={<>{times.done}<span className="text-[15px] font-semibold text-muted">/{times.target}</span></>} ratio={times.target ? times.done / times.target : 0}
+          note={times.target ? (timesAllDone ? "都做够了" : `还差 ${times.target - times.done} 次`) : "没有练习"} />
+        <StatTile icon={Hourglass} color={review.unfinished.length ? "#E36B4E" : "#2B7656"} label="还没做完" value={<>{review.unfinished.length}<span className="text-[15px] font-semibold text-muted"> 件</span></>}
+          note={review.unfinished.length ? "到今天为止" : "都做完了"} />
+      </div>
 
-      {openDay && (
-        <div className="border-t border-ink/10 px-3 pb-2 pt-3 sm:px-4">
-          <div className="flex items-center gap-2">
-            <h3 className="text-[13px] font-semibold text-ink">{format(parseISO(openDay.date), "M月d日 EEEE", { locale: zhCN })}</h3>
-            <span className="text-[13px] text-muted">{openDay.total === 0 ? "没有安排" : openDay.isFuture ? `安排了 ${openDay.total} 件` : openDay.pending.length ? `还没完成 ${openDay.pending.length} 件` : "都完成了"}</span>
-            <button onClick={() => onOpenDay(openDay.date)} className="ml-auto inline-flex min-h-9 items-center gap-0.5 rounded-lg px-2 text-[13px] font-semibold text-primary hover:bg-primary/10">打开这一天<ChevronRight className="h-4 w-4" /></button>
-          </div>
-          {openDay.pending.length > 0 && <ul className="mt-1 divide-y divide-ink/[0.07]">
-            {openDay.pending.map((item) => (
-              <li key={item.key}>
-                <button onClick={() => onOpenDay(item.date)} className="flex min-h-11 w-full items-center gap-2 text-left hover:bg-stone-50">
-                  <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: SUBJECT_DOT[item.subject] }} />
-                  <span className="min-w-0 flex-1 truncate text-[15px] text-ink">{item.title}</span>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-stone-300" />
-                </button>
-              </li>
-            ))}
-          </ul>}
-        </div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 lg:grid-cols-4 xl:grid-cols-7">
+        {review.days.map((day) => <DayCard key={day.date} day={day} onOpenDay={onOpenDay} />)}
+      </div>
+
+      {review.weeklyTimes.length > 0 && (
+        <section className="surface overflow-hidden" aria-label="每周练习">
+          <header className="flex items-center gap-2 border-b border-ink/10 px-3 py-3 sm:px-4">
+            <h3 className="text-[15px] font-bold text-ink">每周练习</h3>
+            <span className={`ml-auto rounded-full px-2.5 py-0.5 text-[13px] font-semibold tabular-nums ${timesAllDone ? "bg-primary/10 text-primary" : "bg-stone-100 text-ink"}`}>{times.done}/{times.target} 次</span>
+          </header>
+          <ul className="grid divide-y divide-ink/[0.06] sm:grid-cols-2 sm:divide-y-0">
+            {review.weeklyTimes.map((item) => {
+              const missed = !item.reached && review.weekEnd < today;
+              return (
+                <li key={item.taskId} className="flex min-h-12 items-center gap-3 px-3 py-2 sm:border-b sm:border-ink/[0.06] sm:px-4">
+                  <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: SUBJECT_DOT[item.subject] }} />
+                  <span className="w-24 shrink-0 truncate text-[15px] font-medium text-ink sm:w-28">{item.title}</span>
+                  <span className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-stone-100"><span className={`block h-full rounded-full ${item.reached ? "bg-primary" : missed ? "bg-rose-300" : "bg-primary/60"}`} style={{ width: `${Math.min(100, item.target ? (item.done / item.target) * 100 : 0)}%` }} /></span>
+                  <span className={`w-20 shrink-0 text-right text-[13px] font-semibold tabular-nums ${item.reached ? "text-primary" : missed ? "text-rose-700" : "text-ink"}`}>{item.reached && "✓ "}{item.done}/{item.target} {item.unit}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       )}
     </section>
+  );
+}
+
+function StatTile({ icon: Icon, color, label, value, note, ratio }: { icon: typeof Circle; color: string; label: string; value: ReactNode; note: string; ratio?: number }) {
+  return (
+    <div className="surface min-w-0 p-3 sm:p-4">
+      <div className="flex items-center gap-2">
+        <span aria-hidden className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-full sm:flex" style={{ background: `${color}1A`, color }}><Icon className="h-4 w-4" /></span>
+        <span className="truncate text-[13px] font-medium text-muted">{label}</span>
+      </div>
+      <p className="mt-1.5 text-[24px] font-bold leading-8 tabular-nums text-ink sm:mt-2 sm:text-[28px]">{value}</p>
+      {ratio !== undefined && <span className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-stone-100"><span className="block h-full rounded-full" style={{ width: `${Math.min(100, ratio * 100)}%`, background: color }} /></span>}
+      <p className="mt-1.5 truncate text-[12px] text-muted sm:text-[13px]">{note}</p>
+    </div>
+  );
+}
+
+function DayCard({ day, onOpenDay }: { day: WeekReviewDay; onOpenDay: (date: string) => void }) {
+  const date = parseISO(day.date);
+  const allDone = day.total > 0 && day.done === day.total && !day.isFuture;
+  const items: (WeekReviewItem & { done: boolean })[] = [...day.pending.map((item) => ({ ...item, done: false })), ...day.completed.map((item) => ({ ...item, done: true }))];
+  return (
+    <article className={`surface flex min-w-0 flex-col overflow-hidden ${day.isToday ? "ring-2 ring-primary/40" : ""}`}>
+      <button onClick={() => onOpenDay(day.date)} className={`flex min-h-12 items-center gap-2 border-b border-ink/[0.07] px-3 py-2 text-left hover:bg-stone-50 ${day.isToday ? "bg-mint/50" : ""}`} aria-label={`打开${format(date, "M月d日 EEEE", { locale: zhCN })}`}>
+        <span className={`text-[22px] font-bold leading-7 tabular-nums ${day.isToday ? "text-primary" : "text-ink"}`}>{date.getDate()}</span>
+        <span className="min-w-0 flex-1 leading-4">
+          <span className={`block whitespace-nowrap text-[13px] font-semibold ${day.isToday ? "text-primary" : "text-ink"}`}>{format(date, "EEEE", { locale: zhCN }).replace("星期", "周")}</span>
+          <span className={`block whitespace-nowrap text-[12px] ${day.isToday ? "font-semibold text-primary" : "text-muted"}`}>{day.isToday ? "今天" : `${date.getMonth() + 1}月`}</span>
+        </span>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[12px] font-semibold tabular-nums ${day.total === 0 ? "text-stone-300" : allDone ? "bg-primary/10 text-primary" : day.isFuture ? "bg-stone-100 text-muted" : "bg-stone-100 text-ink"}`}>
+          {day.total === 0 ? "–" : allDone ? "✓" : day.isFuture ? `${day.total} 件` : `${day.done}/${day.total}`}
+        </span>
+      </button>
+      {day.total > 0 && !day.isFuture && <span className="mx-3 mt-2 block h-1 overflow-hidden rounded-full bg-stone-100"><span className="block h-full rounded-full bg-primary" style={{ width: `${(day.done / day.total) * 100}%` }} /></span>}
+      {items.length === 0
+        ? <p className="px-3 py-4 text-[13px] text-stone-400">没有安排</p>
+        : <ul className="flex-1 px-1.5 py-1.5">
+          {items.map((item) => (
+            <li key={item.key}>
+              <button onClick={() => onOpenDay(item.date)} className="flex min-h-9 w-full items-center gap-2 rounded-md px-1.5 text-left hover:bg-stone-50">
+                {item.done
+                  ? <CheckCircle2 aria-label="已完成" className="h-4 w-4 shrink-0 text-primary" />
+                  : <Circle aria-label={day.isFuture ? "还没到" : "没做完"} className={`h-4 w-4 shrink-0 ${day.isFuture ? "text-stone-300" : "text-alert/70"}`} />}
+                <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: SUBJECT_DOT[item.subject] }} />
+                <span className={`min-w-0 flex-1 truncate text-[14px] ${item.done ? "text-muted line-through decoration-stone-300" : "text-ink"}`}>{item.title}</span>
+              </button>
+            </li>
+          ))}
+        </ul>}
+    </article>
   );
 }

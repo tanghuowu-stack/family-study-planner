@@ -3,6 +3,7 @@
  */
 import { db } from "./db";
 import { getRepository } from "./repositoryProvider";
+import { loadJsonSetting, saveJsonSetting } from "./appSettingsRepository";
 import { taskRepository } from "./taskRepository";
 import { loadPointsLedger, loadPresetResult, savePresetResult, updatePointsLedger, type PresetMatch, type PresetResult } from "./pointsLedger";
 import type { Task } from "../types/task";
@@ -87,6 +88,32 @@ export async function applyPracticePresetsOnce(): Promise<PresetResult | null> {
     ambiguousTasks,
   };
   await savePresetResult(result);
+  return result;
+}
+
+/**
+ * 分值改动（只改一次，记在 app_settings，两台设备都不会重复改，之后家长在任务里手动改的也不会被覆盖）：
+ * 2026-11-25 用户：小白鸥每页 2 分 → 3 分。分值预设（applyPracticePresetsOnce）早就套过、不会再跑，所以单独改现有的任务。
+ * 已经结算的周用快照里固定的金额，不受影响；本周还没结算，按新分值算。
+ */
+export const PRACTICE_POINT_CHANGES_KEY = "practice_points_change_2026_11_25";
+export interface PracticePointChangeResult { appliedAt: string; changed: { id: string; title: string; from: number; to: number }[] }
+export async function applyPracticePointChangesOnce(): Promise<PracticePointChangeResult | null> {
+  if (!dataReady) return null;
+  const existing = await loadJsonSetting<PracticePointChangeResult>(PRACTICE_POINT_CHANGES_KEY);
+  if (existing) return existing;
+  const tasks = (await db.tasks.toArray()).filter((task) => task.timeType === "weeklyTimes" && !task.deletedAt && task.status !== "cancelled"
+    && (!task.endDate || task.endDate >= todayKey()));
+  const changed: PracticePointChangeResult["changed"] = [];
+  for (const task of tasks) {
+    if (!/小白[欧鸥]/.test(practiceDisplayName(task))) continue;
+    const from = practiceSettingsOf(task).points;
+    if (from === 3) continue;
+    await getRepository().update(task.id, { practicePoints: 3, practiceExtraScores: task.practiceExtraScores ?? true });
+    changed.push({ id: task.id, title: practiceDisplayName(task), from, to: 3 });
+  }
+  const result = { appliedAt: new Date().toISOString(), changed };
+  await saveJsonSetting(PRACTICE_POINT_CHANGES_KEY, result, "积分分值改动记录云端同步失败");
   return result;
 }
 

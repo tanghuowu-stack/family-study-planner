@@ -54,7 +54,8 @@ export const PRACTICE_PRESETS: PracticePreset[] = [
   { title: "FCE语用", short: "FCE语用", points: 1, extraScores: false, match: /语用/ },
   { title: "FCE阅读", short: "FCE阅读", points: 2, extraScores: true, match: /FCE.*(阅读|READING)/ },
   { title: "FCE听力", short: "FCE听力", points: 1, extraScores: true, match: /FCE.*(听力|LISTENING)/ },
-  { title: "小白欧", short: "小白欧", points: 2, extraScores: true, match: /小白欧/ },
+  // 2026-11-25 用户：小白鸥改成每页 3 分；标题写"小白鸥"或"小白欧"都认
+  { title: "小白鸥", short: "小白鸥", points: 3, extraScores: true, match: /小白[欧鸥]/ },
 ];
 
 export const normalizePresetTitle = (title: string) => title.replace(/\s+/g, "").toUpperCase();
@@ -81,7 +82,7 @@ export function findPracticePreset(task: NamedTask | string): PracticePreset | u
   return found.length === 1 ? found[0] : undefined;
 }
 
-/** 提示里用的短名："钢琴""背诗""小白欧"；没匹配上预设的用显示名 */
+/** 提示里用的短名："钢琴""背诗""小白鸥"；没匹配上预设的用显示名 */
 export const practiceShortName = (task: NamedTask) => findPracticePreset(task)?.short ?? practiceDisplayName(task);
 
 export interface PracticeSettings { points: number; extraScores: boolean }
@@ -92,8 +93,8 @@ export function practiceSettingsOf(task: Pick<Task, "practicePoints" | "practice
 }
 
 /**
- * 编辑 / 新建任务时显示和保存的分值：任务上设过的用设过的；没设过的按显示名套预设（例如新建一条"小白欧24页-25页"
- * 自动是每页 2 分）；都没有就是默认的 1 分、多做计分。
+ * 编辑 / 新建任务时显示和保存的分值：任务上设过的用设过的；没设过的按显示名套预设（例如新建一条"小白鸥24页-25页"
+ * 自动是每页 3 分）；都没有就是默认的 1 分、多做计分。
  */
 export function practiceSettingsForForm(task: NamedTask & Pick<Task, "practicePoints" | "practiceExtraScores">): PracticeSettings {
   if (task.practicePoints !== undefined || task.practiceExtraScores !== undefined) return practiceSettingsOf(task);

@@ -86,7 +86,11 @@ export function HabitSection() {
         <>
           {/* 停掉的项目（这个月一天都没排）不占一行；管理弹窗里照样能看到 */}
           {calendars.some((cal) => cal.hasScheduleInMonth)
-            ? <HabitMatrix calendars={calendars.filter((cal) => cal.hasScheduleInMonth)} restDays={restDays} />
+            ? <>
+              <HabitSummary calendars={calendars.filter((cal) => cal.hasScheduleInMonth)} isThisMonth={isThisMonth} />
+              <h3 className="mt-5 px-1 text-[15px] font-bold text-ink sm:mt-6">每日明细</h3>
+              <HabitMatrix calendars={calendars.filter((cal) => cal.hasScheduleInMonth)} restDays={restDays} />
+            </>
             : <div className="surface mt-3 p-5 text-center text-sm text-muted">这个月没有安排打卡项目</div>}
           {calendars.some((cal) => !cal.hasScheduleInMonth) && (
             <p className="mt-2 px-1 text-[13px] text-muted">这个月停着的项目不显示：{calendars.filter((cal) => !cal.hasScheduleInMonth).map((cal) => cal.title).join("、")}</p>
@@ -97,6 +101,75 @@ export function HabitSection() {
       {manageOpen && <ManageDialog onClose={() => setManageOpen(false)} onChanged={reload} />}
       {restOpen && <RestDayDialog initialMonth={month} onClose={() => setRestOpen(false)} onChanged={reload} />}
     </section>
+  );
+}
+
+/** 到今天为止的完成 / 漏卡天数：今天还没过完，做了才算（没做不算漏卡）；未来的日子不算 */
+function habitCounts(cal: HabitCalendar, today: string) {
+  const past = cal.days.filter((day) => day.date < today || (day.date === today && day.status === "done"));
+  const done = past.filter((day) => day.status === "done").length;
+  const missed = past.filter((day) => day.status === "missed").length;
+  return { done, missed, rate: done + missed ? done / (done + missed) : 0, recent: past.slice(-7) };
+}
+
+/** 完成率小圆环 */
+function RateRing({ rate, size = 48 }: { rate: number; size?: number }) {
+  const r = (size - 6) / 2;
+  const c = 2 * Math.PI * r;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0 -rotate-90" aria-hidden>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#E7E5E4" strokeWidth={5} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#2B7656" strokeWidth={5} strokeLinecap="round" strokeDasharray={`${c * rate} ${c}`} />
+    </svg>
+  );
+}
+
+/**
+ * 打卡概览（2026-11-25 用户："只有这么一点点，至少也得铺满屏"）：
+ * 上面三张月度概览卡（本月打卡次数、完成率、漏卡），下面每个项目一张卡（本月 N 天、完成率圆环、漏卡天数、最近 7 天）。
+ * 完成率 = 完成 ÷（完成 + 漏卡），只算到昨天（今天做了也算上）；休息日和没排的日子不算。
+ */
+function HabitSummary({ calendars, isThisMonth }: { calendars: HabitCalendar[]; isThisMonth: boolean }) {
+  const today = todayKey();
+  const counts = calendars.map((cal) => ({ cal, ...habitCounts(cal, today) }));
+  const done = counts.reduce((sum, item) => sum + item.done, 0);
+  const missed = counts.reduce((sum, item) => sum + item.missed, 0);
+  const rate = done + missed ? Math.round((done / (done + missed)) * 100) : 0;
+  const tile = "surface min-w-0 p-3 sm:p-4";
+  return (
+    <>
+      <div className="mt-2 grid grid-cols-3 gap-2 sm:mt-3 sm:gap-3">
+        <div className={tile}><p className="text-[13px] font-medium text-muted">{isThisMonth ? "本月" : "这个月"}打卡</p><p className="mt-1.5 text-[24px] font-bold leading-8 tabular-nums text-primary sm:text-[28px]">{done}<span className="text-[15px] font-semibold text-muted"> 次</span></p><p className="mt-1 truncate text-[12px] text-muted sm:text-[13px]">{calendars.length} 个项目</p></div>
+        <div className={tile}><p className="text-[13px] font-medium text-muted">完成率</p><p className="mt-1.5 text-[24px] font-bold leading-8 tabular-nums text-ink sm:text-[28px]">{rate}<span className="text-[15px] font-semibold text-muted">%</span></p><span className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-stone-100"><span className="block h-full rounded-full bg-primary" style={{ width: `${rate}%` }} /></span></div>
+        <div className={tile}><p className="text-[13px] font-medium text-muted">漏卡</p><p className={`mt-1.5 text-[24px] font-bold leading-8 tabular-nums sm:text-[28px] ${missed ? "text-rose-600" : "text-ink"}`}>{missed}<span className="text-[15px] font-semibold text-muted"> 次</span></p><p className="mt-1 truncate text-[12px] text-muted sm:text-[13px]">{missed ? "休息日不算漏卡" : "一次都没漏"}</p></div>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2 sm:mt-3 sm:gap-3 lg:grid-cols-4">
+        {counts.map(({ cal, done: d, missed: m, rate: r, recent }) => (
+          <article key={cal.taskId} className="surface flex min-w-0 flex-col gap-3 p-3 sm:p-4">
+            <div className="flex items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <h4 className="truncate text-[15px] font-bold text-ink" title={cal.title}>{cal.title}</h4>
+                <p className="mt-1 leading-7 text-ink"><span className="text-[24px] font-bold tabular-nums">{d}</span><span className="text-[13px] text-muted"> 天</span></p>
+                <p className={`text-[12px] sm:text-[13px] ${m ? "text-rose-600" : "text-muted"}`}>{m ? `漏卡 ${m} 天` : "没有漏卡"}</p>
+              </div>
+              <div className="relative">
+                <RateRing rate={r} />
+                <span className="absolute inset-0 flex items-center justify-center text-[12px] font-bold tabular-nums text-ink">{Math.round(r * 100)}%</span>
+              </div>
+            </div>
+            <div className="mt-auto">
+              <p className="text-[12px] text-muted">最近 7 天</p>
+              <div className="mt-1 flex gap-1">
+                {recent.map((day) => (
+                  <span key={day.date} title={`${Number(day.date.slice(5, 7))}月${Number(day.date.slice(8))}日 ${STATUS_TEXT[day.status]}`}
+                    className={`h-2 flex-1 rounded-full ${day.status === "done" ? "bg-primary" : day.status === "missed" ? "bg-rose-300" : "bg-stone-200"}`} />
+                ))}
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -120,7 +193,7 @@ function HabitMatrix({ calendars, restDays }: { calendars: HabitCalendar[]; rest
           : "bg-stone-200";
 
   return (
-    <div className="surface mt-2 overflow-hidden sm:mt-3">
+    <div className="surface mt-2 overflow-hidden">
       <div ref={scroller} className="overflow-x-auto">
         <table className="w-full border-separate border-spacing-0 text-center">
           <thead>

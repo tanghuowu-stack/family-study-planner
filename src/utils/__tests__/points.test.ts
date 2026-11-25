@@ -224,10 +224,11 @@ describe("预设分值按显示名匹配（第二版，2026-11-24 线上钢琴 /
     expect(practiceDisplayName({ title: "", mainCategory: "interestClass", subCategory: "pianoPractice" })).toBe("钢琴练习");
   });
 
-  it("小白欧：标题带页码也匹配，每页 2 分、多做计分", () => {
-    expect(findPracticePreset("小白欧22页-23页")).toMatchObject({ title: "小白欧", points: 2, extraScores: true });
-    expect(findPracticePreset("小白欧 24-25页")?.points).toBe(2);
-    expect(findPracticePreset("小白鸥")).toBeUndefined();
+  it("小白鸥：标题带页码也匹配，每页 3 分（2026-11-25 由 2 分改）、多做计分；写成“小白欧”也认", () => {
+    expect(findPracticePreset("小白欧22页-23页")).toMatchObject({ title: "小白鸥", points: 3, extraScores: true });
+    expect(findPracticePreset("小白欧 24-25页")?.points).toBe(3);
+    expect(findPracticePreset("小白鸥")).toMatchObject({ title: "小白鸥", points: 3 });
+    expect(findPracticePreset("小白")).toBeUndefined();
   });
 
   it("其余各项；RAZ、FCE 语用多做不计分；听写不匹配语文听写", () => {
@@ -251,12 +252,12 @@ describe("预设分值按显示名匹配（第二版，2026-11-24 线上钢琴 /
     expect(practiceShortName({ title: "", mainCategory: "interestClass", subCategory: "pianoPractice" })).toBe("钢琴");
     expect(practiceShortName({ title: "我爱背诗" })).toBe("背诗");
     expect(practiceShortName({ title: "英语单词听写" })).toBe("听写");
-    expect(practiceShortName({ title: "小白欧22页-23页" })).toBe("小白欧");
+    expect(practiceShortName({ title: "小白欧22页-23页" })).toBe("小白鸥");
     expect(practiceShortName({ title: "跳绳" })).toBe("跳绳");
   });
 
   it("编辑 / 新建表单：设过的用设过的，没设过的按显示名套预设，都没有用默认 1 分计分", () => {
-    expect(practiceSettingsForForm({ title: "小白欧24页-25页" })).toEqual({ points: 2, extraScores: true });
+    expect(practiceSettingsForForm({ title: "小白欧24页-25页" })).toEqual({ points: 3, extraScores: true });
     expect(practiceSettingsForForm({ title: "RAZ阅读" })).toEqual({ points: 1, extraScores: false });
     expect(practiceSettingsForForm({ title: "钢琴练习", practicePoints: 3, practiceExtraScores: true })).toEqual({ points: 3, extraScores: true });
     expect(practiceSettingsForForm({ title: "跳绳" })).toEqual({ points: 1, extraScores: true });

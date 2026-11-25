@@ -35,6 +35,8 @@ export interface WeekReviewDay {
   isFuture: boolean;
   /** 算在这一天、现在还没完成的事（未来的日子就是还没做的安排），供点开某一天时列出 */
   pending: WeekReviewItem[];
+  /** 算在这一天、已经完成的事（统计 › 本周每天的卡片里列出，2026-11-25） */
+  completed: WeekReviewItem[];
 }
 
 export interface WeekReviewItem {
@@ -110,7 +112,7 @@ export async function getWeekReview(anyDateInWeek: string, today: string = today
     return finished >= weekStart && finished <= weekEnd ? finished : null;
   };
 
-  const days: WeekReviewDay[] = dates.map((date) => ({ date, total: 0, done: 0, isToday: date === today, isFuture: date > today, pending: [] }));
+  const days: WeekReviewDay[] = dates.map((date) => ({ date, total: 0, done: 0, isToday: date === today, isFuture: date > today, pending: [], completed: [] }));
   const dayIndex = new Map(dates.map((date, index) => [date, index]));
   const unfinished: WeekReviewItem[] = [];
   for (const [key, { date: firstDate, task }] of firstSeen) {
@@ -120,13 +122,13 @@ export async function getWeekReview(anyDateInWeek: string, today: string = today
     if (!date) continue;
     const day = days[dayIndex.get(date)!];
     day.total += 1;
-    if (state === "done") { day.done += 1; continue; }
     const item: WeekReviewItem = { key, taskId: task.id, title: taskShortName(task), date, subject: taskSubjectGroup(task) };
+    if (state === "done") { day.done += 1; day.completed.push(item); continue; }
     day.pending.push(item);
     if (date <= today) unfinished.push(item);
   }
   const byTitle = (a: WeekReviewItem, b: WeekReviewItem) => a.title.localeCompare(b.title, "zh-CN");
-  days.forEach((day) => day.pending.sort(byTitle));
+  days.forEach((day) => { day.pending.sort(byTitle); day.completed.sort(byTitle); });
   unfinished.sort((a, b) => a.date.localeCompare(b.date) || byTitle(a, b));
   const weeklyTimes = times.map((task): WeekReviewTimes => {
     const progress = weeklyTimesProgress(task, weekStart);

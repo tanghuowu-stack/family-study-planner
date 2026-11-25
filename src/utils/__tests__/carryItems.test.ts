@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { cloneSchoolTimetable, DEFAULT_SCHOOL_TIMETABLE } from "../../data/appSettingsRepository";
-import { carryItemsFor } from "../carryItems";
+import { applyCarryOverride, carryItemsFor, diffCarry } from "../carryItems";
 
 const date = (key: string) => new Date(`${key}T20:00:00`);
 
@@ -24,5 +24,12 @@ describe("明天要带", () => {
     const none = cloneSchoolTimetable(DEFAULT_SCHOOL_TIMETABLE);
     none.slots.forEach((slot) => { slot.highlights.thursday = false; });
     expect(carryItemsFor(none, date("2026-11-26"))).toEqual([]);
+  });
+
+  it("手动补充 / 删掉：课表的 + 补充的 − 删掉的，同名只留一个；编辑结果和课表比出补充、删掉", () => {
+    const base = ["道法课本", "美术", "英语课本"];
+    expect(applyCarryOverride(base, { added: ["跳绳", "英语课本"], removed: ["美术"] })).toEqual(["道法课本", "英语课本", "跳绳"]);
+    expect(applyCarryOverride(base)).toEqual(base);
+    expect(diffCarry(base, ["道法课本", "英语课本", "跳绳"])).toEqual({ added: ["跳绳"], removed: ["美术"] });
   });
 });

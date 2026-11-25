@@ -28,3 +28,20 @@ export function carryItemsFor(timetable: SchoolTimetable, date: Date, isHoliday 
   }
   return items;
 }
+
+/** 课表算出来的 + 手动补充的 − 手动删掉的（同名只留一个） */
+export function applyCarryOverride(base: string[], override?: { added: string[]; removed: string[] }): string[] {
+  if (!override) return base;
+  const removed = new Set(override.removed);
+  const result: string[] = [];
+  for (const label of [...base.filter((item) => !removed.has(item)), ...override.added]) {
+    const value = label.trim();
+    if (value && !result.includes(value)) result.push(value);
+  }
+  return result;
+}
+
+/** 编辑完的列表 → 相对课表的补充 / 删掉 */
+export function diffCarry(base: string[], edited: string[]): { added: string[]; removed: string[] } {
+  return { added: edited.filter((item) => !base.includes(item)), removed: base.filter((item) => !edited.includes(item)) };
+}

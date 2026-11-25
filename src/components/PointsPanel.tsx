@@ -1,9 +1,7 @@
-import { ChevronRight, PiggyBank, Star, Wallet } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { addBonus, revokeBonus, type PointsContext } from "../data/pointsService";
 import { formatCompactDate, getWeekStartKey, todayKey } from "../utils/date";
 import { practiceVerb, SETTLE_HOUR, type BonusEntry, type PracticeWeekScore } from "../utils/points";
-import { formatYuan, type Balances } from "../utils/ledger";
 import { isParentDevice } from "../utils/device";
 import { Sheet } from "./Sheet";
 
@@ -41,50 +39,44 @@ export function weekSummaryFor(ctx: PointsContext, now: Date): { key: string; te
 
 const SUMMARY_DISMISS_KEY = "points_week_summary_dismissed";
 
-/** 今日页两栏上方的积分条：本周 N 分（= N 元）｜ 零钱 x 元 ｜ 存款 y 元（docs/TASK_09_points.md §9.1） */
-export function PointsBar({ ctx, balances, onChanged, onOpenLedger }: { ctx: PointsContext; balances: Balances | null; onChanged: () => void; onOpenLedger: () => void }) {
+/**
+ * 今日页表头中间的积分（2026-11-25 用户：只显示积分，零钱 / 存款在记账页看；左边上周、右边本周——
+ * "让他知道上周经过努力赚了多少，本周要加油赶上"）。一个圆角胶囊：左半白底"上周 N 分"，右半主色"本周 N 分"，
+ * 点一下打开积分明细。周日晚上结算后到周一，表头下面多一条一周小结（WeekSummaryBanner）。
+ */
+export function PointsHeader({ ctx }: { ctx: PointsContext }) {
   const [detail, setDetail] = useState(false);
-  const [dismissed, setDismissed] = useState(() => localStorage.getItem(SUMMARY_DISMISS_KEY) ?? "");
   const { summary } = ctx;
-  const weekSummary = weekSummaryFor(ctx, new Date());
-  const showSummary = !!weekSummary && dismissed !== weekSummary.key;
-  // 2026-11-25 用户：原来一行字“本周 N 分｜零钱｜存款”太死板 → 三张小卡片：本周积分（实心主色底、白字大数字，同记账页总资产卡）、零钱、存款（点进记账页）
-  const tile = "group flex min-h-[4.5rem] min-w-0 items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors sm:min-h-20 sm:px-4";
-  const icon = (Icon: typeof Star, bg: string, fg: string) => (
-    <span aria-hidden className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full sm:flex" style={{ background: bg, color: fg }}><Icon className="h-5 w-5" strokeWidth={2.25} /></span>
-  );
-  const money = (label: string, note: string, cents: number | undefined, Icon: typeof Star, color: string) => (
-    <button type="button" onClick={onOpenLedger} className={`${tile} border-ink/10 bg-white hover:border-ink/20 hover:bg-stone-50`} data-testid={`bar-${label}`}>
-      {icon(Icon, `${color}1A`, color)}
-      <span className="min-w-0 flex-1">
-        <span className="block text-[13px] font-medium leading-4 text-muted">{label}<span className="hidden lg:inline"> · {note}</span></span>
-        <span className="mt-1 block truncate leading-7 text-ink"><span className="text-[20px] font-bold tabular-nums sm:text-[22px]">{cents === undefined ? "–" : formatYuan(cents)}</span> <span className="text-[13px] text-muted">元</span></span>
-      </span>
-      <ChevronRight aria-hidden className="hidden h-4 w-4 shrink-0 text-stone-300 group-hover:text-muted sm:block" />
-    </button>
-  );
+  const lastWeekKey = (() => { const d = new Date(`${summary.weekStart}T00:00:00`); d.setDate(d.getDate() - 7); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+  const lastWeek = summary.history.find((week) => week.weekStart === lastWeekKey);
   return (
-    <section aria-label="积分与零花钱" className="mb-4">
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
-        <button type="button" onClick={() => setDetail(true)} className={`${tile} border-primary bg-primary shadow-[0_8px_20px_-12px_rgba(43,118,86,0.7)] hover:bg-[#256a4d]`} data-testid="bar-points">
-          {icon(Star, "rgba(255,255,255,0.16)", "#EFC66A")}
-          <span className="min-w-0 flex-1">
-            <span className="block text-[13px] font-medium leading-4 text-white/75">本周积分</span>
-            <span className="mt-1 block truncate leading-7 text-white"><span className="text-[24px] font-bold tabular-nums sm:text-[26px]">{summary.weekTotal}</span> <span className="text-[13px] font-semibold">分</span><span className="ml-1.5 hidden text-[13px] font-medium text-white/75 sm:inline">= {summary.weekAllowance} 元</span></span>
-          </span>
-          <ChevronRight aria-hidden className="hidden h-4 w-4 shrink-0 text-white/50 group-hover:text-white sm:block" />
-        </button>
-        {money("零钱", "可以自由花", balances?.cash, Wallet, "#2B7656")}
-        {money("存款", "零钱通", balances?.savings, PiggyBank, "#3F8F86")}
-      </div>
-      {showSummary && weekSummary && (
-        <button type="button" onClick={() => { localStorage.setItem(SUMMARY_DISMISS_KEY, weekSummary.key); setDismissed(weekSummary.key); }}
-          className="mt-2 flex w-full items-center gap-2 rounded-lg border border-sun/50 bg-sun/15 px-3 py-2 text-left text-[13px] font-medium leading-5 text-ink/85 hover:bg-sun/25 sm:px-4" title="点一下收起">
-          <span aria-hidden>🎉</span>{weekSummary.text}
-        </button>
-      )}
+    <>
+      <button type="button" onClick={() => setDetail(true)} data-testid="points-header" aria-label={`上周 ${lastWeek ? lastWeek.total : "没有"} 分，本周 ${summary.weekTotal} 分，点开看积分明细`}
+        className="flex min-h-11 items-stretch overflow-hidden rounded-full border border-primary/20 bg-white shadow-[0_6px_16px_-12px_rgba(43,118,86,0.8)] hover:border-primary/40">
+        <span className="flex items-baseline gap-1 px-3.5 py-2 text-muted sm:px-4">
+          <span className="text-[12px] font-medium">上周</span>
+          <span className="text-[17px] font-bold tabular-nums text-ink">{lastWeek ? lastWeek.total : "–"}</span><span className="text-[12px]">分</span>
+        </span>
+        <span className="flex items-baseline gap-1 bg-primary px-3.5 py-2 text-white sm:px-4">
+          <span className="text-[12px] font-medium text-white/75">本周</span>
+          <span className="text-[17px] font-bold tabular-nums">{summary.weekTotal}</span><span className="text-[12px] text-white/75">分</span>
+        </span>
+      </button>
       {detail && <PointsDetailDialog ctx={ctx} onClose={() => setDetail(false)} />}
-    </section>
+    </>
+  );
+}
+
+/** 周日晚上（8 点结算后）到周一：今日页表头下面一条一周小结，点一下收起（只记在本机） */
+export function WeekSummaryBanner({ ctx }: { ctx: PointsContext }) {
+  const [dismissed, setDismissed] = useState(() => localStorage.getItem(SUMMARY_DISMISS_KEY) ?? "");
+  const weekSummary = weekSummaryFor(ctx, new Date());
+  if (!weekSummary || dismissed === weekSummary.key) return null;
+  return (
+    <button type="button" onClick={() => { localStorage.setItem(SUMMARY_DISMISS_KEY, weekSummary.key); setDismissed(weekSummary.key); }}
+      className="mb-3 flex w-full items-center gap-2 rounded-lg border border-sun/50 bg-sun/15 px-3 py-2 text-left text-[13px] font-medium leading-5 text-ink/85 hover:bg-sun/25 sm:mb-4 sm:px-4" title="点一下收起">
+      <span aria-hidden>🎉</span>{weekSummary.text}
+    </button>
   );
 }
 

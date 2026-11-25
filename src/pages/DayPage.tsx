@@ -1,5 +1,5 @@
 import { addDays } from "date-fns";
-import { CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, GripVertical, Plus, Sparkles } from "lucide-react";
+import { Backpack, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, GripVertical, Plus, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSwipe } from "../hooks/useSwipe";
 import { EmptyState } from "../components/EmptyState";
@@ -21,6 +21,8 @@ import { loadBalances } from "../data/ledgerService";
 import type { Balances } from "../utils/ledger";
 import { formatMoreToDo, gainForLog, moreToDoToday, POINTS_START_WEEK, practiceSettingsOf } from "../utils/points";
 import { isParentDevice } from "../utils/device";
+import { loadSchoolTimetable, type SchoolTimetable } from "../data/appSettingsRepository";
+import { carryItemsFor } from "../utils/carryItems";
 import { GroupHeading, NEUTRAL_DOT, RewardHint, SUBJECT_DOT } from "../components/GroupHeading";
 
 /** 刚完成的任务在原位停留多久再收进"已完成"（略长于 400ms 的勾选动画） */
@@ -60,6 +62,7 @@ interface Props {
   onCelebrate?: (items: Celebration[]) => void;
   /** 积分条上点零钱 / 存款 → 记账页 */
   onOpenLedger?: () => void;
+  onOpenTimetable?: () => void;
   unsyncedTasks?: Set<string>; unsyncedItems?: Set<string>;
   onRetrySync?: (task: TaskDisplay) => void; onRetryItemSync?: (task: TaskDisplay, itemId: string) => void;
 }
@@ -76,6 +79,8 @@ export function DayPage(props: Props) {
   const [showWeekDone, setShowWeekDone] = useState(false);
   // 积分（2026-11-24）：分数由完成记录算出，账本（奖励、快照…）在 app_settings；零钱 / 存款余额由记账记录算出
   const [points, setPoints] = useState<PointsContext | null>(null);
+  const [timetable, setTimetable] = useState<SchoolTimetable | null>(null);
+  useEffect(() => { void loadSchoolTimetable().then(setTimetable).catch(() => setTimetable(null)); }, [props.refreshKey]);
   const [balances, setBalances] = useState<Balances | null>(null);
   const pointsRequest = useRef(0);
   const reloadPoints = () => {
@@ -160,6 +165,12 @@ export function DayPage(props: Props) {
   const practice = sumWeeklyTimes(weeklyTimes.map((task) => weeklyTimesProgress(task, props.date)));
   const practiceAllDone = practice.target > 0 && practice.done >= practice.target;
   const pointsOn = !!points && todayKey() >= POINTS_START_WEEK;
+  // 明天要带（2026-11-25）：课表里明天高亮的课（课本 / 葫芦丝……）；只在看今天时显示，明天是周末或放假就没有
+  const carryDate = fromDateKey(props.date);
+  carryDate.setDate(carryDate.getDate() + 1);
+  const carryKey = toDateKey(carryDate);
+  const carryItems = isToday && timetable ? carryItemsFor(timetable, carryDate, getCalendarAnnotation(carryKey).holidayStatus === "休") : [];
+  const carryLabel = `明天（周${"日一二三四五六"[carryDate.getDay()]}）`;
   const scoreById = new Map((points?.summary.weekScores ?? []).map((score) => [score.taskId, score]));
   // 当天学校作业全部做完（只看今天的学校作业，不看本周作业和提醒）→ 原来"今天的作业都做完了"一行改成"还可以再做"
   const schoolToday = daily.filter((task) => task.mainCategory === "school");
@@ -211,6 +222,13 @@ export function DayPage(props: Props) {
     {/* Mac / iPad 横屏：左右两栏等宽等高。左栏是作业（逾期 / 家庭作业〔今天的 + 本周课外作业〕/ 已完成），
         右栏是每周练习（每周几次）；两栏底边对齐，短的一栏主卡片拉长。
         窄屏依次排下来：逾期、家庭作业、每周练习、已完成——两栏外壳在窄屏是 display:contents，靠 order 排序 */}
+    {carryItems.length > 0 && (
+      <button type="button" onClick={props.onOpenTimetable} data-testid="carry-reminder"
+        className="mb-3 flex w-full min-h-11 flex-wrap items-center gap-x-2.5 gap-y-1.5 rounded-lg border border-[#3F8F86]/25 bg-[#EAF4F2] px-3 py-2.5 text-left hover:bg-[#E0EFEC] sm:mb-4 sm:px-4">
+        <span className="flex items-center gap-2 text-[14px] font-bold text-[#2D6F68]"><Backpack aria-hidden className="h-[18px] w-[18px]" />{carryLabel}要带</span>
+        {carryItems.map((item) => <span key={item.label} className="rounded-full bg-white px-2.5 py-0.5 text-[13px] font-semibold text-ink ring-1 ring-inset ring-[#3F8F86]/25">{item.label}</span>)}
+      </button>
+    )}
     {pointsOn && points && <PointsBar ctx={points} balances={balances} onChanged={() => void reloadPoints()} onOpenLedger={() => props.onOpenLedger?.()} />}
     <div ref={swipeRef} className={`flex flex-col gap-4 ${hasPractice ? "lg:grid lg:grid-cols-2 lg:items-stretch" : ""}`}>
       <div className={`contents ${hasPractice ? "lg:flex lg:min-w-0 lg:flex-col lg:gap-4" : ""}`}>

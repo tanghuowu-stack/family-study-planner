@@ -13,7 +13,7 @@ describe("school timetable settings", () => {
     expect(timetable.slots).toHaveLength(9);
     expect(timetable.slots.find((slot) => slot.id === "pm-1")?.courses.thursday).toBe("英语（课本）");
     expect(timetable.slots.find((slot) => slot.id === "am-1")?.time).toBe("08:25-09:05");
-    expect(timetable.slots.find((slot) => slot.id === "extended-3")?.courses.friday).toBe("云脑班");
+    expect(timetable.slots.find((slot) => slot.id === "extended-3")?.courses.friday).toBe("文学社"); // 2026-11-25 用户更正
     expect(timetable.slots.find((slot) => slot.id === "am-4")?.courses.tuesday).toBe("音乐（葫芦丝）");
     expect(timetable.slots.find((slot) => slot.id === "pm-1")?.courses.thursday).toBe("英语（课本）");
     expect(timetable.slots.find((slot) => slot.id === "extended-1")?.courses.monday).toBe("英语");
@@ -112,7 +112,7 @@ describe("school timetable settings", () => {
     expect(timetable.slots[0].time).toBe("08:25-09:05");
     expect(timetable.slots.find((slot) => slot.id === "extended-1")?.courses.wednesday).toBe("云脑班");
     expect(timetable.slots.find((slot) => slot.id === "extended-2")?.courses.wednesday).toBe("云脑班");
-    expect(timetable.slots.find((slot) => slot.id === "extended-3")?.courses.friday).toBe("云脑班");
+    expect(timetable.slots.find((slot) => slot.id === "extended-3")?.courses.friday).toBe("文学社"); // 2026-11-25 用户更正
     expect(timetable.slots.find((slot) => slot.id === "am-3")?.courses.monday).toBe("英语（课本）");
     expect(timetable.slots.find((slot) => slot.id === "extended-1")?.courses.monday).toBe("英语");
   });

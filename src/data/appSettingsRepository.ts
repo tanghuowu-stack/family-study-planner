@@ -281,7 +281,7 @@ export const DEFAULT_SCHOOL_TIMETABLE: SchoolTimetable = {
     timetableSlot("pm-2", "afternoon", "第二节", "15:00-15:40", courses("美术", "心理", "音乐（葫芦丝）", "体健", "英语（课本）")),
     timetableSlot("extended-1", "extended", "第三节", "15:55-16:35", courses("英语", "数学", "云脑班", "社团", "俱乐部")),
     timetableSlot("extended-2", "extended", "第四节", "16:50-17:30", courses("数学", "语文", "云脑班", "语文", "俱乐部")),
-    timetableSlot("extended-3", "extended", "第五节", "17:30-17:55", courses("数学", "语文", "语文", "语文", "云脑班")),
+    timetableSlot("extended-3", "extended", "第五节", "17:30-17:55", courses("数学", "语文", "云脑班", "语文", "文学社")),
   ],
   breaks: DEFAULT_TIMETABLE_BREAKS,
 };
@@ -355,4 +355,22 @@ export async function loadSchoolTimetable(): Promise<SchoolTimetable> {
 
 export async function saveSchoolTimetable(value: SchoolTimetable): Promise<void> {
   return saveJsonSetting(SCHOOL_TIMETABLE_KEY, normalizeSchoolTimetable(value), "课表云端同步失败");
+}
+
+/**
+ * 课后服务更正（2026-11-25 用户：周三 15:55–17:55 都是云脑班；周五 15:55–17:00 俱乐部、17:00–17:55 文学社）：
+ * 已存课表的课后第 3 段，周三还是"语文"的改成"云脑班"、周五还是"云脑班"的改成"文学社"。只改一次（记在 app_settings），
+ * 之后在"编辑课表"里改的不会被覆盖。返回改过之后的课表。
+ */
+export const TIMETABLE_AFTER_SCHOOL_FIX_KEY = "timetable_after_school_fix_2026_11_25";
+export async function applyTimetableAfterSchoolFixOnce(value: SchoolTimetable): Promise<SchoolTimetable> {
+  if (await loadJsonSetting<{ appliedAt: string }>(TIMETABLE_AFTER_SCHOOL_FIX_KEY)) return value;
+  const next = cloneSchoolTimetable(value);
+  const third = next.slots.find((slot) => slot.id === "extended-3");
+  const changed: string[] = [];
+  if (third && third.courses.wednesday.trim() === "语文") { third.courses.wednesday = "云脑班"; changed.push("周三课后 3：语文 → 云脑班"); }
+  if (third && third.courses.friday.trim() === "云脑班") { third.courses.friday = "文学社"; changed.push("周五课后 3：云脑班 → 文学社"); }
+  if (changed.length) await saveSchoolTimetable(next);
+  await saveJsonSetting(TIMETABLE_AFTER_SCHOOL_FIX_KEY, { appliedAt: new Date().toISOString(), changed }, "课表更正记录云端同步失败");
+  return changed.length ? next : value;
 }

@@ -5,6 +5,8 @@
  */
 export type ScheduleKind = "class" | "break" | "big-break" | "activity";
 
+export const WEEKDAY_NAMES = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+
 export interface ScheduleItem {
   label: string;
   start: string;
@@ -46,11 +48,26 @@ export const SCHOOL_AFTERNOON: ScheduleSection = {
   ],
 };
 
-/** 课后服务分两种：周一、二、四 / 周三、五（getDay：1 = 周一） */
-export const SCHOOL_AFTER: { days: number[]; title: string; items: ScheduleItem[] }[] = [
-  { days: [1, 2, 4], title: "周一、二、四", items: [item("社团活动", "15:55", "16:35", "activity"), item("课间活动", "16:35", "16:50"), item("作业", "16:50", "17:30", "activity")] },
-  { days: [3, 5], title: "周三、五", items: [item("社团 / 体育活动", "15:55", "17:15", "activity"), item("书法研习", "17:15", "17:35", "activity")] },
+/**
+ * 课后服务（延时）按星期几不同（2026-11-25 用户更正）：
+ * - 周一、周二：延时课 1（15:55–16:35）、课间活动、延时课 2（16:50–17:30）、延时课 3（17:30–17:55）；
+ * - 周四：同周一，只是第一段是社团；
+ * - 周三：云脑班 15:55–17:55；
+ * - 周五：俱乐部 15:55–17:00、文学社 17:00–17:55。
+ */
+const extendedDay = (first: string): ScheduleItem[] => [
+  item(first, "15:55", "16:35", "activity"),
+  item("课间活动", "16:35", "16:50"),
+  item("延时课 2", "16:50", "17:30", "activity"),
+  item("延时课 3", "17:30", "17:55", "activity"),
 ];
+export const SCHOOL_AFTER_BY_DAY: Record<number, ScheduleItem[]> = {
+  1: extendedDay("延时课 1"),
+  2: extendedDay("延时课 1"),
+  3: [item("云脑班", "15:55", "17:55", "activity")],
+  4: extendedDay("社团"),
+  5: [item("俱乐部", "15:55", "17:00", "activity"), item("文学社", "17:00", "17:55", "activity")],
+};
 
 export const SCHOOL_DISMISS = { classEnd: "17:55", leave: "18:00", text: "17:55 下课，18:00 放学" };
 
@@ -60,12 +77,20 @@ export const toMinutes = (value: string) => {
   return h * 60 + m;
 };
 
+/** 分钟数 → "40 分钟" / "2 小时" / "1 小时 5 分" */
+export function durationText(entry: ScheduleItem): string {
+  const minutes = toMinutes(entry.end) - toMinutes(entry.start);
+  if (minutes < 60) return `${minutes} 分钟`;
+  const h = Math.floor(minutes / 60), m = minutes % 60;
+  return m ? `${h} 小时 ${m} 分` : `${h} 小时`;
+}
+
 /** 现在正在进行的那一项（today 是周一到周五时才有） */
 export function currentScheduleItem(now: Date): ScheduleItem | null {
   const day = now.getDay();
   if (day < 1 || day > 5) return null;
   const minutes = now.getHours() * 60 + now.getMinutes();
-  const after = SCHOOL_AFTER.find((group) => group.days.includes(day))?.items ?? [];
+  const after = SCHOOL_AFTER_BY_DAY[day] ?? [];
   const all = [...SCHOOL_MORNING.items, SCHOOL_LUNCH, ...SCHOOL_AFTERNOON.items, ...after];
   return all.find((entry) => minutes >= toMinutes(entry.start) && minutes < toMinutes(entry.end)) ?? null;
 }

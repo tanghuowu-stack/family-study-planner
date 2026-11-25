@@ -103,7 +103,7 @@ body::before {
   .app-content { min-height: 100vh; padding-left: 14rem; }
 }
 
-/* 今天全部完成时对勾轻轻放大一次（AllDoneCelebration） */
+/* 庆祝卡片出现时轻轻放大一次（CelebrationLayer） */
 @keyframes celebrate {
   0% { transform: scale(0.6); opacity: 0; }
   60% { transform: scale(1.12); opacity: 1; }

@@ -4,6 +4,9 @@
 
 ## 2026-11-25
 
+- **B1 编辑课表只改课程**：编辑时用和只读一样的课程表，每格课名输入框 + “要带”勾选（原“高亮显示”），课后几段分开改；去掉节次时间、休息行的编辑（作息以 `schoolSchedule.ts` 为准），删掉旧编辑大表和 `updateTime` / `updateBreak` / `BREAK_LAYOUT` / `SECTION_META`。本地预览改周一第 1 节保存后课程表显示、再改回。
+- **B2 作业做完只留一处反馈**：去掉“今天的 N 件事都做完了！”大卡片（`AllDoneCelebration` 删除），全做完时只留散花卡片 + 飞到的那一条浅绿横条（没积分 / 没学校作业时一行“今天的事都做完了！”）。本地预览勾完作业后只有那一条。npm test 462 全过、`tsc -b`、build 通过。
+
 - **项目整理（安全清理，界面不变）**：
   - 删掉不用的计时器代码（`context/TimerContext.tsx`、`timerStore.ts` 及测试；计时功能早已从界面去掉，任务上的旧计时字段保留）。
   - 删掉没人用的导出：`getCalendarAnnotations`、`getLedgerEntry`、`loadBalances`、`WEEKDAY_NAMES`、`PlanOverviewItem`、`getMonthKey`、`getMonthBounds`、`getUpcomingDateKeys`、`ROLLOVER_META`、`taskDisplayName`。

@@ -14,7 +14,6 @@ import { useGroupOrder } from "../hooks/useGroupOrder";
 import { useSortableList } from "../hooks/useSortableList";
 import { itemSyncKey, taskSyncKey } from "../utils/taskMeta";
 import { sumWeeklyTimes, weeklyTimesProgress } from "../utils/weeklyTimes";
-import { AllDoneCelebration } from "../components/AllDoneCelebration";
 import { ParentBonusRow, PointsHeader, practiceScoreLabels, WeekSummaryBanner } from "../components/PointsPanel";
 import { loadPointsContext, settlePendingWeeks, type Celebration, type PointsContext } from "../data/pointsService";
 import { EARLY_POINTS, formatMoreToDo, gainForLog, moreToDoToday, POINTS_START_WEEK, practiceSettingsOf, REACH_BONUS } from "../utils/points";
@@ -257,7 +256,8 @@ export function DayPage(props: Props) {
             <GroupHeading label="本周课外作业" hint={pointsOn ? `提前完成加${EARLY_POINTS}分` : undefined} dot={NEUTRAL_DOT} count={weekPending.length} />
             <SortableTaskList tasks={weekPending} renderTask={renderTask} onReorder={reorderTasks} />
           </div>}
-          {leftPending === 0 && (isToday && allDone.length > 0 && overdueShown.length === 0 ? <>{<AllDoneCelebration count={allDone.length} />}{moreLine && moreText && <div className="border-t border-ink/[0.07]">{moreLine}</div>}</> : allDone.length > 0 ? <p className="px-4 py-4 text-[15px] font-semibold text-primary">这一天的事都做完了</p> : <div className="p-3"><EmptyState compact /></div>)}
+          {/* 2026-11-25（B2）：全做完只留一处反馈——"今天的作业做完了，快去赚积分吧！"那一条（散花卡片会飞到这里），不再另加"今天的 N 件事都做完了"大卡片 */}
+          {leftPending === 0 && (isToday && allDone.length > 0 && overdueShown.length === 0 ? (moreLine ?? <p className="px-4 py-4 text-[15px] font-semibold text-primary">今天的事都做完了！</p>) : allDone.length > 0 ? <p className="px-4 py-4 text-[15px] font-semibold text-primary">这一天的事都做完了</p> : <div className="p-3"><EmptyState compact /></div>)}
         </section>
         {allDone.length > 0 && <section className="surface order-4 overflow-visible lg:order-none"><button onClick={() => setShowDone(!showDone)} className="flex w-full items-center justify-between px-3 py-2.5 text-left sm:px-4"><span className="flex items-center gap-2 text-base font-bold text-ink"><CheckCircle2 className="h-4 w-4 text-primary" />已完成 <span className="text-[13px] font-medium text-muted">{allDone.length}</span></span><ChevronDown className={`h-4 w-4 text-muted transition ${showDone ? "rotate-180" : ""}`} /></button>{showDone && <div className="border-t border-ink/10">{allDone.map((task) => renderTask(task))}</div>}</section>}
       </div>

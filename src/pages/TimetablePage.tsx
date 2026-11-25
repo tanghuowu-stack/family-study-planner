@@ -22,18 +22,6 @@ const DAY_LABELS: Record<TimetableDay, string> = {
   friday: "周五",
 };
 
-const SECTION_META: Record<TimetableSection, { label: string; className: string; bar: string }> = {
-  morning: { label: "上午", className: "text-amber-700", bar: "#E0A040" },
-  afternoon: { label: "下午", className: "text-sky-700", bar: "#5B9BD5" },
-  extended: { label: "延时", className: "text-primary", bar: "#2B7656" },
-};
-
-/** 休息行的版式（名称和时间存在课表设置 breaks 里，编辑课表时可改） */
-const BREAK_LAYOUT: Record<string, { long?: boolean; splitByDay?: boolean }> = {
-  "am-4": { long: true },
-  "extended-1": { splitByDay: true },
-};
-
 /**
  * 课程小色块（2026-11-25 课表重新设计）：语文 / 数学 / 英语用学科色（同今日页色点），体育劳动社团类主色，
  * 其余浅灰；底色是该色 10% 透明，字是深一档的同色。
@@ -57,7 +45,6 @@ function CourseName({ course, stacked = false }: { course: string; stacked?: boo
 
 /* 要带课本或工具的课（编辑课表时勾"高亮显示"）：2026-11-25 起课表上不再特别标出，改在今日页"明天要带"里提醒 */
 
-const displayTime = (value: string) => value.replace("-", "–");
 const termLabel = (value: string) => /^[（(].+[）)]$/.test(value.trim()) ? value.trim() : `（${value.trim()}）`;
 
 export function TimetablePage({ tabs }: { tabs?: ReactNode } = {}) {
@@ -125,20 +112,6 @@ export function TimetablePage({ tabs }: { tabs?: ReactNode } = {}) {
     } : current);
   };
 
-  const updateBreak = (slotId: string, field: "label" | "time", value: string) => {
-    setDraft((current) => current ? {
-      ...current,
-      breaks: { ...current.breaks, [slotId]: { ...current.breaks[slotId], [field]: value } },
-    } : current);
-  };
-
-  const updateTime = (slotId: string, value: string) => {
-    setDraft((current) => current ? {
-      ...current,
-      slots: current.slots.map((slot) => slot.id === slotId ? { ...slot, time: value } : slot),
-    } : current);
-  };
-
   const save = async () => {
     if (!draft) return;
     setSaving(true);
@@ -156,11 +129,7 @@ export function TimetablePage({ tabs }: { tabs?: ReactNode } = {}) {
     return <main className="mx-auto w-full max-w-6xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10">{tabs}<div className="surface p-6 text-sm text-muted">正在读取课表...</div></main>;
   }
 
-  const firstExtended = draft.slots.find((slot) => slot.id === "extended-1");
   const holidayStatus = getCalendarAnnotation(today).holidayStatus;
-  const secondExtended = draft.slots.find((slot) => slot.id === "extended-2");
-  const mergedDays = new Set(TIMETABLE_DAYS.filter((day) => firstExtended?.courses[day] && firstExtended.courses[day] === secondExtended?.courses[day]));
-  const mergeMondayTuesdayBreak = !mergedDays.has("monday") && !mergedDays.has("tuesday");
 
   return (
     <main className={`school-timetable-page ${editing ? "is-editing" : ""} mx-auto w-full max-w-6xl px-3 pb-content pt-4 sm:px-7 sm:pt-6 lg:px-10`}>
@@ -173,37 +142,10 @@ export function TimetablePage({ tabs }: { tabs?: ReactNode } = {}) {
         </div>
       </header>
 
-      {!editing ? <ReadView draft={draft} tomorrow={tomorrow} now={now} phoneView={phoneView} onPhoneView={setPhoneView} /> : <>
-      <section className="timetable-surface overflow-hidden rounded-xl border border-ink/[0.08] bg-white shadow-[0_1px_2px_rgba(32,41,37,0.04),0_12px_32px_-20px_rgba(32,41,37,0.25)]"><div className="timetable-scroll overflow-x-auto"><table className="w-full min-w-[760px] table-fixed border-separate border-spacing-0">
-        <colgroup><col className="w-[132px]" />{TIMETABLE_DAYS.map((day) => <col key={day} />)}</colgroup>
-        <thead><tr className="bg-[#F7F6F3]"><th className="sticky left-0 z-30 border-b border-r border-ink/[0.08] bg-[#F7F6F3] px-3 py-3 text-left text-[12px] font-semibold text-muted">节次 · 时间</th>{TIMETABLE_DAYS.map((day) => <th key={day} className={`border-b border-ink/[0.08] px-2 py-3 text-center text-[14px] font-bold ${tomorrow === day ? "bg-primary/[0.08] text-primary" : "text-ink"}`}>{DAY_LABELS[day]}{tomorrow === day && <span className="ml-1.5 inline-block rounded-full bg-primary px-1.5 py-px align-middle text-[10px] font-semibold text-white">明天</span>}</th>)}</tr></thead>
-        <tbody>{draft.slots.map((slot, index) => {
-          const firstOfSection = index === 0 || draft.slots[index - 1].section !== slot.section;
-          const section = SECTION_META[slot.section];
-          const breakItem = draft.breaks[slot.id];
-          const breakMeta = breakItem && { ...breakItem, ...BREAK_LAYOUT[slot.id] };
-          // 编辑时休息行整行一个编辑框：名称 + 时间
-          const breakEditor = breakItem && <span className="inline-flex flex-wrap items-center justify-center gap-1.5"><input aria-label={`${section.label}${slot.label}之后的休息名称`} value={breakItem.label} onChange={(event) => updateBreak(slot.id, "label", event.target.value)} className="w-40 rounded border bg-white px-1.5 py-0.5 text-center text-[12px] font-bold text-ink" /><input aria-label={`${section.label}${slot.label}之后的休息时间`} value={breakItem.time} onChange={(event) => updateBreak(slot.id, "time", event.target.value)} className="w-[96px] rounded border bg-white px-1 py-0.5 text-center font-mono text-[11px] text-muted" /></span>;
-          return [
-            <tr key={slot.id} className={firstOfSection && index > 0 ? "[&>*]:border-t [&>*]:border-t-ink/15" : ""}>
-              <th className="timetable-slot sticky left-0 z-20 border-b border-r border-ink/[0.08] bg-[#FBFAF8] px-3 py-2.5 text-left font-normal" style={{ boxShadow: `inset 3px 0 0 ${section.bar}` }}><div className="flex items-center gap-2"><span className={`timetable-section-label w-7 shrink-0 text-[10px] font-bold ${section.className}`}>{firstOfSection ? section.label : ""}</span><div className="min-w-0"><div className="timetable-slot-label text-xs font-bold text-ink"><span className={`timetable-section-inline hidden ${section.className}`}>{firstOfSection ? `${section.label} ` : ""}</span>{slot.label}</div>{editing ? <input aria-label={`${section.label}${slot.label}时间`} value={slot.time} onChange={(event) => updateTime(slot.id, event.target.value)} className="mt-1 w-[82px] rounded border px-1 py-0.5 font-mono text-[9px] text-muted" /> : <div className="timetable-slot-time mt-0.5 whitespace-nowrap font-mono text-[10px] font-medium text-muted">{displayTime(slot.time)}</div>}</div></div></th>
-              {TIMETABLE_DAYS.map((day) => {
-                if (slot.id === "extended-2" && mergedDays.has(day)) return null;
-                const merged = slot.id === "extended-1" && mergedDays.has(day);
-                const slotIds = merged ? ["extended-1", "extended-2"] : [slot.id];
-                return <td key={day} rowSpan={merged ? 3 : 1} className={`timetable-course relative border-b border-r border-ink/[0.08] px-1.5 py-1.5 text-center align-middle last:border-r-0 ${tomorrow === day ? "bg-primary/[0.04]" : "bg-white"}`}>{editing ? <div className="flex flex-col items-center gap-1"><input aria-label={`${DAY_LABELS[day]}${section.label}${slot.label}`} value={slot.courses[day]} onChange={(event) => updateCourse(slotIds, day, event.target.value)} className="w-full rounded-md border px-1.5 py-2 text-center text-base font-bold text-ink" /><label className="flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-muted"><input type="checkbox" aria-label={`${DAY_LABELS[day]}${section.label}${slot.label}高亮显示`} checked={slot.highlights[day]} onChange={(event) => updateHighlight(slotIds, day, event.target.checked)} className="accent-primary" />高亮显示</label></div> : <span className={`flex min-h-[2.75rem] w-full items-center justify-center rounded-lg px-1 py-1.5 text-[16px] font-bold leading-tight ${slot.highlights[day] ? "timetable-carry" : ""}`} style={courseTone(slot.courses[day])}><CourseName course={slot.courses[day]} /></span>}</td>;
-              })}
-            </tr>,
-            breakMeta && editing ? <tr key={`${slot.id}-break`} className={`timetable-break ${breakMeta.long ? "bg-amber-50/75" : "bg-[#F5F4F1]"}`}><th aria-hidden="true" className={`sticky left-0 z-20 border-b border-r border-ink/[0.08] px-3 py-1 ${breakMeta.long ? "bg-amber-50" : "bg-[#F5F4F1]"}`} /><td colSpan={5} className="border-b border-ink/[0.08] px-2 py-1.5 text-center">{breakEditor}</td></tr> : breakMeta && (breakMeta.splitByDay ? <tr key={`${slot.id}-break`} className="timetable-break timetable-break-split bg-[#F5F4F1]"><th aria-hidden="true" className="sticky left-0 z-20 border-b border-r border-ink/[0.08] bg-[#F5F4F1] px-3 py-1" />{TIMETABLE_DAYS.map((day) => {
-              if (mergedDays.has(day) || (day === "tuesday" && mergeMondayTuesdayBreak)) return null;
-              const colSpan = day === "monday" && mergeMondayTuesdayBreak ? 2 : 1;
-              return <td key={day} colSpan={colSpan} className="border-b border-r border-ink/[0.08] px-1.5 py-1.5 text-center text-[10px] font-semibold text-muted last:border-r-0">{breakMeta.label}<span className="ml-1 whitespace-nowrap font-mono text-[9px] font-normal text-muted/80">({displayTime(breakMeta.time)})</span></td>;
-            })}</tr> : <tr key={`${slot.id}-break`} className={`timetable-break ${breakMeta.long ? "bg-[#FDF6E9]" : "bg-[#F7F6F3]"}`}><th aria-hidden="true" className={`sticky left-0 z-20 border-b border-r border-ink/[0.08] px-3 py-1 ${breakMeta.long ? "bg-[#FDF6E9]" : "bg-[#F7F6F3]"}`} /><td colSpan={5} className="border-b border-ink/[0.08] px-2 py-1.5 text-center"><span className={`text-[12px] font-semibold tracking-wide ${breakMeta.long ? "text-amber-800" : "text-muted"}`}>{breakMeta.label}</span><span className="ml-1.5 whitespace-nowrap font-mono text-[10px] text-muted/80">({displayTime(breakMeta.time)})</span></td></tr>),
-          ];
-        })}</tbody>
-      </table></div></section>
-      <p className="timetable-legend mt-2.5 flex shrink-0 items-center justify-center gap-2 text-[12px] font-medium text-muted">勾“高亮显示”的课 = 要带课本或工具，会出现在今日页“明天要带”里</p>
-      </>}
+      {/* 2026-11-25（B1）：编辑课表只改课程和"要带课本/工具"，用和只读一样的课程表，每格一个输入框 + 勾选；
+          作息时间不在这里改（按学校作息表写在 data/schoolSchedule.ts） */}
+      {!editing ? <ReadView draft={draft} tomorrow={tomorrow} now={now} phoneView={phoneView} onPhoneView={setPhoneView} />
+        : <div className="flex min-h-0 flex-col"><CourseGrid draft={draft} tomorrow={tomorrow} editing onCourse={updateCourse} onCarry={updateHighlight} /></div>}
     </main>
   );
 }
@@ -242,8 +184,8 @@ function ReadView({ draft, tomorrow, now, phoneView, onPhoneView }: { draft: Sch
   );
 }
 
-function CourseGrid({ draft, tomorrow }: { draft: SchoolTimetable; tomorrow: TimetableDay | null }) {
-  // 课后几段连着是同一门（周三云脑班三段、周五俱乐部前两段）合成一格
+function CourseGrid({ draft, tomorrow, editing = false, onCourse, onCarry }: { draft: SchoolTimetable; tomorrow: TimetableDay | null; editing?: boolean; onCourse?: (slotIds: string[], day: TimetableDay, value: string) => void; onCarry?: (slotIds: string[], day: TimetableDay, value: boolean) => void }) {
+  // 课后几段连着是同一门（周三云脑班三段、周五俱乐部前两段）合成一格；编辑时每格分开，方便单独改
   const spans = extendedSpans(draft);
   let classNo = 0;
   let afterNo = 0;
@@ -279,9 +221,18 @@ function CourseGrid({ draft, tomorrow }: { draft: SchoolTimetable; tomorrow: Tim
                   </span>
                 </th>
                 {TIMETABLE_DAYS.map((day) => {
-                  const span = slot.section === "extended" ? spans[day][slot.id] ?? 1 : 1;
+                  const span = editing ? 1 : slot.section === "extended" ? spans[day][slot.id] ?? 1 : 1;
                   if (span === 0) return null;
                   const course = slot.courses[day];
+                  if (editing) return (
+                    <td key={day} className="border-b border-r border-ink/[0.07] p-1 align-middle last:border-r-0">
+                      <input aria-label={`${DAY_LABELS[day]}${slot.section === "extended" ? "课后" : "第"}${label}${slot.section === "extended" ? "段" : "节"}`} value={course} onChange={(event) => onCourse?.([slot.id], day, event.target.value)}
+                        className="w-full rounded-md border border-ink/15 bg-white px-1 py-1.5 text-center text-[14px] font-bold text-ink outline-none focus:border-primary" />
+                      <label className="mt-1 flex cursor-pointer items-center justify-center gap-1 text-[11px] font-semibold text-muted">
+                        <input type="checkbox" checked={slot.highlights[day]} onChange={(event) => onCarry?.([slot.id], day, event.target.checked)} className="accent-primary" />要带
+                      </label>
+                    </td>
+                  );
                   return (
                     <td key={day} rowSpan={span} className={`border-b border-r border-ink/[0.07] p-[3px] align-middle last:border-r-0 sm:p-1 ${tomorrow === day ? "bg-primary/[0.04]" : ""}`}>
                       <span className="flex h-full min-h-9 w-full items-center justify-center rounded-lg px-0.5 py-1 text-center text-[14px] font-bold leading-tight sm:min-h-10 sm:text-[16px]" style={courseTone(course)}>

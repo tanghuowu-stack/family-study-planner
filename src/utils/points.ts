@@ -170,17 +170,19 @@ export interface WeekSnapshot {
   reachedCount: number;
   /** 结算时这周的家长奖励合计（可负） */
   bonus?: number;
-  /** 这周的零花钱（元）= 练习 + 家长奖励，不低于 0。结算后固定，"待转账"金额就取这个 */
+  /** 结算时这周的提前完成加分合计 */
+  early?: number;
+  /** 这周的零花钱（元）= 练习 + 家长奖励 + 提前完成加分，不低于 0。结算后固定，"待转账"金额就取这个 */
   allowance?: number;
 }
 
 /** 那周的零花钱（元）：得分（含家长奖励和扣分）不低于 0 */
 export const allowanceFor = (weekTotal: number) => Math.max(0, weekTotal) * YUAN_PER_POINT;
 
-export function buildWeekSnapshot(tasks: Task[], weekStart: string, settledAt: string, bonus = 0): WeekSnapshot {
+export function buildWeekSnapshot(tasks: Task[], weekStart: string, settledAt: string, bonus = 0, early = 0): WeekSnapshot {
   const items = practiceTasksForWeek(tasks, weekStart).map((task) => scorePracticeWeek(task, weekStart));
   const total = items.reduce((sum, item) => sum + item.total, 0);
-  return { weekStart, settledAt, items, total, reachedCount: items.filter((item) => item.reached).length, bonus, allowance: allowanceFor(total + bonus) };
+  return { weekStart, settledAt, items, total, reachedCount: items.filter((item) => item.reached).length, bonus, early, allowance: allowanceFor(total + bonus + early) };
 }
 
 /** 周日晚上 8 点以后：这一周可以结算了 */
@@ -269,15 +271,19 @@ export function isEarlyCompleted(task: Task): boolean {
   return completed < task.endDate && completed >= POINTS_START_WEEK;
 }
 
-export interface PendingEarly { taskId: string; title: string; completedDate: string; endDate: string }
+/** 本周课外作业提前完成（截止日之前做完）每项自动加的分（2026-11-25 用户：“提前完成加 3”，每次提前完成直接加 3） */
+export const EARLY_POINTS = 3;
 
-/** 待处理的提前完成作业：没处理过，或给了分但那笔奖励被撤回了 */
-export function pendingEarlyItems(tasks: Task[], ledger: PointsLedger): PendingEarly[] {
-  const revoked = new Set(ledger.bonuses.filter((bonus) => bonus.revokedAt).map((bonus) => bonus.id));
-  return tasks.filter(isEarlyCompleted).filter((task) => {
-    const decision = ledger.earlyDecisions[task.id];
-    return !decision || (decision.decision === "award" && !!decision.bonusId && revoked.has(decision.bonusId));
-  }).map((task) => ({ taskId: task.id, title: task.title, completedDate: toLocalDateKey(task.completedAt!), endDate: task.endDate! }))
+export interface EarlyItem { taskId: string; title: string; completedDate: string; endDate: string; points: number }
+
+/**
+ * 某一周的提前完成加分：那周做完、截止日之前做完的本周课外作业，每项 +3，算在做完的那一周。
+ * 按任务现在的状态算（取消完成就不加了）。改规则之前家长已经手动给过分或选了"不加"的（earlyDecisions 里有记录）不再自动加，免得重复。
+ */
+export function earlyItemsForWeek(tasks: Task[], ledger: PointsLedger, weekStart: string): EarlyItem[] {
+  return tasks.filter(isEarlyCompleted).filter((task) => !ledger.earlyDecisions[task.id])
+    .map((task) => ({ taskId: task.id, title: task.title, completedDate: toLocalDateKey(task.completedAt!), endDate: task.endDate!, points: EARLY_POINTS }))
+    .filter((item) => getWeekStartKey(item.completedDate) === weekStart)
     .sort((a, b) => a.completedDate.localeCompare(b.completedDate));
 }
 
@@ -287,6 +293,8 @@ export interface WeekHistory {
   weekStart: string;
   practice: number;
   bonus: number;
+  /** 提前完成加分（每项 +3） */
+  early: number;
   total: number;
   reachedCount: number;
   settled: boolean;
@@ -299,12 +307,14 @@ export interface PointsSummary {
   weekScores: PracticeWeekScore[];
   weekPractice: number;
   weekBonus: number;
+  /** 本周提前完成加分合计 / 明细 */
+  weekEarly: number;
+  weekEarlyItems: EarlyItem[];
   weekTotal: number;
   weekBonuses: BonusEntry[];
   /** 本周挣的零花钱（元）= 本周得分，不低于 0 */
   weekAllowance: number;
   history: WeekHistory[];
-  pendingEarly: PendingEarly[];
 }
 
 export function computePointsSummary(tasks: Task[], ledger: PointsLedger, today: string): PointsSummary {
@@ -316,6 +326,7 @@ export function computePointsSummary(tasks: Task[], ledger: PointsLedger, today:
   });
   const weeks = weekStart >= POINTS_START_WEEK ? weekStartsFrom(POINTS_START_WEEK, weekStart) : [];
   let weekScores: PracticeWeekScore[] = [];
+  let weekEarlyItems: EarlyItem[] = [];
   const history: WeekHistory[] = weeks.map((week) => {
     // 这一周在周日晚上结算以后也有快照，但本周的分数仍按现在的设置实时算（快照只固定零花钱）
     const snapshot = week < weekStart ? ledger.snapshots[week] : undefined;
@@ -323,9 +334,12 @@ export function computePointsSummary(tasks: Task[], ledger: PointsLedger, today:
     if (week === weekStart) weekScores = scores;
     const practice = scores.reduce((sum, item) => sum + item.total, 0);
     const bonus = (bonusesByWeek.get(week) ?? []).reduce((sum, item) => sum + item.points, 0);
+    const earlyItems = earlyItemsForWeek(tasks, ledger, week);
+    if (week === weekStart) weekEarlyItems = earlyItems;
+    const early = earlyItems.reduce((sum, item) => sum + item.points, 0);
     const settledSnapshot = ledger.snapshots[week];
-    const allowance = settledSnapshot?.allowance ?? allowanceFor(practice + bonus);
-    return { weekStart: week, practice, bonus, total: practice + bonus, reachedCount: scores.filter((item) => item.reached).length, settled: !!settledSnapshot, allowance };
+    const allowance = settledSnapshot?.allowance ?? allowanceFor(practice + bonus + early);
+    return { weekStart: week, practice, bonus, early, total: practice + bonus + early, reachedCount: scores.filter((item) => item.reached).length, settled: !!settledSnapshot, allowance };
   });
   const current = history[history.length - 1];
   return {
@@ -333,11 +347,12 @@ export function computePointsSummary(tasks: Task[], ledger: PointsLedger, today:
     weekScores,
     weekPractice: current?.practice ?? 0,
     weekBonus: current?.bonus ?? 0,
+    weekEarly: current?.early ?? 0,
+    weekEarlyItems,
     weekTotal: current?.total ?? 0,
     weekBonuses: ledger.bonuses.filter((bonus) => getWeekStartKey(bonus.date) === weekStart).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     weekAllowance: allowanceFor(current?.total ?? 0),
     history,
-    pendingEarly: pendingEarlyItems(tasks, ledger),
   };
 }
 

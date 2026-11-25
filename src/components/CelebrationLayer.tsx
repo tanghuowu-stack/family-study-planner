@@ -137,8 +137,8 @@ export function CelebrationLayer({ queue, onDismiss }: { queue: Celebration[]; o
         style={flying ? { transform: `translate(${fly.x}px, ${fly.y}px) scale(${fly.scale})`, opacity: 0.15, transition: `transform ${FLY_MS}ms cubic-bezier(.5,0,.25,1), opacity ${FLY_MS}ms ease-in` } : fly === "fade" ? { opacity: 0, transition: "opacity 250ms ease-in" } : undefined}>
         <Burst sparks={burst} duration={1200} />
         <button ref={cardRef} type="button" role="status" aria-live="polite" onClick={(event) => { event.stopPropagation(); close(); }}
-          className={`relative max-w-sm animate-[celebrate_500ms_ease-out] rounded-lg border px-7 py-5 text-center shadow-xl motion-reduce:animate-none ${current.flyTo ? "border-primary/15 bg-mint" : "border-ink/10 bg-white"}`}>
-          <span className={`block text-xl font-bold leading-8 ${current.flyTo ? "text-primary" : "text-ink"}`}>{current.title}</span>
+          className={`relative max-w-[calc(100vw-2rem)] animate-[celebrate_500ms_ease-out] rounded-lg border px-5 py-5 text-center shadow-xl motion-reduce:animate-none sm:max-w-md sm:px-7 ${current.flyTo ? "border-primary/15 bg-mint" : "border-ink/10 bg-white"}`}>
+          <span className={`block whitespace-nowrap text-[clamp(15px,4.6vw,20px)] font-bold leading-8 ${current.flyTo ? "text-primary" : "text-ink"}`}>{current.title}</span>
           {current.detail && <span className="mt-1.5 block text-[15px] leading-6 text-muted">{current.detail}</span>}
         </button>
       </div>

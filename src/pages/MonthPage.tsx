@@ -60,7 +60,7 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask
       {tabs}
       <header className="mb-3 flex shrink-0 items-end justify-between gap-3 sm:mb-4">
         <div className="min-w-0">
-          <h1 className="flex items-baseline gap-2 text-ink"><span className="text-[30px] font-bold leading-9 tracking-tight sm:text-[36px] sm:leading-10">{format(monthDate, "M月")}</span><span className="text-[17px] font-semibold text-muted sm:text-xl">{format(monthDate, "yyyy")}</span></h1>
+          <h1 className="flex items-baseline gap-2 text-ink"><span className="month-title text-[30px] font-bold leading-9 tracking-tight sm:text-[36px] sm:leading-10">{format(monthDate, "M月")}</span><span className="text-[17px] font-semibold text-muted sm:text-xl">{format(monthDate, "yyyy")}</span></h1>
           <p className="mt-1 text-[13px] text-muted">{isThisMonth ? "本月" : "这个月"} {monthLabels.length} 项安排{isThisMonth && upcomingCount > 0 && ` · 今天起还有 ${upcomingCount} 项`}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
@@ -95,7 +95,7 @@ export function MonthPage({ date, refreshKey, onDateChange, onOpenDay, onAddTask
                 onClick={() => handleDayClick(key)}
                 aria-current={isToday ? "date" : undefined}
                 aria-label={`${format(fromDateKey(key), "M月d日")}${labels.length ? `，${labels.length} 项安排` : ""}`}
-                className={`relative flex min-h-[3.75rem] flex-col overflow-hidden p-1.5 text-left align-top transition-colors sm:min-h-[5.5rem] sm:p-2 desk:min-h-[7.5rem] desk:p-2.5 ${bg} ${inMonth && !isToday ? "hover:bg-mint/30" : ""} ${isSelected ? "ring-2 ring-inset ring-primary/40" : ""}`}
+                className={`month-cell relative flex min-h-[3.75rem] flex-col overflow-hidden p-1.5 text-left align-top transition-colors sm:min-h-[5.5rem] sm:p-2 desk:min-h-[7.5rem] desk:p-2.5 ${bg} ${inMonth && !isToday ? "hover:bg-mint/30" : ""} ${isSelected ? "ring-2 ring-inset ring-primary/40" : ""}`}
               >
                 {isToday && <span aria-hidden className="absolute inset-x-0 top-0 h-[3px] bg-primary" />}
                 <div className="flex min-w-0 items-center gap-1">

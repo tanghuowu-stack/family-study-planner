@@ -1,6 +1,6 @@
 import { ChevronRight, PiggyBank, Star, Wallet } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { addBonus, revokeBonus, skipEarly, type PointsContext } from "../data/pointsService";
+import { addBonus, revokeBonus, type PointsContext } from "../data/pointsService";
 import { formatCompactDate, getWeekStartKey, todayKey } from "../utils/date";
 import { practiceVerb, SETTLE_HOUR, type BonusEntry, type PracticeWeekScore } from "../utils/points";
 import { formatYuan, type Balances } from "../utils/ledger";
@@ -89,16 +89,16 @@ export function PointsBar({ ctx, balances, onChanged, onOpenLedger }: { ctx: Poi
 }
 
 /**
- * 每周练习最下面一行：家长奖励 +N（有待处理的提前完成作业时"待处理 N 项"）。
+ * 每周练习最下面一行：家长奖励 +N；本周有提前完成的作业时右边"提前完成 +N"（2026-11-25 起自动加，不再有"待处理"）。
  * iPad / 手机上只显示，点击无反应；Mac 上点击打开家长奖励对话框（docs/TASK_09_points.md §7、§9.4）。
  */
 export function ParentBonusRow({ ctx, onChanged }: { ctx: PointsContext; onChanged: () => void }) {
   const [open, setOpen] = useState(false);
-  const pending = ctx.summary.pendingEarly.length;
+  const early = ctx.summary.weekEarly;
   const content = (
     <>
       <span>家长奖励 <span className="tabular-nums text-ink">{signed(ctx.summary.weekBonus)}</span></span>
-      {pending > 0 && <span className="ml-auto text-ink">待处理 {pending} 项</span>}
+      {early > 0 && <span className="ml-auto text-primary">提前完成 <span className="tabular-nums">+{early}</span></span>}
     </>
   );
   const rowClass = "flex min-h-11 w-full items-center gap-3 border-t border-ink/[0.07] px-3 text-left text-[13px] font-semibold text-muted sm:px-4";
@@ -121,13 +121,12 @@ function BonusLine({ bonus, action }: { bonus: BonusEntry; action?: ReactNode })
   );
 }
 
-/** 家长奖励：加 / 减分（必须写原因）、撤回本周的某一笔、处理提前完成的作业 */
+/** 家长奖励：加 / 减分（必须写原因）、撤回本周的某一笔；本周提前完成的作业（自动 +3）列在下面看 */
 function ParentBonusDialog({ ctx, onClose, onChanged }: { ctx: PointsContext; onClose: () => void; onChanged: () => void }) {
   const [sign, setSign] = useState<1 | -1>(1);
   const [amount, setAmount] = useState(1);
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
-  const [early, setEarly] = useState<{ taskId: string; points: 1 | 2; reason: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const run = async (work: () => Promise<unknown>) => {
     setError("");
@@ -152,31 +151,18 @@ function ParentBonusDialog({ ctx, onClose, onChanged }: { ctx: PointsContext; on
         {error && <p className="text-[13px] text-rose-700">{error}</p>}
       </div>
 
-      {ctx.summary.pendingEarly.length > 0 && (
+      {ctx.summary.weekEarlyItems.length > 0 && (
         <div className="mt-5 border-t border-ink/10 pt-4">
-          <h4 className="text-sm font-bold text-ink">待处理：提前完成的作业</h4>
+          <h4 className="text-sm font-bold text-ink">本周提前完成（每项自动 +3）</h4>
           <ul className="mt-1 divide-y divide-ink/[0.07]">
-            {ctx.summary.pendingEarly.map((item) => (
-              <li key={item.taskId} className="py-2.5">
-                <p className="text-sm text-ink">{item.title}<span className="ml-2 text-[13px] text-muted">{formatCompactDate(item.completedDate)}做完 · {formatCompactDate(item.endDate)}截止</span></p>
-                {early?.taskId === item.taskId ? (
-                  <div className="mt-2 space-y-2">
-                    <div className="flex gap-1.5">{([1, 2] as const).map((value) => <button key={value} type="button" className={segment(early.points === value)} onClick={() => setEarly({ ...early, points: value })}>给 {value} 分</button>)}</div>
-                    <input value={early.reason} maxLength={60} onChange={(event) => setEarly({ ...early, reason: event.target.value })} aria-label="原因" className="w-full rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm outline-none focus:border-primary" />
-                    <div className="flex gap-2">
-                      <button type="button" className={`${primaryButton} flex-1`} disabled={!early.reason.trim() || busy} onClick={() => run(async () => { await addBonus(early.points, early.reason, item.taskId); setEarly(null); })}>给 {early.points} 分</button>
-                      <button type="button" onClick={() => setEarly(null)} className="min-h-11 rounded-lg px-3 text-sm font-semibold text-muted hover:bg-white">取消</button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <button type="button" onClick={() => setEarly({ taskId: item.taskId, points: 2, reason: `提前完成：${item.title}` })} className={quietButton}>给分</button>
-                    <button type="button" disabled={busy} onClick={() => run(() => skipEarly(item.taskId))} className="min-h-10 rounded-lg px-3 text-sm font-semibold text-muted hover:bg-white disabled:opacity-40">不给（例如要订正）</button>
-                  </div>
-                )}
+            {ctx.summary.weekEarlyItems.map((item) => (
+              <li key={item.taskId} className="flex items-center gap-3 py-2 text-sm text-ink">
+                <span className="w-10 shrink-0 font-bold tabular-nums text-primary">+{item.points}</span>
+                <span className="min-w-0 flex-1">{item.title}<span className="block text-[13px] text-muted">{formatCompactDate(item.completedDate)}做完 · {formatCompactDate(item.endDate)}截止</span></span>
               </li>
             ))}
           </ul>
+          <p className="mt-1 text-[13px] text-muted">检查发现没做好，可以在今日页把这项取消勾选（3 分自动去掉），或在上面减分。</p>
         </div>
       )}
 
@@ -197,7 +183,7 @@ function PointsDetailDialog({ ctx, onClose }: { ctx: PointsContext; onClose: () 
   const th = "py-1.5 text-right text-[13px] font-semibold text-muted";
   const td = "py-1.5 text-right tabular-nums";
   return (
-    <Sheet wide title="积分明细" description="1 分 = 1 元。每周日晚上 8 点结算，这周的得分（含家长奖励，不低于 0）就是这周的零花钱。" onClose={onClose}>
+    <Sheet wide title="积分明细" description="1 分 = 1 元。每周日晚上 8 点结算，这周的得分（练习 + 提前完成 + 家长奖励，不低于 0）就是这周的零花钱。" onClose={onClose}>
       <h4 className="text-sm font-bold text-ink">本周 {summary.weekTotal} 分 · {summary.weekAllowance} 元</h4>
       <table className="mt-1 w-full text-sm">
         <thead><tr><th className="py-1.5 text-left text-[13px] font-semibold text-muted">练习</th><th className={th}>完成</th><th className={th}>达标</th><th className={th}>多做</th><th className={th}>合计</th></tr></thead>
@@ -208,6 +194,7 @@ function PointsDetailDialog({ ctx, onClose }: { ctx: PointsContext; onClose: () 
               <td className={td}>{score.completionPoints}</td><td className={td}>{score.reachBonus || "–"}</td><td className={td}>{score.extraScores ? score.extraPoints || "–" : score.extraCount ? `多${score.extraCount}` : "–"}</td><td className={`${td} font-bold`}>{score.total}</td>
             </tr>
           ))}
+          <tr><td className="py-1.5 pr-2 text-ink">提前完成（每项 +3）</td><td /><td /><td /><td className={`${td} font-bold`}>{signed(summary.weekEarly)}</td></tr>
           <tr><td className="py-1.5 pr-2 text-ink">家长奖励</td><td /><td /><td /><td className={`${td} font-bold`}>{signed(summary.weekBonus)}</td></tr>
         </tbody>
       </table>
@@ -216,7 +203,7 @@ function PointsDetailDialog({ ctx, onClose }: { ctx: PointsContext; onClose: () 
       <h4 className="mt-5 text-sm font-bold text-ink">以前每周</h4>
       {past.length === 0 ? <p className="mt-1 text-sm text-muted">这是积分的第一周。</p> : (
         <table className="mt-1 w-full text-sm"><thead><tr><th className="py-1.5 text-left text-[13px] font-semibold text-muted">周</th><th className={th}>练习</th><th className={th}>奖励</th><th className={th}>合计</th><th className={th}>零花钱</th></tr></thead>
-          <tbody className="divide-y divide-ink/[0.07]">{past.map((week) => <tr key={week.weekStart}><td className="py-1.5 text-ink">{weekLabel(week.weekStart)}<span className="block text-[13px] text-muted">{week.reachedCount} 项达标</span></td><td className={td}>{week.practice}</td><td className={td}>{signed(week.bonus)}</td><td className={`${td} font-bold`}>{week.total}</td><td className={`${td} font-bold`}>{week.allowance} 元</td></tr>)}</tbody>
+          <tbody className="divide-y divide-ink/[0.07]">{past.map((week) => <tr key={week.weekStart}><td className="py-1.5 text-ink">{weekLabel(week.weekStart)}<span className="block text-[13px] text-muted">{week.reachedCount} 项达标</span></td><td className={td}>{week.practice}</td><td className={td}>{signed(week.bonus + week.early)}</td><td className={`${td} font-bold`}>{week.total}</td><td className={`${td} font-bold`}>{week.allowance} 元</td></tr>)}</tbody>
         </table>
       )}
     </Sheet>

@@ -10,7 +10,7 @@ import type { Task } from "../types/task";
 import { getWeekStartKey, todayKey, toLocalDateKey } from "../utils/date";
 import { isWeekPlanTask } from "../utils/taskGrouping";
 import {
-  activeBonuses, buildWeekSnapshot, computePointsSummary, DEFAULT_PRACTICE_EXTRA_SCORES, DEFAULT_PRACTICE_POINTS, isEarlyCompleted, isSettleTime,
+  activeBonuses, buildWeekSnapshot, computePointsSummary, earlyItemsForWeek, EARLY_POINTS, DEFAULT_PRACTICE_EXTRA_SCORES, DEFAULT_PRACTICE_POINTS, isEarlyCompleted, isSettleTime,
   matchPracticePresets, moreToDoToday, POINTS_START_WEEK, practiceDisplayName, practiceSettingsOf, practiceShortName, practiceVerb, PRACTICE_PRESETS,
   scorePracticeWeek, weeksNeedingSnapshot, type PointsLedger, type PointsSummary,
 } from "../utils/points";
@@ -39,7 +39,8 @@ export async function settlePendingWeeks(context: PointsContext, today = todayKe
   await updatePointsLedger((current) => {
     const snapshots = { ...current.snapshots };
     const bonusOf = (week: string) => activeBonuses(current).filter((bonus) => getWeekStartKey(bonus.date) === week).reduce((sum, bonus) => sum + bonus.points, 0);
-    missing.forEach((week) => { if (!snapshots[week]) snapshots[week] = buildWeekSnapshot(context.tasks, week, settledAt, bonusOf(week)); });
+    const earlyOf = (week: string) => earlyItemsForWeek(context.tasks, current, week).reduce((sum, item) => sum + item.points, 0);
+    missing.forEach((week) => { if (!snapshots[week]) snapshots[week] = buildWeekSnapshot(context.tasks, week, settledAt, bonusOf(week), earlyOf(week)); });
     return { ...current, snapshots };
   });
   return true;
@@ -182,7 +183,7 @@ export async function homeworkCelebrations(taskId: string, wasDone: boolean, tod
   const stamp = Date.now();
   const task = await taskRepository.getTask(taskId);
   if (task && isEarlyCompleted(task) && toLocalDateKey(task.completedAt!) === today) {
-    result.push({ id: `early:${task.id}:${stamp}`, title: "提前完成了！", detail: "拿给妈妈检查，通过了有奖励" });
+    result.push({ id: `early:${task.id}:${stamp}`, title: `提前完成，加 ${EARLY_POINTS} 分！`, detail: "截止日之前做完的课外作业，每项自动加 3 分" });
   } else if (task && subItem && task.status !== "done" && isWeekPlanTask(task, today)) {
     result.push({ id: `item:${task.id}:${stamp}`, title: "做完了", kind: "mini" });
   }
@@ -217,7 +218,3 @@ export async function revokeBonus(id: string): Promise<PointsLedger> {
   return updatePointsLedger((current) => ({ ...current, bonuses: current.bonuses.map((bonus) => bonus.id === id && !bonus.revokedAt ? { ...bonus, revokedAt: now, updatedAt: now } : bonus) }));
 }
 
-export async function skipEarly(taskId: string): Promise<PointsLedger> {
-  const now = new Date().toISOString();
-  return updatePointsLedger((current) => ({ ...current, earlyDecisions: { ...current.earlyDecisions, [taskId]: { decision: "skip", decidedAt: now, updatedAt: now } } }));
-}

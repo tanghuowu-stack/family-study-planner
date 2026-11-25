@@ -21,7 +21,7 @@ import { taskRepository } from "../taskRepository";
 import type { Task, TaskDraft } from "../../types/task";
 import {
   addBonus, applyPracticePointChangesOnce, applyPracticePresetsOnce, HOMEWORK_DONE_BAND, homeworkCelebrations, loadPointsContext, markPointsDataReady, practiceCelebrations,
-  revokeBonus, settlePendingWeeks, skipEarly,
+  revokeBonus, settlePendingWeeks,
 } from "../pointsService";
 import { loadPointsLedger } from "../pointsLedger";
 
@@ -51,20 +51,21 @@ describe("家长奖励", () => {
     expect(after.summary.weekBonuses).toHaveLength(2);
   });
 
-  it("2. 提前完成的作业：给分记为家长奖励、处理后不再待处理；选不给也不再待处理；作业本身不自动加分", async () => {
+  it("2. 提前完成的作业：每项自动 +3（2026-11-25 用户改规则），取消完成就去掉；结算快照把它算进零花钱", async () => {
     const homework = (title: string): TaskDraft => ({ title, mainCategory: "extraHomework", subCategory: "math", extraContentType: "homework", timeType: "dateRange", startDate: "2026-11-22", endDate: "2026-11-28", status: "todo", rolloverMode: "autoNextDay", allowRollover: true, childVisible: true } as TaskDraft);
     const { task: a } = await taskRepository.create(homework("奥数班作业"));
     const { task: b } = await taskRepository.create(homework("FCE作业"));
     await taskRepository.setDisplayStatus(a, "done");
     await taskRepository.setDisplayStatus(b, "done");
     let context = await loadPointsContext();
-    expect(context.summary.pendingEarly.map((item) => item.title).sort()).toEqual(["FCE作业", "奥数班作业"]);
-    expect(context.summary.weekTotal).toBe(0);
-    await addBonus(2, "提前完成：奥数班作业", a.id);
-    await skipEarly(b.id);
+    expect(context.summary.weekEarlyItems.map((item) => [item.title, item.points]).sort()).toEqual([["FCE作业", 3], ["奥数班作业", 3]]);
+    expect(context.summary.weekEarly).toBe(6);
+    expect(context.summary.weekTotal).toBe(6);
+    expect(context.summary.weekAllowance).toBe(6);
+    await taskRepository.setDisplayStatus({ ...b, status: "done" }, "todo");
     context = await loadPointsContext();
-    expect(context.summary.pendingEarly).toEqual([]);
-    expect(context.summary.weekBonus).toBe(2);
+    expect(context.summary.weekEarly).toBe(3);
+    expect(context.summary.weekBonus).toBe(0);
   });
 });
 
@@ -222,9 +223,9 @@ describe("结算、预设、庆祝", () => {
     expect(first.map((item) => [item.kind, item.title])).toEqual([["mini", "做完了"]]);
     await taskRepository.toggleChecklistItem(task.id, "i2", undefined, { done: true });
     const done = await homeworkCelebrations(task.id, false, "2026-11-25", true);
-    expect(done.map((item) => [item.kind, item.title, item.detail])).toEqual([[undefined, "提前完成了！", "拿给妈妈检查，通过了有奖励"]]);
+    expect(done.map((item) => [item.kind, item.title, item.detail])).toEqual([[undefined, "提前完成，加 3 分！", "截止日之前做完的课外作业，每项自动加 3 分"]]);
     await taskRepository.toggleChecklistItem(task.id, "i2", undefined, { done: false });
     await taskRepository.toggleChecklistItem(task.id, "i2", undefined, { done: true });
-    expect((await homeworkCelebrations(task.id, false, "2026-11-25", true)).map((item) => item.title)).toEqual(["提前完成了！"]);
+    expect((await homeworkCelebrations(task.id, false, "2026-11-25", true)).map((item) => item.title)).toEqual(["提前完成，加 3 分！"]);
   });
 });

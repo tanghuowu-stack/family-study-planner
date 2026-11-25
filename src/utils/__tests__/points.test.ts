@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import type { Task, WeeklyQuota } from "../../types/task";
 import {
   allowanceFor, buildWeekSnapshot, computePointsSummary, emptyLedger, findPracticePreset, formatMoreToDo, gainForLog, isEarlyCompleted, isSettleTime, matchPracticePresets, moreToDoToday,
-  pendingEarlyItems, practiceDisplayName, practiceSettingsForForm, practiceShortName, scorePracticeWeek, weeksNeedingSnapshot, type BonusEntry, type PointsLedger,
+  earlyItemsForWeek, EARLY_POINTS, practiceDisplayName, practiceSettingsForForm, practiceShortName, scorePracticeWeek, weeksNeedingSnapshot, type BonusEntry, type PointsLedger,
 } from "../points";
 import { mergeLedgers, normalizeLedger, serializeLedger } from "../../data/pointsLedger";
 
@@ -183,14 +183,16 @@ describe("本周作业提前完成", () => {
     expect(isEarlyCompleted(homework({ mainCategory: "temporary", subCategory: "travel" }))).toBe(false);
     expect(isEarlyCompleted(homework({ completedAt: "2026-11-20T12:00:00.000Z", endDate: "2026-11-22" }))).toBe(false);
   });
-  it("待处理：没处理过的才算；给了分但那笔被撤回的回到待处理；选了不给的不再出现", () => {
-    const tasks = [homework({ id: "a" }), homework({ id: "b" }), homework({ id: "c" })];
+  it("提前完成每项自动 +3，算在做完的那一周；改规则前家长已经处理过（给过分 / 选了不给）的不再自动加", () => {
+    const tasks = [homework({ id: "a" }), homework({ id: "b" }), homework({ id: "c" }), homework({ id: "d", completedAt: "2026-12-01T12:00:00.000Z", endDate: "2026-12-04" })];
     const now = "2026-11-25T13:00:00.000Z";
     const ledger = ledgerWith({
-      bonuses: [bonus("x", "2026-11-25", 2, { earlyTaskId: "b", revokedAt: now })],
+      bonuses: [bonus("x", "2026-11-25", 2, { earlyTaskId: "b" })],
       earlyDecisions: { b: { decision: "award", bonusId: "x", decidedAt: now, updatedAt: now }, c: { decision: "skip", decidedAt: now, updatedAt: now } },
     });
-    expect(pendingEarlyItems(tasks, ledger).map((item) => item.taskId)).toEqual(["a", "b"]);
+    expect(earlyItemsForWeek(tasks, ledger, "2026-11-23").map((item) => [item.taskId, item.points])).toEqual([["a", EARLY_POINTS]]);
+    expect(EARLY_POINTS).toBe(3);
+    expect(earlyItemsForWeek(tasks, ledger, "2026-11-30").map((item) => item.taskId)).toEqual(["d"]);
   });
 });
 

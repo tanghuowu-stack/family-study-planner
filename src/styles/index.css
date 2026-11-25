@@ -197,6 +197,9 @@ body::before {
   .fit-tablet { height: var(--fit-h); display: flex; flex-direction: column; overflow: hidden; padding-top: 0.75rem !important; padding-bottom: 0.5rem !important; }
   .fit-tablet .fit-fill { flex: 1 1 auto; min-height: 0; }
   .fit-tablet [role="tablist"] { margin-bottom: 0.5rem; }
+  /* iPad 月历：格子不设最小高度，6 行一起按屏幕高度缩，整张月历一屏看全（2026-11-25 用户：只显示半截） */
+  .fit-tablet .month-cell { min-height: 0; padding: 0.375rem 0.5rem; }
+  .fit-tablet .month-title { font-size: 1.625rem; line-height: 2rem; }
 }
 
 /* 提示条只在挂着底部导航时抬高（手机、iPad）；电脑有 desk:bottom-* 负责，这里必须让位，

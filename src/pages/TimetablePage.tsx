@@ -2,7 +2,7 @@ import { BookOpen, Check, Flag, Pencil, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { formatFullDate, fromDateKey, todayKey } from "../utils/date";
 import { getCalendarAnnotation } from "../data/calendarAnnotations";
-import { currentScheduleItem, durationText, SCHOOL_AFTER_BY_DAY, SCHOOL_AFTERNOON, SCHOOL_DISMISS, SCHOOL_LUNCH, SCHOOL_MORNING, type ScheduleItem } from "../data/schoolSchedule";
+import { currentScheduleItem, durationText, SCHOOL_AFTER_BY_DAY, SCHOOL_AFTERNOON, SCHOOL_DISMISS, SCHOOL_LUNCH, SCHOOL_MORNING, SCHOOL_NAP, type ScheduleItem } from "../data/schoolSchedule";
 import {
   applyTimetableAfterSchoolFixOnce,
   cloneSchoolTimetable,
@@ -281,7 +281,7 @@ function CourseGrid({ draft, tomorrow }: { draft: SchoolTimetable; tomorrow: Tim
           {draft.slots.flatMap((slot, index) => {
             const rows = [];
             const prev = draft.slots[index - 1];
-            if (prev && prev.section !== slot.section) rows.push(slot.section === "afternoon" ? divider("lunch", `午餐 · 午休  ${SCHOOL_LUNCH.start}–${SCHOOL_LUNCH.end}`, "bg-[#FDF6E9] text-amber-800") : divider("after", "课后服务  15:55 起", "bg-[#EEF5F1] text-primary"));
+            if (prev && prev.section !== slot.section) rows.push(slot.section === "afternoon" ? divider("lunch", `午餐 ${SCHOOL_LUNCH.start}–${SCHOOL_LUNCH.end} · 午休 ${SCHOOL_NAP.start}–${SCHOOL_NAP.end}`, "bg-[#FDF6E9] text-amber-800") : divider("after", "课后服务  15:55 起", "bg-[#EEF5F1] text-primary"));
             const badge = SECTION_BADGE[slot.section];
             const label = slot.section === "extended" ? `${++afterNo}` : `${++classNo}`;
             rows.push(
@@ -379,10 +379,10 @@ function DaySchedule({ now }: { now: Date }) {
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-ink/[0.08] bg-white shadow-[0_1px_2px_rgba(32,41,37,0.04),0_12px_32px_-20px_rgba(32,41,37,0.25)]">
       <header className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-ink/[0.08] bg-[#F7F6F3] px-3 py-2">
         <h2 className="whitespace-nowrap text-[14px] font-bold text-ink">作息时间</h2>
-        <div role="tablist" aria-label="看哪天的课后服务" className="ml-auto flex gap-0.5">
+        <div role="tablist" aria-label="看哪天的课后服务" className="ml-auto flex gap-1 sm:gap-0.5">
           {[1, 2, 3, 4, 5].map((value) => (
             <button key={value} type="button" role="tab" aria-selected={day === value} aria-label={`周${"一二三四五"[value - 1]}`} onClick={() => setDay(value)}
-              className={`relative flex h-7 w-7 items-center justify-center rounded-full text-[12px] font-semibold ${day === value ? "bg-ink text-white" : "text-muted hover:bg-white"}`}>
+              className={`relative flex h-9 w-11 items-center justify-center rounded-full text-[14px] font-semibold sm:h-7 sm:w-7 sm:text-[12px] ${day === value ? "bg-ink text-white" : "text-muted hover:bg-white"}`}>
               {"一二三四五"[value - 1]}{value === today && <span aria-hidden className={`absolute -bottom-0.5 h-1 w-1 rounded-full ${day === value ? "bg-white" : "bg-primary"}`} />}
             </button>
           ))}
@@ -393,9 +393,13 @@ function DaySchedule({ now }: { now: Date }) {
           {heading("上午", SECTION_COLOR.morning, "8:25")}
           {SCHOOL_MORNING.items.map((entry) => <TimelineRow key={entry.start + entry.label} entry={entry} color={SECTION_COLOR.morning} current={isCurrent(entry)} />)}
         </ol>
-        <p className={`my-1.5 flex items-center justify-between rounded-lg px-3 py-1.5 text-[12px] font-semibold ${isCurrent(SCHOOL_LUNCH) ? "bg-mint text-primary" : "bg-[#FDF3E3] text-amber-800"}`}>
-          <span>午餐 · 午休</span><span className="tabular-nums">{SCHOOL_LUNCH.start}–{SCHOOL_LUNCH.end}{isCurrent(SCHOOL_LUNCH) && <span className="ml-1.5 rounded-full bg-primary px-1.5 text-[11px] leading-5 text-white">现在</span>}</span>
-        </p>
+        <div className="my-1.5 space-y-1">
+          {[SCHOOL_LUNCH, SCHOOL_NAP].map((entry) => (
+            <p key={entry.label} className={`flex items-center justify-between rounded-lg px-3 py-1.5 text-[12px] font-semibold ${isCurrent(entry) ? "bg-mint text-primary" : "bg-[#FDF3E3] text-amber-800"}`}>
+              <span>{entry.label}</span><span className="tabular-nums">{entry.start}–{entry.end}{isCurrent(entry) && <span className="ml-1.5 rounded-full bg-primary px-1.5 text-[11px] leading-5 text-white">现在</span>}</span>
+            </p>
+          ))}
+        </div>
         <ol>
           {heading("下午", SECTION_COLOR.afternoon, "14:00")}
           {SCHOOL_AFTERNOON.items.map((entry) => <TimelineRow key={entry.start + entry.label} entry={entry} color={SECTION_COLOR.afternoon} current={isCurrent(entry)} />)}

@@ -35,7 +35,9 @@ export const SCHOOL_MORNING: ScheduleSection = {
   ],
 };
 
-export const SCHOOL_LUNCH = item("午餐 · 午休", "12:10", "14:00", "big-break");
+/** 2026-11-25 用户：午餐 12:10–13:00、午休 13:00–13:50 分开写 */
+export const SCHOOL_LUNCH = item("午餐", "12:10", "13:00", "big-break");
+export const SCHOOL_NAP = item("午休", "13:00", "13:50", "big-break");
 
 export const SCHOOL_AFTERNOON: ScheduleSection = {
   title: "下午",
@@ -91,6 +93,6 @@ export function currentScheduleItem(now: Date): ScheduleItem | null {
   if (day < 1 || day > 5) return null;
   const minutes = now.getHours() * 60 + now.getMinutes();
   const after = SCHOOL_AFTER_BY_DAY[day] ?? [];
-  const all = [...SCHOOL_MORNING.items, SCHOOL_LUNCH, ...SCHOOL_AFTERNOON.items, ...after];
+  const all = [...SCHOOL_MORNING.items, SCHOOL_LUNCH, SCHOOL_NAP, ...SCHOOL_AFTERNOON.items, ...after];
   return all.find((entry) => minutes >= toMinutes(entry.start) && minutes < toMinutes(entry.end)) ?? null;
 }

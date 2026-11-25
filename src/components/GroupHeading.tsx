@@ -20,7 +20,7 @@ interface Props {
   label: string;
   /** 跟在标题后的说明，如"作业"；颜色更浅 */
   suffix?: string;
-  /** 琥珀色小胶囊提示（今日页“本周课外作业”后面的“🎁 提前完成有奖励！”） */
+  /** 琥珀色小胶囊提示（今日页“本周课外作业”后面的“🎁 提前完成加 3”） */
   hint?: string;
   count?: number;
   dot?: string;
@@ -33,7 +33,7 @@ interface Props {
 }
 
 /** 分组小标题：13px 半粗、无底色，靠色点与留白分区 */
-/** 琥珀色礼物小胶囊："提前完成有奖励！"（本周课外作业）、"全部完成有奖励！"（每周练习），两处同一个样式 */
+/** 琥珀色礼物小胶囊："提前完成加 3"（本周课外作业）、"每项全部完成另外加 2"（每周练习），两处同一个样式 */
 export function RewardHint({ text }: { text: string }) {
   return <span className="inline-flex min-w-0 items-center gap-1 rounded-full bg-sun/35 px-2.5 py-0.5 text-[13px] font-bold text-amber-800"><Gift aria-hidden className="h-3.5 w-3.5 shrink-0" strokeWidth={2.5} /><span className="truncate">{text}</span></span>;
 }

@@ -34,9 +34,10 @@ function CardHeader({ title, hint, badge, badgeDone, completed, total }: { title
   const percentage = total === 0 ? 0 : Math.min(100, (completed / total) * 100);
   return (
     <div className="border-b border-ink/10 px-3 pb-3 pt-3.5 sm:px-4">
-      <div className="flex min-w-0 items-center gap-2.5">
+      {/* 手机上提示胶囊放不下时换到标题下面一行（不截字），宽屏和标题同一行 */}
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1.5">
         <h2 className="shrink-0 text-[17px] font-bold leading-6 text-ink">{title}</h2>
-        {hint}
+        {hint && <span className="order-last basis-full sm:order-none sm:basis-auto">{hint}</span>}
         {badge !== undefined && <span className={`ml-auto shrink-0 rounded-full px-2.5 py-0.5 text-[13px] font-semibold tabular-nums ${badgeDone ? "bg-primary/10 text-primary" : "bg-stone-100 text-ink"}`}>{badge}</span>}
       </div>
       {total > 0 && <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-stone-200/80" role="meter" aria-label={`${title}进度，已完成 ${completed}/${total}`} aria-valuemin={0} aria-valuemax={total} aria-valuenow={completed}>
@@ -166,7 +167,7 @@ export function DayPage(props: Props) {
   const moreText = isToday ? formatMoreToDo(moreToDoToday(weeklyTimes, props.date)) : "";
   // docs/TASK_09_points.md §9.5：还有能做的练习时只写"今天的作业做完了，快去赚积分吧！"（能做哪些看右栏每周练习，不再列）
   const moreLine = schoolAllDone && pointsOn
-    ? <div className="px-3 py-3 sm:px-4"><p data-testid="more-to-do" className="flex items-center gap-2.5 rounded-lg bg-mint/70 px-3.5 py-3 text-[17px] font-bold leading-6 text-primary"><Sparkles aria-hidden className="h-5 w-5 shrink-0" strokeWidth={2.25} /><span>{moreText ? "今天的作业做完了，快去赚积分吧！" : <>今天的作业都做完了。<span className="font-medium text-ink">{weeklyTimes.every(timesReached) ? "这周的练习也都达标了。" : "今天能做的练习也都做过了。"}</span></>}</span></p></div>
+    ? <div className="px-3 py-3 sm:px-4"><p data-testid="more-to-do" className="flex items-center gap-2 rounded-lg bg-mint/70 px-3 py-3 text-[16px] font-bold leading-6 text-primary sm:gap-2.5 sm:px-3.5 sm:text-[17px]"><Sparkles aria-hidden className="h-5 w-5 shrink-0" strokeWidth={2.25} /><span className="min-w-0 whitespace-nowrap">{moreText ? "今天的作业做完了，快去赚积分吧！" : <>今天的作业都做完了。<span className="font-medium text-ink">{weeklyTimes.every(timesReached) ? "这周的练习也都达标了。" : "今天能做的练习也都做过了。"}</span></>}</span></p></div>
     : null;
   // 过去日期的补记（打勾或取消）只在 Mac 上有；iPad / 手机上过去日期的勾选框点不了（§7、§8）
   const parentDevice = isParentDevice();
@@ -222,7 +223,7 @@ export function DayPage(props: Props) {
             ? <div className={pending.length > 0 ? "border-t border-ink/[0.07]" : ""}>{moreLine}</div>
             : pending.length === 0 && weekPending.length > 0 && done.length > 0 && <p className="px-4 py-3 text-[15px] font-semibold text-primary">{isToday ? "今天" : "这一天"}的作业都做完了</p>}
           {weekPending.length > 0 && <div className={pending.length > 0 || done.length > 0 ? "border-t border-ink/[0.07]" : ""}>
-            <GroupHeading label="本周课外作业" hint={pointsOn ? "提前完成有奖励！" : undefined} dot={NEUTRAL_DOT} count={weekPending.length} />
+            <GroupHeading label="本周课外作业" hint={pointsOn ? "提前完成加 3" : undefined} dot={NEUTRAL_DOT} count={weekPending.length} />
             <SortableTaskList tasks={weekPending} renderTask={renderTask} onReorder={reorderTasks} />
           </div>}
           {leftPending === 0 && (isToday && allDone.length > 0 && overdueShown.length === 0 ? <>{<AllDoneCelebration count={allDone.length} />}{moreLine && moreText && <div className="border-t border-ink/[0.07]">{moreLine}</div>}</> : allDone.length > 0 ? <p className="px-4 py-4 text-[15px] font-semibold text-primary">这一天的事都做完了</p> : <div className="p-3"><EmptyState compact /></div>)}
@@ -231,7 +232,7 @@ export function DayPage(props: Props) {
       </div>
       {hasPractice && <div className="contents lg:flex lg:min-w-0 lg:flex-col">
         <section aria-label="每周练习" className="surface order-3 overflow-visible lg:order-none lg:flex-1">
-          <CardHeader title="每周练习" hint={pointsOn ? <RewardHint text="全部完成有奖励！" /> : undefined} completed={practice.done} total={practice.target} badgeDone={practiceAllDone}
+          <CardHeader title="每周练习" hint={pointsOn ? <RewardHint text="每项全部完成另外加 2" /> : undefined} completed={practice.done} total={practice.target} badgeDone={practiceAllDone}
             badge={pointsOn && points ? <span title={`本周已做 ${practice.done}/${practice.target} 次`}>本周 {points.summary.weekTotal} 分</span> : <span title="本周已做次数 / 本周目标次数（各项加起来）">{practiceAllDone ? `本周都做够了 ${practice.done}/${practice.target}` : `已做 ${practice.done}/${practice.target} 次`}</span>} />
           <SortableTaskList tasks={timesPending} renderTask={renderTask} onReorder={reorderTasks} />
           {timesPending.length === 0 && <p className="px-4 py-3 text-[15px] font-semibold text-primary">这周的练习都做够了</p>}

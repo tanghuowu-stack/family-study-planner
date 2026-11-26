@@ -6,7 +6,7 @@ import { Sheet } from "../components/Sheet";
 import { TABLET_FIT_QUERY, useMediaQuery } from "../hooks/useMediaQuery";
 import { loadPointsContext, settlePendingWeeks } from "../data/pointsService";
 import {
-  addReconcileAdjustments, confirmTransfer, deleteLedgerEntry, loadLedgerContext, saveLedgerEntry, setMonthlyRate, setOpeningBalances, type LedgerContext,
+  addReconcileAdjustments, confirmTransfer, deleteLedgerEntry, loadLedgerContext, redeemPoints, saveLedgerEntry, setMonthlyRate, setOpeningBalances, type LedgerContext,
 } from "../data/ledgerService";
 import { formatCompactDate, formatLongDate } from "../utils/date";
 import { isParentDevice } from "../utils/device";
@@ -17,9 +17,9 @@ import {
 
 /**
  * 记账页（TASK_10，docs/TASK_10_ledger.md）。版式参照常见记账软件（2026-11-24 用户要求“更专业”）：
- * 顶部总资产卡（零钱 + 存款）→ 本月收入 / 支出 / 结余 → 三个快捷记账按钮 → 待转账 →
+ * 顶部总资产卡（零钱 + 存款）→ 本月收入 / 支出 / 结余 → 三个快捷记账按钮 → 待转账（只有利息） →
  * 按月分组的流水（每月表头带当月收支；过完的月份默认收起，点开再看）+ 右栏本月支出构成（环形图）与和微信对账。
- * 孩子（iPad）能记支出、存进存款、从存款取出，只能改删当天自己记的；家长（Mac）还能确认转账、设期初余额、对账调整、改利率。
+ * 孩子（iPad）能记支出、存进存款、从存款取出，只能改删当天自己记的；家长（Mac）还能兑现积分、确认利息转账、设期初余额、对账调整、改利率。
  */
 
 const primaryButton = "min-h-11 rounded-lg bg-primary px-4 text-sm font-bold text-white disabled:opacity-40";
@@ -96,7 +96,7 @@ export function LedgerPage({ refreshKey, onChanged, notify }: { refreshKey: numb
   const [ctx, setCtx] = useState<LedgerContext | null>(null);
   const tablet = useMediaQuery(TABLET_FIT_QUERY);
   const [editor, setEditor] = useState<Editor | null>(null);
-  const [dialog, setDialog] = useState<"opening" | "rate" | null>(null);
+  const [dialog, setDialog] = useState<"opening" | "rate" | "redeem" | null>(null);
   // 每个月的流水展开 / 收起；没点过的按默认：这个月（及以后）展开，过完的月份收起
   const [openMonths, setOpenMonths] = useState<Record<string, boolean>>({});
   const [busyTransfer, setBusyTransfer] = useState("");
@@ -108,7 +108,7 @@ export function LedgerPage({ refreshKey, onChanged, notify }: { refreshKey: numb
     // 先用本机数据马上显示（不等云端往返），下面补结算、核对云端后再更新
     const quick = await loadLedgerContext(undefined, true);
     if (id === request.current) setCtx(quick);
-    // 记账页也要先补结算（周日晚 8 点后 / 上周还没结算的），"待转账"的练习奖励取自结算快照
+    // 补拍该拍的周快照（周日晚 8 点后 / 上周还没拍的，只固定分值和目标），待兑现积分按最新分数算
     await loadPointsContext().then((points) => settlePendingWeeks(points)).catch(() => false);
     const next = await loadLedgerContext();
     if (id === request.current) setCtx(next);
@@ -218,6 +218,7 @@ export function LedgerPage({ refreshKey, onChanged, notify }: { refreshKey: numb
       <header className="page-header">
         <h1 className="page-title">记账</h1>
         {parent && <div className="flex items-center gap-2">
+          <button type="button" onClick={() => setDialog("redeem")} data-testid="redeem-button" className="flex min-h-11 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-sm font-bold text-white hover:bg-primary/90"><Award className="h-4 w-4" />兑现本周积分</button>
           <button type="button" onClick={() => setDialog("opening")} className="min-h-11 rounded-lg border border-ink/10 bg-white px-3 text-sm font-semibold text-muted hover:text-ink">期初余额</button>
           <button type="button" onClick={() => setDialog("rate")} className="min-h-11 rounded-lg border border-ink/10 bg-white px-3 text-sm font-semibold text-muted hover:text-ink">月利率 {formatRate(rateNow)}</button>
         </div>}
@@ -287,7 +288,7 @@ export function LedgerPage({ refreshKey, onChanged, notify }: { refreshKey: numb
               <ul className="divide-y divide-ink/[0.07]">
                 {pending.map((item) => (
                   <li key={item.id} className="flex items-center gap-3 px-4 py-3" data-testid="pending-transfer">
-                    <EntryIcon icon={item.type === "interest" ? TrendingUp : Award} color="#2B7656" />
+                    <EntryIcon icon={TrendingUp} color="#2B7656" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[15px] font-semibold text-ink">{item.title}</p>
                       <p className="truncate text-[13px] text-muted">{item.detail ?? "转到零钱"}</p>
@@ -316,6 +317,7 @@ export function LedgerPage({ refreshKey, onChanged, notify }: { refreshKey: numb
 
       {editor && <EntryDialog ctx={ctx} editor={editor} parent={parent} onClose={() => setEditor(null)} onSaved={(message) => { setEditor(null); changed(message); }} />}
       {dialog === "opening" && <OpeningDialog ctx={ctx} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); changed("期初余额已保存"); }} />}
+      {dialog === "redeem" && <RedeemDialog ctx={ctx} onClose={() => setDialog(null)} onSaved={(points) => { setDialog(null); changed(`已兑现 ${points} 分，零钱 +${points} 元`); }} />}
       {dialog === "rate" && <RateDialog ctx={ctx} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); changed("月利率已保存"); }} />}
     </main>
   );
@@ -536,3 +538,33 @@ function RateDialog({ ctx, onClose, onSaved }: { ctx: LedgerContext; onClose: ()
   );
 }
 
+
+/**
+ * 兑现积分（只有家长，2026-11-26）：显示待兑现 N 分，输入框默认填 N，只能填 1 到 N 的整数；
+ * 确认后记一条练习奖励，零钱 +N 元（1 分 = 1 元）。多兑了（负数）时只提示，不能兑。
+ */
+function RedeemDialog({ ctx, onClose, onSaved }: { ctx: LedgerContext; onClose: () => void; onSaved: (points: number) => void }) {
+  const max = Math.floor(ctx.redeemable);
+  const [value, setValue] = useState(max > 0 ? String(max) : "");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    const points = Number(value);
+    if (!/^\d+$/.test(value.trim()) || points < 1 || points > max) { setError(`只能填 1 到 ${max} 的整数`); return; }
+    setBusy(true);
+    try { await redeemPoints(points); onSaved(points); } catch (reason) { setError(reason instanceof Error ? reason.message : "兑现失败"); setBusy(false); }
+  };
+  const over = ctx.redeemable < 0;
+  return (
+    <Sheet title="兑现本周积分" description="1 分 = 1 元，兑现后零钱加上，记一条练习奖励。" onClose={onClose}>
+      <div className="space-y-3">
+        <p data-testid="redeem-available" className={`rounded-lg px-3 py-2.5 text-lg font-bold ${over ? "bg-amber-50 text-amber-800" : "bg-mint/60 text-primary"}`}>
+          {over ? `多兑了 ${Number((-ctx.redeemable).toFixed(2))} 分，下次抵扣` : `待兑现 ${max} 分`}
+        </p>
+        {max >= 1 && <label className={labelClass}>这次兑现<span className="mt-1 flex items-center gap-2"><input value={value} onChange={(event) => { setValue(event.target.value); setError(""); }} inputMode="numeric" aria-label="兑现几分" className={`${inputClass} tabular-nums`} /><span className="shrink-0 text-base font-semibold text-muted">分</span></span></label>}
+        {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-[13px] text-rose-700">{error}</p>}
+        <button type="button" disabled={busy || max < 1} onClick={() => void save()} className={`${primaryButton} w-full`}>{max >= 1 ? `兑现${/^\d+$/.test(value.trim()) ? ` ${Number(value)} 分` : ""}` : "没有可以兑现的积分"}</button>
+      </div>
+    </Sheet>
+  );
+}

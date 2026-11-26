@@ -14,10 +14,11 @@
  *   （2026-11-25，`unlockExtrasWhenAllReached`）；没达标做多少得多少，不扣分。
  * - 只看本周内的记录，不结转到下周。
  * - 家长奖励可加可减、必须写原因、可撤回（撤回的不算）。
- * - 1 分 = 1 元：每周结算后，那周得分（练习 + 家长奖励，不低于 0）就是那周的零花钱，记在快照的 allowance 里，
- *   之后再补勾、撤回奖励都不改已经结算的零花钱。小红花、愿望已取消（2026-11-24）。
- * - 每周日晚上 8 点起（SETTLE_HOUR）结算这一周，那周没打开过应用的，下次打开时补算。快照记下结算时的分值、
- *   目标、多做设置；之后再改分值或目标，已结算的周不受影响。
+ * - 1 分 = 1 元，**家长在 Mac 记账页手动兑现**（2026-11-26 起；原来每周日晚 8 点自动结算零花钱、"待转账"已取消）：
+ *   待兑现 = 从 2026-11-23 起已挣积分总和 − 所有没删的"练习奖励"记录金额（pendingRedeemPoints）。不存总分、不存待兑现，
+ *   兑现只是多一条练习奖励记录；补勾 / 撤勾让已挣积分变了，待兑现跟着变（可以变负数 = 多兑了，下次抵扣）。小红花、愿望已取消。
+ * - 每周日晚上 8 点起（SETTLE_HOUR）给这一周拍快照，那周没打开过应用的，下次打开时补拍。快照只记下当时的分值、
+ *   目标、多做设置；之后再改分值或目标，已拍快照的周不受影响。快照里旧的 allowance 字段留着不读。
  *   结算后家长在那周补勾 / 撤销某次打勾，仍按快照里的设置重算（分数跟着完成记录走）；
  *   任务被删掉的，那周按快照里记下的分数算。
  */
@@ -186,17 +187,14 @@ export interface WeekSnapshot {
   bonus?: number;
   /** 结算时这周的提前完成加分合计 */
   early?: number;
-  /** 这周的零花钱（元）= 练习 + 家长奖励 + 提前完成加分，不低于 0。结算后固定，"待转账"金额就取这个 */
+  /** 旧版（2026-11-26 之前）固定下来的那周零花钱，已不再读写，只为兼容旧数据保留类型 */
   allowance?: number;
 }
-
-/** 那周的零花钱（元）：得分（含家长奖励和扣分）不低于 0 */
-export const allowanceFor = (weekTotal: number) => Math.max(0, weekTotal) * YUAN_PER_POINT;
 
 export function buildWeekSnapshot(tasks: Task[], weekStart: string, settledAt: string, bonus = 0, early = 0): WeekSnapshot {
   const items = unlockExtrasWhenAllReached(practiceTasksForWeek(tasks, weekStart).map((task) => scorePracticeWeek(task, weekStart)));
   const total = items.reduce((sum, item) => sum + item.total, 0);
-  return { weekStart, settledAt, items, total, reachedCount: items.filter((item) => item.reached).length, bonus, early, allowance: allowanceFor(total + bonus + early) };
+  return { weekStart, settledAt, items, total, reachedCount: items.filter((item) => item.reached).length, bonus, early };
 }
 
 /** 周日晚上 8 点以后：这一周可以结算了 */
@@ -312,8 +310,6 @@ export interface WeekHistory {
   total: number;
   reachedCount: number;
   settled: boolean;
-  /** 那周的零花钱（元）：结算过的取快照里固定的金额，没结算的按现在的得分算 */
-  allowance: number;
 }
 
 export interface PointsSummary {
@@ -326,8 +322,6 @@ export interface PointsSummary {
   weekEarlyItems: EarlyItem[];
   weekTotal: number;
   weekBonuses: BonusEntry[];
-  /** 本周挣的零花钱（元）= 本周得分，不低于 0 */
-  weekAllowance: number;
   history: WeekHistory[];
 }
 
@@ -342,7 +336,7 @@ export function computePointsSummary(tasks: Task[], ledger: PointsLedger, today:
   let weekScores: PracticeWeekScore[] = [];
   let weekEarlyItems: EarlyItem[] = [];
   const history: WeekHistory[] = weeks.map((week) => {
-    // 这一周在周日晚上结算以后也有快照，但本周的分数仍按现在的设置实时算（快照只固定零花钱）
+    // 这一周在周日晚上拍了快照以后，本周的分数仍按现在的设置实时算
     const snapshot = week < weekStart ? ledger.snapshots[week] : undefined;
     const scores = weekPracticeScores(tasks, week, snapshot);
     if (week === weekStart) weekScores = scores;
@@ -351,9 +345,7 @@ export function computePointsSummary(tasks: Task[], ledger: PointsLedger, today:
     const earlyItems = earlyItemsForWeek(tasks, ledger, week);
     if (week === weekStart) weekEarlyItems = earlyItems;
     const early = earlyItems.reduce((sum, item) => sum + item.points, 0);
-    const settledSnapshot = ledger.snapshots[week];
-    const allowance = settledSnapshot?.allowance ?? allowanceFor(practice + bonus + early);
-    return { weekStart: week, practice, bonus, early, total: practice + bonus + early, reachedCount: scores.filter((item) => item.reached).length, settled: !!settledSnapshot, allowance };
+    return { weekStart: week, practice, bonus, early, total: practice + bonus + early, reachedCount: scores.filter((item) => item.reached).length, settled: !!ledger.snapshots[week] };
   });
   const current = history[history.length - 1];
   return {
@@ -365,7 +357,6 @@ export function computePointsSummary(tasks: Task[], ledger: PointsLedger, today:
     weekEarlyItems,
     weekTotal: current?.total ?? 0,
     weekBonuses: ledger.bonuses.filter((bonus) => getWeekStartKey(bonus.date) === weekStart).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
-    weekAllowance: allowanceFor(current?.total ?? 0),
     history,
   };
 }
@@ -392,7 +383,7 @@ export function moreToDoToday(tasks: MoreToDoTask[], today: string): MoreToDo[] 
   });
 }
 
-/** "钢琴 +2　背诗 +1　听写 +1"；差一次达标的写"钢琴再练 1 次 +4"（docs/TASK_09_points.md §9.5、§10） */
+/** "钢琴 +2　背诗 +1　听写 +1"；差一次达标的写"钢琴再练 1 次 +4"（docs/TASK_09_points.md §9.4、§10） */
 export function formatMoreToDo(items: MoreToDo[]): string {
   return items.map((item) => item.reachesTarget ? `${item.name}再${practiceVerb(item.name)} 1 ${item.unit} +${item.gain}` : `${item.name} +${item.gain}`).join("　");
 }
@@ -420,4 +411,27 @@ export function gainForLog(tasks: Task[], taskId: string, date: string, delta: n
     return { ...task, weeklyLog: log };
   });
   return weekTotal(after) - weekTotal(tasks);
+}
+
+// ── 兑现（2026-11-26，docs/TASK_09_points.md §5）─────────────────────────────
+
+/** 兑现记录：记账里类型为“练习奖励”（allowance）的记录，只用到这几个字段 */
+export interface RedeemEntry { id: string; type: string; date: string; amountCents: number; content?: string; deletedAt?: string; createdAt?: string }
+
+/** 已挣积分总和：从 POINTS_START_WEEK 起每周得分（练习 + 提前完成 + 家长奖励）相加，每周不托底（扣成负数的周也照减） */
+export const earnedPointsTotal = (history: WeekHistory[]) => history.reduce((sum, week) => sum + week.total, 0);
+
+/** 没删的兑现记录，新的在前 */
+export function redemptionsOf(entries: RedeemEntry[]): RedeemEntry[] {
+  return entries.filter((entry) => entry.type === "allowance" && !entry.deletedAt)
+    .sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+}
+
+/**
+ * 待兑现积分 = 已挣积分总和 − 所有没删的练习奖励记录金额（1 分 = 1 元）。负数 = 多兑了，下次抵扣，不自动追回。
+ * 不改任何得分计算，只是扣减；删掉一条兑现记录，这部分积分就回来。
+ */
+export function pendingRedeemPoints(history: WeekHistory[], entries: RedeemEntry[]): number {
+  const redeemedCents = redemptionsOf(entries).reduce((sum, entry) => sum + entry.amountCents, 0);
+  return Math.round(earnedPointsTotal(history) * 100 - redeemedCents / YUAN_PER_POINT) / 100;
 }

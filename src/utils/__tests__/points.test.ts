@@ -7,7 +7,7 @@ process.env.TZ = "Asia/Shanghai";
 import { describe, expect, it } from "vitest";
 import type { Task, WeeklyQuota } from "../../types/task";
 import {
-  allowanceFor, buildWeekSnapshot, computePointsSummary, emptyLedger, findPracticePreset, formatMoreToDo, gainForLog, isEarlyCompleted, isSettleTime, matchPracticePresets, moreToDoToday,
+  buildWeekSnapshot, earnedPointsTotal, pendingRedeemPoints, redemptionsOf, computePointsSummary, emptyLedger, findPracticePreset, formatMoreToDo, gainForLog, isEarlyCompleted, isSettleTime, matchPracticePresets, moreToDoToday,
   earlyItemsForWeek, EARLY_POINTS, practiceDisplayName, practiceSettingsForForm, practiceShortName, scorePracticeWeek, weeksNeedingSnapshot, type BonusEntry, type PointsLedger,
 } from "../points";
 import { mergeLedgers, normalizeLedger, serializeLedger } from "../../data/pointsLedger";
@@ -90,7 +90,7 @@ describe("零花钱（1 分 = 1 元）、家长奖励", () => {
   it("今天还在积分开始之前：什么都不算", () => {
     const summary = computePointsSummary([practice("p", "钢琴练习", 1, "次", { [day(W0, 0)]: 1 })], emptyLedger(), day(W0, 3));
     expect(summary.history).toEqual([]);
-    expect(summary.weekAllowance).toBe(0);
+    expect(pendingRedeemPoints(summary.history, [])).toBe(0);
   });
 
   it("家长奖励可加可减，撤回的不算", () => {
@@ -101,30 +101,42 @@ describe("零花钱（1 分 = 1 元）、家长奖励", () => {
     expect(summary.weekBonuses).toHaveLength(3); // 列表里仍显示被撤回的那笔（划掉）
   });
 
-  it("每周得分（含家长奖励和扣分）就是那周的零花钱；每周分开算，不跨周累积", () => {
-    // 第一周：50 分家长奖励 → 50 元；第二周：钢琴 4 次 ×2 + 达标 2 = 10 分，再加 35 分奖励 → 45 元
+  it("每周得分（含家长奖励和扣分）每周分开算；已挣积分总和是各周相加", () => {
+    // 第一周：50 分家长奖励；第二周：钢琴 4 次 ×2 + 达标 2 = 10 分，再加 35 分奖励 → 45 分
     const piano = practice("p", "钢琴练习", 4, "次", Object.fromEntries([0, 1, 2, 3].map((i) => [day(W2, i), 1])), { practicePoints: 2 });
     const ledger = ledgerWith({ bonuses: [bonus("a", day(W1, 2), 50), bonus("b", day(W2, 4), 35)] });
     const summary = computePointsSummary([piano], ledger, day(W2, 5));
-    expect(summary.history.map((week) => [week.weekStart, week.total, week.allowance])).toEqual([[W1, 50, 50], [W2, 45, 45]]);
-    expect(summary).toMatchObject({ weekTotal: 45, weekAllowance: 45 });
+    expect(summary.history.map((week) => [week.weekStart, week.total])).toEqual([[W1, 50], [W2, 45]]);
+    expect(summary.weekTotal).toBe(45);
+    expect(earnedPointsTotal(summary.history)).toBe(95);
   });
 
-  it("扣分扣成负数时，那周零花钱是 0，不倒扣", () => {
+  it("扣分扣成负数的周不托底，照样从已挣积分里减", () => {
     const summary = computePointsSummary([], ledgerWith({ bonuses: [bonus("a", day(W1, 1), -5)] }), day(W1, 2));
-    expect(summary).toMatchObject({ weekTotal: -5, weekAllowance: 0 });
-    expect(allowanceFor(-5)).toBe(0);
-    expect(allowanceFor(12)).toBe(12);
+    expect(summary.weekTotal).toBe(-5);
+    expect(pendingRedeemPoints(summary.history, [])).toBe(-5);
   });
 
-  it("结算快照固定那周的零花钱：之后补勾、撤回奖励都不改已结算的金额（分数显示照样跟着记录走）", () => {
+  it("快照只固定分值和目标，不再记零花钱；之后撤勾，分数跟着记录走", () => {
     const piano = (log: Record<string, number>) => practice("p", "钢琴练习", 3, "次", log, { practicePoints: 2 });
     const log = { [day(W1, 0)]: 1, [day(W1, 2)]: 1, [day(W1, 4)]: 1 };
     const snapshot = buildWeekSnapshot([piano(log)], W1, "2026-11-29T12:30:00.000Z", 3);
-    expect(snapshot).toMatchObject({ total: 8, bonus: 3, allowance: 11 });
+    expect(snapshot).toMatchObject({ total: 8, bonus: 3 });
+    expect(snapshot.allowance).toBeUndefined();
     const undone = piano({ [day(W1, 0)]: 1, [day(W1, 2)]: 1 });
     const summary = computePointsSummary([undone], ledgerWith({ snapshots: { [W1]: snapshot } }), day(W2, 1));
-    expect(summary.history[0]).toMatchObject({ practice: 4, allowance: 11, settled: true });
+    expect(summary.history[0]).toMatchObject({ practice: 4, settled: true });
+  });
+
+  it("待兑现 = 已挣积分总和 − 没删的练习奖励记录；只看练习奖励，删掉的不算", () => {
+    const summary = computePointsSummary([], ledgerWith({ bonuses: [bonus("a", day(W1, 1), 20)] }), day(W1, 2));
+    const entries = [
+      { id: "r1", type: "allowance", date: day(W1, 2), amountCents: 800, createdAt: "2026-11-25T10:00:00.000Z" },
+      { id: "r2", type: "allowance", date: day(W1, 2), amountCents: 500, deletedAt: "2026-11-25T11:00:00.000Z" },
+      { id: "e1", type: "expense", date: day(W1, 2), amountCents: 300 },
+    ];
+    expect(pendingRedeemPoints(summary.history, entries)).toBe(12);
+    expect(redemptionsOf(entries).map((entry) => entry.id)).toEqual(["r1"]);
   });
 });
 

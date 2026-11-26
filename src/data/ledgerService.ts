@@ -6,9 +6,10 @@
  */
 import { listLedgerEntries, loadLedgerSettings, peekLedgerSettings, putLedgerEntry, saveLedgerSettings } from "./ledgerRepository";
 import { loadPointsLedger, peekPointsLedger } from "./pointsLedger";
-import { getWeekStartKey, todayKey } from "../utils/date";
+import { db } from "./db";
+import { todayKey } from "../utils/date";
 import { isParentDevice } from "../utils/device";
-import { activeBonuses, allowanceFor, POINTS_START_WEEK, type PointsLedger } from "../utils/points";
+import { computePointsSummary, pendingRedeemPoints, YUAN_PER_POINT } from "../utils/points";
 import {
   balancesOf, canModifyEntry, monthOf, monthSummary, pendingTransfers, projectedInterest, validateEntry, withRateChange,
   type Balances, type EntryInput, type LedgerAccount, type LedgerEntry, type LedgerSettings, type MonthSummary, type PendingTransfer,
@@ -24,16 +25,8 @@ export interface LedgerContext {
   month: MonthSummary;
   /** 这个月不取钱的话，下月 1 日能拿到的利息；12 月之前为 null */
   projected: ReturnType<typeof projectedInterest>;
-}
-
-/** 已结算周的零花钱（分）：取结算快照里固定的金额（快照之后的补勾、撤回奖励都不影响） */
-export function settledAllowances(points: PointsLedger): { weekStart: string; allowanceCents: number }[] {
-  return Object.values(points.snapshots).filter((snapshot) => snapshot.weekStart >= POINTS_START_WEEK).map((snapshot) => {
-    // 早期快照没有 allowance 字段时，用快照里的练习分 + 那周的家长奖励补算
-    const bonus = snapshot.bonus ?? activeBonuses(points).filter((item) => getWeekStartKey(item.date) === snapshot.weekStart).reduce((sum, item) => sum + item.points, 0);
-    const yuan = snapshot.allowance ?? allowanceFor(snapshot.total + bonus);
-    return { weekStart: snapshot.weekStart, allowanceCents: Math.round(yuan * 100) };
-  });
+  /** 待兑现积分（可为负 = 多兑了），见 utils/points.ts pendingRedeemPoints */
+  redeemable: number;
 }
 
 /**
@@ -41,17 +34,18 @@ export function settledAllowances(points: PointsLedger): { weekStart: string; al
  * 记录本来就在本机 Dexie。之后页面再不带 cached 读一次，云端有变化就更新。
  */
 export async function loadLedgerContext(today = todayKey(), cached = false): Promise<LedgerContext> {
-  const [entries, settings, points] = cached
-    ? [await listLedgerEntries(), peekLedgerSettings(), peekPointsLedger()]
-    : await Promise.all([listLedgerEntries(), loadLedgerSettings(), loadPointsLedger()]);
+  const [entries, settings, points, tasks] = cached
+    ? [await listLedgerEntries(), peekLedgerSettings(), peekPointsLedger(), await db.tasks.toArray()]
+    : await Promise.all([listLedgerEntries(), loadLedgerSettings(), loadPointsLedger(), db.tasks.toArray()]);
   return {
     today,
     entries,
     balances: balancesOf(entries),
     settings,
-    pending: pendingTransfers(entries, settledAllowances(points), settings, today),
+    pending: pendingTransfers(entries, settings, today),
     month: monthSummary(entries, monthOf(today)),
     projected: projectedInterest(entries, settings, today),
+    redeemable: pendingRedeemPoints(computePointsSummary(tasks, points, today).history, entries),
   };
 }
 
@@ -99,6 +93,30 @@ export async function deleteLedgerEntry(id: string, options: Options = {}): Prom
   if (!canModifyEntry(existing, parent, today)) throw new Error("只能删今天自己记的，更早的找妈妈处理");
   const now = new Date().toISOString();
   return putLedgerEntry({ ...existing, deletedAt: now, updatedAt: now });
+}
+
+/**
+ * 家长兑现积分（2026-11-26，只有 Mac）：按最新数据算待兑现 N，只收 1 到 N 的整数；记一条练习奖励（id 随机），零钱 +points 元。
+ * 返回值同 putLedgerEntry（云端是否同步成功）。
+ */
+export async function redeemPoints(points: number, options: Options = {}): Promise<boolean> {
+  const { parent, today } = resolve(options);
+  requireParent(parent);
+  const context = await loadLedgerContext(today);
+  const max = Math.floor(context.redeemable);
+  if (max < 1) throw new Error("现在没有可以兑现的积分");
+  if (!Number.isInteger(points) || points < 1 || points > max) throw new Error(`只能填 1 到 ${max} 的整数`);
+  const now = new Date().toISOString();
+  return putLedgerEntry({
+    id: newId(),
+    date: today,
+    type: "allowance",
+    amountCents: points * YUAN_PER_POINT * 100,
+    content: `兑现 ${points} 分`,
+    createdBy: "parent",
+    createdAt: now,
+    updatedAt: now,
+  });
 }
 
 /** 家长点"已转账"：按最新数据确认这一项还在待转账里，入账（记录 id 固定，重复点不会多记） */

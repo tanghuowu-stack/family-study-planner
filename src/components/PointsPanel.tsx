@@ -21,8 +21,8 @@ export function practiceScoreLabels(score?: PracticeWeekScore): { extra?: string
 }
 
 /**
- * 周日晚上（8 点结算后）到周一：积分条下方显示一周小结，点一下收起（只记在本机）。
- * "上周 N 分，挣了 N 元，M 项达标。"——元取结算快照里固定的零花钱。周日晚上那一周还没过完，说"这周"。
+ * 周日晚上（8 点以后）到周一：积分条下方显示一周小结，点一下收起（只记在本机）。
+ * "上周 N 分，M 项达标。"（2026-11-26 起不写钱：零花钱由家长在记账页兑现）。周日晚上那一周还没过完，说"这周"。
  */
 export function weekSummaryFor(ctx: PointsContext, now: Date): { key: string; text: string } | null {
   const day = now.getDay();
@@ -31,39 +31,43 @@ export function weekSummaryFor(ctx: PointsContext, now: Date): { key: string; te
   if (day === 0 && now.getHours() >= SETTLE_HOUR) {
     const week = history[history.length - 1];
     if (!week) return null;
-    return { key: week.weekStart, text: `这周 ${week.total} 分，挣了 ${week.allowance} 元，${week.reachedCount} 项达标。` };
+    return { key: week.weekStart, text: `这周 ${week.total} 分，${week.reachedCount} 项达标。` };
   }
   if (day === 1) {
     const last = history[history.length - 2];
     if (!last || last.weekStart >= getWeekStartKey(today)) return null;
-    return { key: last.weekStart, text: `上周 ${last.total} 分，挣了 ${last.allowance} 元，${last.reachedCount} 项达标。` };
+    return { key: last.weekStart, text: `上周 ${last.total} 分，${last.reachedCount} 项达标。` };
   }
   return null;
 }
 
 const SUMMARY_DISMISS_KEY = "points_week_summary_dismissed";
 
+/** 积分显示：整数直接写，万一有小数（旧记录）写两位 */
+export const formatPoints = (value: number) => (Number.isInteger(value) ? String(value) : value.toFixed(2));
+
+/** 待兑现的说法：负数写“多兑了 N 分” */
+export const redeemableText = (value: number) => (value < 0 ? `多兑了 ${formatPoints(-value)} 分，下次抵扣` : `待兑现 ${formatPoints(value)} 分`);
+
 /**
- * 今日页表头中间的积分（2026-11-25 用户：只显示积分，零钱 / 存款在记账页看；左边上周、右边本周——
- * "让他知道上周经过努力赚了多少，本周要加油赶上"）。一个圆角胶囊：左半白底"上周 N 分"，右半主色"本周 N 分"，
- * 点一下打开积分明细。周日晚上结算后到周一，表头下面多一条一周小结（WeekSummaryBanner）。
+ * 今日页表头中间的积分（2026-11-26 改：左半白底“本周 N 分”，右半主色“待兑现 N 分”——多兑了时写“多兑 N 分”）。
+ * 待兑现 = 已挣积分总和 − 已兑现（docs/TASK_09_points.md §5）。点一下打开积分明细。周日晚上到周一表头下面多一条一周小结。
  */
 export function PointsHeader({ ctx }: { ctx: PointsContext }) {
   const [detail, setDetail] = useState(false);
-  const { summary } = ctx;
-  const lastWeekKey = (() => { const d = new Date(`${summary.weekStart}T00:00:00`); d.setDate(d.getDate() - 7); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
-  const lastWeek = summary.history.find((week) => week.weekStart === lastWeekKey);
+  const { summary, redeemable } = ctx;
+  const over = redeemable < 0;
   return (
     <>
-      <button type="button" onClick={() => setDetail(true)} data-testid="points-header" aria-label={`上周 ${lastWeek ? lastWeek.total : "没有"} 分，本周 ${summary.weekTotal} 分，点开看积分明细`}
+      <button type="button" onClick={() => setDetail(true)} data-testid="points-header" aria-label={`本周 ${summary.weekTotal} 分，${redeemableText(redeemable)}，点开看积分明细`}
         className="flex min-h-9 items-stretch overflow-hidden rounded-full border border-primary/20 bg-white shadow-[0_6px_16px_-12px_rgba(43,118,86,0.8)] hover:border-primary/40 desk:min-h-11">
         <span className="flex items-center gap-1 px-3 py-1 text-muted desk:px-4 desk:py-2">
-          <span className="text-[11px] font-medium desk:text-[12px]">上周</span>
-          <span className="text-[15px] font-bold tabular-nums text-ink desk:text-[17px]">{lastWeek ? lastWeek.total : "–"}</span><span className="text-[12px]">分</span>
+          <span className="text-[11px] font-medium desk:text-[12px]">本周</span>
+          <span className="text-[15px] font-bold tabular-nums text-ink desk:text-[17px]">{summary.weekTotal}</span><span className="text-[12px]">分</span>
         </span>
         <span className="flex items-center gap-1 bg-primary px-3 py-1 text-white desk:px-4 desk:py-2">
-          <span className="text-[11px] font-medium text-white/75 desk:text-[12px]">本周</span>
-          <span className="text-[15px] font-bold tabular-nums desk:text-[17px]">{summary.weekTotal}</span><span className="text-[12px] text-white/75">分</span>
+          <span className="text-[11px] font-medium text-white/75 desk:text-[12px]">{over ? "多兑" : "待兑现"}</span>
+          <span className="text-[15px] font-bold tabular-nums desk:text-[17px]">{formatPoints(Math.abs(redeemable))}</span><span className="text-[12px] text-white/75">分</span>
         </span>
       </button>
       {detail && <PointsDetailDialog ctx={ctx} onClose={() => setDetail(false)} />}
@@ -71,7 +75,7 @@ export function PointsHeader({ ctx }: { ctx: PointsContext }) {
   );
 }
 
-/** 周日晚上（8 点结算后）到周一：今日页表头下面一条一周小结，点一下收起（只记在本机） */
+/** 周日晚上（8 点以后）到周一：今日页表头下面一条一周小结，点一下收起（只记在本机） */
 export function WeekSummaryBanner({ ctx }: { ctx: PointsContext }) {
   const [dismissed, setDismissed] = useState(() => localStorage.getItem(SUMMARY_DISMISS_KEY) ?? "");
   const weekSummary = weekSummaryFor(ctx, new Date());
@@ -86,7 +90,7 @@ export function WeekSummaryBanner({ ctx }: { ctx: PointsContext }) {
 
 /**
  * 每周练习最下面一行：家长奖励 +N；本周有提前完成的作业时右边"提前完成 +N"（2026-11-25 起自动加，不再有"待处理"）。
- * iPad / 手机上只显示，点击无反应；Mac 上点击打开家长奖励对话框（docs/TASK_09_points.md §7、§9.4）。
+ * iPad / 手机上只显示，点击无反应；Mac 上点击打开家长奖励对话框（docs/TASK_09_points.md §7、§9.3）。
  */
 export function ParentBonusRow({ ctx, onChanged }: { ctx: PointsContext; onChanged: () => void }) {
   const [open, setOpen] = useState(false);
@@ -131,7 +135,7 @@ function ParentBonusDialog({ ctx, onClose, onChanged }: { ctx: PointsContext; on
   };
   const segment = (active: boolean) => `min-h-10 rounded-lg px-3 text-sm font-semibold ${active ? "bg-primary text-white" : "bg-white text-muted ring-1 ring-inset ring-ink/10"}`;
   return (
-    <Sheet wide title="家长奖励" description="加分、减分都要写原因；记错了可以撤回。1 分 = 1 元，算进本周零花钱。" onClose={onClose}>
+    <Sheet wide title="家长奖励" description="加分、减分都要写原因；记错了可以撤回。算进本周积分。" onClose={onClose}>
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex gap-1.5"><button type="button" className={segment(sign === 1)} onClick={() => setSign(1)}>加分</button><button type="button" className={segment(sign === -1)} onClick={() => setSign(-1)}>减分</button></div>
@@ -172,21 +176,22 @@ function ParentBonusDialog({ ctx, onClose, onChanged }: { ctx: PointsContext; on
   );
 }
 
-/** 积分明细：本周每项（完成分 / 达标奖励 / 多做分）、家长奖励、以前每周的得分和零花钱 */
+/** 积分明细：待兑现、本周每项（完成分 / 达标奖励 / 多做分）、家长奖励、以前每周的得分、兑现记录 */
 function PointsDetailDialog({ ctx, onClose }: { ctx: PointsContext; onClose: () => void }) {
   const { summary } = ctx;
   const past = [...summary.history].reverse().filter((week) => week.weekStart !== summary.weekStart);
   const th = "py-1.5 text-right text-[13px] font-semibold text-muted";
   const td = "py-1.5 text-right tabular-nums";
   return (
-    <Sheet wide title="积分明细" description="1 分 = 1 元。每周日晚上 8 点结算，这周的得分（练习 + 提前完成 + 家长奖励，不低于 0）就是这周的零花钱。" onClose={onClose}>
-      <h4 className="text-sm font-bold text-ink">本周 {summary.weekTotal} 分 · {summary.weekAllowance} 元</h4>
+    <Sheet wide title="积分明细" description="1 分 = 1 元，妈妈在记账页兑现。" onClose={onClose}>
+      <p data-testid="points-redeemable" className={`mb-4 rounded-lg px-3 py-2 text-[15px] font-bold ${ctx.redeemable < 0 ? "bg-amber-50 text-amber-800" : "bg-mint/60 text-primary"}`}>{redeemableText(ctx.redeemable)}</p>
+      <h4 className="text-sm font-bold text-ink">本周 {summary.weekTotal} 分</h4>
       <table className="mt-1 w-full text-sm">
         <thead><tr><th className="py-1.5 text-left text-[13px] font-semibold text-muted">练习</th><th className={th}>完成</th><th className={th}>达标</th><th className={th}>多做</th><th className={th}>合计</th></tr></thead>
         <tbody className="divide-y divide-ink/[0.07]">
           {summary.weekScores.map((score) => (
             <tr key={score.taskId}>
-              <td className="py-1.5 pr-2"><span className="text-ink">{score.title}</span><span className="block text-[13px] text-muted">{score.count}/{score.target} {score.unit} · 每{score.unit === "次" ? "次" : score.unit} {score.points} 分{score.extraScores ? "" : " · 多做不计分"}</span></td>
+              <td className="py-1.5 pr-2"><span className="text-ink">{score.title}</span><span className="block text-[13px] text-muted">{score.count}/{score.target} {score.unit} · 每{score.unit === "次" ? "次" : score.unit} {score.points} 分{score.extraScores ? "" : " · 全部达标后多做计分"}</span></td>
               <td className={td}>{score.completionPoints}</td><td className={td}>{score.reachBonus || "–"}</td><td className={td}>{score.extraPoints || (score.extraCount && !score.extraScores ? `多${score.extraCount}` : "–")}</td><td className={`${td} font-bold`}>{score.total}</td>
             </tr>
           ))}
@@ -198,9 +203,16 @@ function PointsDetailDialog({ ctx, onClose }: { ctx: PointsContext; onClose: () 
 
       <h4 className="mt-5 text-sm font-bold text-ink">以前每周</h4>
       {past.length === 0 ? <p className="mt-1 text-sm text-muted">这是积分的第一周。</p> : (
-        <table className="mt-1 w-full text-sm"><thead><tr><th className="py-1.5 text-left text-[13px] font-semibold text-muted">周</th><th className={th}>练习</th><th className={th}>奖励</th><th className={th}>合计</th><th className={th}>零花钱</th></tr></thead>
-          <tbody className="divide-y divide-ink/[0.07]">{past.map((week) => <tr key={week.weekStart}><td className="py-1.5 text-ink">{weekLabel(week.weekStart)}<span className="block text-[13px] text-muted">{week.reachedCount} 项达标</span></td><td className={td}>{week.practice}</td><td className={td}>{signed(week.bonus + week.early)}</td><td className={`${td} font-bold`}>{week.total}</td><td className={`${td} font-bold`}>{week.allowance} 元</td></tr>)}</tbody>
+        <table className="mt-1 w-full text-sm"><thead><tr><th className="py-1.5 text-left text-[13px] font-semibold text-muted">周</th><th className={th}>练习</th><th className={th}>奖励</th><th className={th}>合计</th></tr></thead>
+          <tbody className="divide-y divide-ink/[0.07]">{past.map((week) => <tr key={week.weekStart}><td className="py-1.5 text-ink">{weekLabel(week.weekStart)}<span className="block text-[13px] text-muted">{week.reachedCount} 项达标</span></td><td className={td}>{week.practice}</td><td className={td}>{signed(week.bonus + week.early)}</td><td className={`${td} font-bold`}>{week.total}</td></tr>)}</tbody>
         </table>
+      )}
+
+      <h4 className="mt-5 text-sm font-bold text-ink">兑现记录</h4>
+      {ctx.redemptions.length === 0 ? <p className="mt-1 text-sm text-muted">还没有兑现过。</p> : (
+        <ul data-testid="points-redemptions" className="mt-1 divide-y divide-ink/[0.07]">{ctx.redemptions.map((entry) => (
+          <li key={entry.id} className="flex items-center justify-between gap-3 py-1.5 text-sm"><span className="text-ink">{entry.date.slice(5).replace("-", "/")}<span className="ml-2 text-[13px] text-muted">{entry.content || "练习奖励"}</span></span><span className="font-bold tabular-nums text-primary">−{formatPoints(entry.amountCents / 100)} 分</span></li>
+        ))}</ul>
       )}
     </Sheet>
   );

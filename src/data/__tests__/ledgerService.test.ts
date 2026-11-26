@@ -1,6 +1,6 @@
 /**
  * 记账数据层（TASK_10，data/ledgerService.ts）：本地模式（localStorage + fake-indexeddb）。
- * 1 分 = 1 元的练习奖励待转账 → 家长确认已转账才入账；孩子余额不足拦截；存取款；孩子只能改删当天自己记的；
+ * 兑现积分（1 分 = 1 元，家长手动兑现，2026-11-26）；孩子余额不足拦截；存取款；孩子只能改删当天自己记的；
  * 软删除；期初余额；对账调整；改利率只有家长。时间固定 2026-11-30（周一）Asia/Shanghai。
  */
 declare const process: { env: Record<string, string | undefined> };
@@ -21,7 +21,7 @@ import { taskRepository } from "../taskRepository";
 import type { Task, TaskDraft } from "../../types/task";
 import { addBonus, loadPointsContext, markPointsDataReady, settlePendingWeeks } from "../pointsService";
 import {
-  addReconcileAdjustments, confirmTransfer, deleteLedgerEntry, loadLedgerContext, saveLedgerEntry, setMonthlyRate, setOpeningBalances,
+  addReconcileAdjustments, confirmTransfer, deleteLedgerEntry, loadLedgerContext, redeemPoints, saveLedgerEntry, setMonthlyRate, setOpeningBalances,
 } from "../ledgerService";
 import { loadLedgerSettings } from "../ledgerRepository";
 import { rateForMonth } from "../../utils/ledger";
@@ -44,34 +44,73 @@ beforeEach(async () => {
   await Promise.all([db.tasks.clear(), db.ledgerEntries.clear(), db.activityLogs.clear()]);
 });
 
-describe("练习奖励：结算后待转账，家长点已转账才入账", () => {
-  it("1. 1 分 = 1 元：上周 8 分练习 + 2 分奖励 → 待转账 10 元；孩子不能确认，家长确认后进零钱，不能重复入账", async () => {
-    await taskRepository.create(practice({ weeklyLog: { "2026-11-23": 1, "2026-11-24": 1, "2026-11-25": 1 } }));
+describe("兑现积分：待兑现 = 已挣积分 − 没删的练习奖励记录", () => {
+  // 上周钢琴 3 次 ×2 + 达标 2 = 8 分，再加家长奖励 2 分 → 已挣 10 分
+  const setup = async () => {
+    const { task } = await taskRepository.create(practice({ weeklyLog: { "2026-11-23": 1, "2026-11-24": 1, "2026-11-25": 1 } }));
     vi.setSystemTime(new Date("2026-11-25T12:00:00+08:00"));
     await addBonus(2, "主动整理书包", undefined, "2026-11-25");
     vi.setSystemTime(new Date(`${TODAY}T10:00:00+08:00`));
-    expect(await settlePendingWeeks(await loadPointsContext(TODAY), TODAY)).toBe(true);
+    await settlePendingWeeks(await loadPointsContext(TODAY), TODAY); // 快照照拍，但不再出现“待转账：练习奖励”
+    return task;
+  };
 
-    let ctx = await loadLedgerContext(TODAY);
-    expect(ctx.pending.map((item) => [item.id, item.amountCents])).toEqual([["allowance-2026-11-23", 1000]]);
-    expect(ctx.balances).toEqual({ cash: 0, savings: 0 });
-
-    await expect(confirmTransfer("allowance-2026-11-23", child)).rejects.toThrow("只有家长");
-    await confirmTransfer("allowance-2026-11-23", parent);
-    ctx = await loadLedgerContext(TODAY);
+  it("1. 填的数超过待兑现被拒；0、小数也不行；孩子不能兑现", async () => {
+    await setup();
+    const ctx = await loadLedgerContext(TODAY);
+    expect(ctx.redeemable).toBe(10);
     expect(ctx.pending).toEqual([]);
-    expect(ctx.balances.cash).toBe(1000);
-    expect(ctx.month.incomeCents).toBe(1000);
-    await expect(confirmTransfer("allowance-2026-11-23", parent)).rejects.toThrow("已经入账");
+    await expect(redeemPoints(11, parent)).rejects.toThrow("只能填 1 到 10 的整数");
+    await expect(redeemPoints(0, parent)).rejects.toThrow("只能填 1 到 10 的整数");
+    await expect(redeemPoints(2.5, parent)).rejects.toThrow("只能填 1 到 10 的整数");
+    await expect(redeemPoints(5, child)).rejects.toThrow("只有家长");
+    expect((await loadLedgerContext(TODAY)).balances.cash).toBe(0);
   });
 
-  it("2. 待转账金额取自结算快照：结算后再补勾、再加奖励，金额不变", async () => {
-    const { task } = await taskRepository.create(practice({ weeklyLog: { "2026-11-23": 1, "2026-11-24": 1, "2026-11-25": 1 } }));
-    await settlePendingWeeks(await loadPointsContext(TODAY), TODAY);
-    await taskRepository.writeWeeklyLog(task.id, "2026-11-26", 1); // 家长在 Mac 上补勾上周
-    await addBonus(5, "结算后才加", undefined, "2026-11-27");
+  it("2. 兑现全部后待兑现为 0：记一条练习奖励（id 随机），零钱 +10 元，算本月收入；今日页胶囊也是 0", async () => {
+    await setup();
+    await redeemPoints(10, parent);
     const ctx = await loadLedgerContext(TODAY);
-    expect(ctx.pending.map((item) => item.amountCents)).toEqual([800]);
+    expect(ctx.redeemable).toBe(0);
+    expect(ctx.balances.cash).toBe(1000);
+    expect(ctx.month.incomeCents).toBe(1000);
+    const [entry] = ctx.entries;
+    expect(entry).toMatchObject({ type: "allowance", amountCents: 1000, content: "兑现 10 分", date: TODAY, createdBy: "parent" });
+    expect(entry.id.startsWith("allowance-")).toBe(false);
+    const points = await loadPointsContext(TODAY);
+    expect(points.redeemable).toBe(0);
+    expect(points.redemptions.map((item) => item.amountCents)).toEqual([1000]);
+    await expect(redeemPoints(1, parent)).rejects.toThrow("没有可以兑现");
+  });
+
+  it("3. 兑现一部分剩下的还在；兑现后补勾，待兑现增加", async () => {
+    const task = await setup();
+    await redeemPoints(4, parent);
+    expect((await loadLedgerContext(TODAY)).redeemable).toBe(6);
+    await redeemPoints(6, parent);
+    await taskRepository.writeWeeklyLog(task.id, "2026-11-26", 1); // 家长在 Mac 上补勾上周：多做 1 次 ×2
+    expect((await loadLedgerContext(TODAY)).redeemable).toBe(2);
+  });
+
+  it("4. 兑现后撤销一个勾，待兑现变负数（多兑了，下次抵扣），不能再兑", async () => {
+    const task = await setup();
+    await redeemPoints(10, parent);
+    await taskRepository.writeWeeklyLog(task.id, "2026-11-25", -1); // 剩 2 次 ×2 = 4，不达标 → 已挣 6 分
+    const ctx = await loadLedgerContext(TODAY);
+    expect(ctx.redeemable).toBe(-4);
+    expect((await loadPointsContext(TODAY)).redeemable).toBe(-4);
+    expect(ctx.balances.cash).toBe(1000); // 不自动追回
+    await expect(redeemPoints(1, parent)).rejects.toThrow("没有可以兑现");
+  });
+
+  it("5. 删掉兑现记录，积分回来、零钱扣回", async () => {
+    await setup();
+    await redeemPoints(10, parent);
+    const [entry] = (await loadLedgerContext(TODAY)).entries;
+    await deleteLedgerEntry(entry.id, parent);
+    const ctx = await loadLedgerContext(TODAY);
+    expect(ctx.redeemable).toBe(10);
+    expect(ctx.balances.cash).toBe(0);
   });
 });
 

@@ -1,5 +1,5 @@
 /**
- * 积分数据层（2026-11-24）：家长奖励加减与撤回、提前完成待处理、每周结算快照写入（1 分 = 1 元的零花钱）、
+ * 积分数据层（2026-11-24）：家长奖励加减与撤回、提前完成待处理、每周快照写入（只固定分值和目标）、待兑现、
  * 上线时按标题套分值预设（只套一次、匹配不到的列出来）、庆祝只弹一次。本地模式（localStorage + fake-indexeddb）。
  * 时间固定 2026-11-25（周三）Asia/Shanghai。
  */
@@ -61,7 +61,7 @@ describe("家长奖励", () => {
     expect(context.summary.weekEarlyItems.map((item) => [item.title, item.points]).sort()).toEqual([["FCE作业", 3], ["奥数班作业", 3]]);
     expect(context.summary.weekEarly).toBe(6);
     expect(context.summary.weekTotal).toBe(6);
-    expect(context.summary.weekAllowance).toBe(6);
+    expect(context.redeemable).toBe(6);
     await taskRepository.setDisplayStatus({ ...b, status: "done" }, "todo");
     context = await loadPointsContext();
     expect(context.summary.weekEarly).toBe(3);
@@ -69,8 +69,8 @@ describe("家长奖励", () => {
   });
 });
 
-describe("零花钱结算（1 分 = 1 元）", () => {
-  it("3. 结算时固定那周的零花钱 = 练习分 + 家长奖励（撤回的不算）", async () => {
+describe("每周快照（2026-11-26 起只固定分值和目标，不再固定零花钱）", () => {
+  it("3. 周日晚 8 点起拍快照；得分 = 练习分 + 家长奖励（撤回的不算）；之后加奖励，分数和待兑现都跟着变", async () => {
     await taskRepository.create(practice("钢琴练习", { practicePoints: 2, weeklyLog: { "2026-11-23": 1, "2026-11-24": 1, "2026-11-25": 1 } }));
     await addBonus(3, "主动整理书包");
     const minus = await addBonus(-1, "练琴时间不够");
@@ -82,20 +82,21 @@ describe("零花钱结算（1 分 = 1 元）", () => {
     expect(await settlePendingWeeks(await loadPointsContext("2026-11-29"), "2026-11-29", sundayEvening)).toBe(false);
     expect(await settlePendingWeeks(await loadPointsContext("2026-11-29"), "2026-11-29", new Date("2026-11-29T20:00:00+08:00"))).toBe(true);
     const ledger = await loadPointsLedger();
-    // 钢琴 3 次 × 2 + 达标 2 = 8；奖励 +3 −1 = 2 → 10 元
-    expect(ledger.snapshots["2026-11-23"]).toMatchObject({ total: 8, bonus: 2, allowance: 10 });
-    // 结算以后再加奖励：分数显示跟着变，已结算的零花钱不变
-    await addBonus(4, "结算后才加");
+    // 钢琴 3 次 × 2 + 达标 2 = 8；奖励 +3 −1 = 2
+    expect(ledger.snapshots["2026-11-23"]).toMatchObject({ total: 8, bonus: 2 });
+    expect(ledger.snapshots["2026-11-23"].allowance).toBeUndefined();
+    await addBonus(4, "拍快照后才加");
     const context = await loadPointsContext("2026-11-29");
     expect(context.summary.weekTotal).toBe(14);
-    expect(context.summary.history[0].allowance).toBe(10);
+    expect(context.redeemable).toBe(14);
   });
 
-  it("3b. 那周扣成负分：零花钱是 0", async () => {
+  it("3b. 那周扣成负分：快照照拍，待兑现是负数（不托底）", async () => {
     await addBonus(-6, "测试扣分");
     vi.setSystemTime(new Date("2026-12-01T09:00:00+08:00"));
     expect(await settlePendingWeeks(await loadPointsContext())).toBe(true);
-    expect((await loadPointsLedger()).snapshots["2026-11-23"]).toMatchObject({ total: 0, bonus: -6, allowance: 0 });
+    expect((await loadPointsLedger()).snapshots["2026-11-23"]).toMatchObject({ total: 0, bonus: -6 });
+    expect((await loadPointsContext()).redeemable).toBe(-6);
     vi.setSystemTime(new Date("2026-11-25T10:00:00+08:00"));
   });
 });
@@ -107,7 +108,7 @@ describe("结算、预设、庆祝", () => {
     const context = await loadPointsContext();
     expect(await settlePendingWeeks(context)).toBe(true);
     const ledger = await loadPointsLedger();
-    expect(ledger.snapshots["2026-11-23"]).toMatchObject({ total: 8, reachedCount: 1, allowance: 8 });
+    expect(ledger.snapshots["2026-11-23"]).toMatchObject({ total: 8, reachedCount: 1 });
     expect(await settlePendingWeeks(await loadPointsContext())).toBe(false);
     vi.setSystemTime(new Date("2026-11-25T10:00:00+08:00"));
   });
@@ -118,18 +119,18 @@ describe("结算、预设、庆祝", () => {
     await taskRepository.writeWeeklyLog(task.id, "2026-11-25", 1);
     const first = await practiceCelebrations(task.id, prior);
     expect(first.map((item) => item.title)).toEqual(["钢琴本周练够了！"]);
-    expect(first[0].detail).toBe("达标奖励 +2。本周已挣 8 元");
+    expect(first[0].detail).toBe("达标奖励 +2。本周 8 分");
     await taskRepository.writeWeeklyLog(task.id, "2026-11-25", -1);
     await taskRepository.writeWeeklyLog(task.id, "2026-11-25", 1);
     expect(await practiceCelebrations(task.id, prior)).toEqual([]);
   });
 
-  it("7. 没有小红花大档了：分数再多，达标也只弹中档，提示本周已挣多少元", async () => {
+  it("7. 没有小红花大档了：分数再多，达标也只弹中档，提示本周多少分", async () => {
     await addBonus(100, "测试");
     const { task } = await taskRepository.create(practice("钢琴练习", { practicePoints: 2, weeklyLog: { "2026-11-23": 1, "2026-11-24": 1 } }));
     await taskRepository.writeWeeklyLog(task.id, "2026-11-25", 1);
     const items = await practiceCelebrations(task.id, { "2026-11-23": 1, "2026-11-24": 1 });
-    expect(items.map((item) => [item.title, item.detail])).toEqual([["钢琴本周练够了！", "达标奖励 +2。本周已挣 108 元"]]);
+    expect(items.map((item) => [item.title, item.detail])).toEqual([["钢琴本周练够了！", "达标奖励 +2。本周 108 分"]]);
   });
 
   it("8. 当天学校作业全部做完 → 卡片“今天的作业做完了，快去赚积分吧！”，飞到今日页那一条；不限次数；只看学校作业", async () => {

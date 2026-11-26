@@ -132,7 +132,7 @@ describe("利息：上个月存款的最低日终余额 × 月利率，保留到
   it("月底才存的钱不算利息；月初就有的照算", () => {
     const entries = [...opening("2026-11-23", 200, 0), entry("2026-12-31", "deposit", 150)];
     expect(minDailySavings(entries, "2026-12")).toBe(0);
-    expect(pendingTransfers(entries, [], settings, "2027-01-01")).toEqual([]); // 0 元不列待转账
+    expect(pendingTransfers(entries, settings, "2027-01-01")).toEqual([]); // 0 元不列待转账
     expect(minDailySavings(entries, "2027-01")).toBe(15000); // 下个月整月都在，就有利息了
   });
 
@@ -154,15 +154,15 @@ describe("利息：上个月存款的最低日终余额 × 月利率，保留到
 
   it("11 月不计息：2027-01-01 才生成 12 月的利息；之后每月 1 日生成上个月的", () => {
     const entries = opening("2026-11-01", 0, 100);
-    expect(pendingTransfers(entries, [], settings, "2026-12-15").filter((item) => item.type === "interest")).toEqual([]);
-    const jan = pendingTransfers(entries, [], settings, "2027-01-01");
+    expect(pendingTransfers(entries, settings, "2026-12-15").filter((item) => item.type === "interest")).toEqual([]);
+    const jan = pendingTransfers(entries, settings, "2027-01-01");
     expect(jan.map((item) => [item.id, item.amountCents, item.detail])).toEqual([["interest-2026-12", 500, "12月最低存款 100 元 × 5% = 5 元"]]);
-    expect(pendingTransfers(entries, [], settings, "2027-02-01").map((item) => item.id)).toEqual(["interest-2026-12", "interest-2027-01"]);
+    expect(pendingTransfers(entries, settings, "2027-02-01").map((item) => item.id)).toEqual(["interest-2026-12", "interest-2027-01"]);
   });
 
   it("利息入账后不再待转账；入账的利息算进下个月的存款", () => {
     const entries = [...opening("2026-11-01", 0, 100), entry("2027-01-01", "interest", 5, { id: "interest-2026-12", refKey: "2026-12" })];
-    const feb = pendingTransfers(entries, [], settings, "2027-02-01");
+    const feb = pendingTransfers(entries, settings, "2027-02-01");
     expect(feb.map((item) => [item.id, item.amountCents])).toEqual([["interest-2027-01", 530]]); // 105 × 5% = 5.25 → 5.3
   });
 
@@ -180,7 +180,7 @@ describe("利率修改只影响之后计算的月份", () => {
     expect(rateForMonth(changed, "2027-01")).toBe(0.1);
     expect(rateForMonth(changed, "2027-06")).toBe(0.1);
     const entries = opening("2026-11-01", 0, 100);
-    const pending = pendingTransfers(entries, [], changed, "2027-02-01");
+    const pending = pendingTransfers(entries, changed, "2027-02-01");
     expect(pending.map((item) => [item.refKey, item.amountCents])).toEqual([["2026-12", 500], ["2027-01", 1000]]);
   });
 
@@ -197,14 +197,10 @@ describe("利率修改只影响之后计算的月份", () => {
   });
 });
 
-describe("待转账：练习奖励", () => {
-  it("已结算的周按快照金额列出；入账后不再列；入账记录被删掉会重新出现；0 元不列", () => {
-    const weeks = [{ weekStart: "2026-11-23", allowanceCents: 1800 }, { weekStart: "2026-11-30", allowanceCents: 0 }];
-    const settings = defaultLedgerSettings();
-    expect(pendingTransfers([], weeks, settings, "2026-11-29").map((item) => [item.id, item.title, item.amountCents])).toEqual([["allowance-2026-11-23", "11/23–11/29 练习奖励", 1800]]);
-    const booked = entry("2026-11-29", "allowance", 18, { id: "allowance-2026-11-23", refKey: "2026-11-23" });
-    expect(pendingTransfers([booked], weeks, settings, "2026-11-30")).toEqual([]);
-    expect(pendingTransfers([{ ...booked, deletedAt: "2026-11-30T10:00:00Z" }], weeks, settings, "2026-11-30")).toHaveLength(1);
+describe("待转账：只有利息（练习奖励 2026-11-26 起改为手动兑现）", () => {
+  it("有练习奖励记录、没有利息时，待转账是空的", () => {
+    const entries = [...opening("2026-11-23", 10, 0), entry("2026-11-29", "allowance", 18)];
+    expect(pendingTransfers(entries, defaultLedgerSettings(), "2026-11-30")).toEqual([]);
   });
 });
 

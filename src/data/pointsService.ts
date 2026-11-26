@@ -9,15 +9,25 @@ import { getWeekStartKey, todayKey, toLocalDateKey } from "../utils/date";
 import { isWeekPlanTask } from "../utils/taskGrouping";
 import {
   activeBonuses, REACH_BONUS, buildWeekSnapshot, computePointsSummary, earlyItemsForWeek, EARLY_POINTS, isEarlyCompleted, isSettleTime,
-  moreToDoToday, practiceShortName, practiceVerb,
-  scorePracticeWeek, weeksNeedingSnapshot, type PointsLedger, type PointsSummary,
+  moreToDoToday, pendingRedeemPoints, practiceShortName, practiceVerb, redemptionsOf,
+  scorePracticeWeek, weeksNeedingSnapshot, type PointsLedger, type PointsSummary, type RedeemEntry,
 } from "../utils/points";
 
-export interface PointsContext { tasks: Task[]; ledger: PointsLedger; summary: PointsSummary }
+export interface PointsContext {
+  tasks: Task[];
+  ledger: PointsLedger;
+  summary: PointsSummary;
+  /** 待兑现积分（可为负 = 多兑了），2026-11-26 */
+  redeemable: number;
+  /** 兑现记录（记账里没删的练习奖励），新的在前 */
+  redemptions: RedeemEntry[];
+}
 
 export async function loadPointsContext(today = todayKey()): Promise<PointsContext> {
-  const [tasks, ledger] = await Promise.all([db.tasks.toArray(), loadPointsLedger()]);
-  return { tasks, ledger, summary: computePointsSummary(tasks, ledger, today) };
+  // 记账记录在本机 Dexie（云端拉取时合并进来），读它不等网络
+  const [tasks, ledger, entries] = await Promise.all([db.tasks.toArray(), loadPointsLedger(), db.ledgerEntries.toArray()]);
+  const summary = computePointsSummary(tasks, ledger, today);
+  return { tasks, ledger, summary, redeemable: pendingRedeemPoints(summary.history, entries), redemptions: redemptionsOf(entries) };
 }
 
 // 结算和预设都要等云端数据拉下来以后再做：没登录的设备本地是空的，拿空数据结算会写出一份空快照
@@ -25,8 +35,8 @@ let dataReady = false;
 export const markPointsDataReady = () => { dataReady = true; };
 
 /**
- * 补上该结算、还没结算的周的快照：已经过完的周，以及周日晚上 8 点以后的这一周；那周没打开过应用的，下次打开时补。
- * 快照固定那周的零花钱（练习 + 家长奖励，不低于 0），记账页的"待转账"金额就取它（docs/TASK_10_ledger.md）。
+ * 补上该拍、还没拍的周快照：已经过完的周，以及周日晚上 8 点以后的这一周；那周没打开过应用的，下次打开时补。
+ * 快照只固定那周的分值、目标、多做设置（2026-11-26 起不再固定零花钱，零花钱由家长在记账页兑现）。
  */
 export async function settlePendingWeeks(context: PointsContext, today = todayKey(), now = new Date()): Promise<boolean> {
   if (!dataReady) return false;
@@ -67,7 +77,7 @@ async function claimCelebrations(keys: string[]): Promise<Set<string>> {
 }
 
 /**
- * 每周练习当天记了一次之后：某项本周刚达标 → 中档庆祝"钢琴本周练够了！达标奖励 +3。本周已挣 N 元"。补记（过去日期）不调用。
+ * 每周练习当天记了一次之后：某项本周刚达标 → 中档庆祝"钢琴本周练够了！达标奖励 +2。本周 N 分"。补记（过去日期）不调用。
  * priorLog 是记之前界面上的那份记录，用它判断"刚达标"（不用在写入前多读一次库）。
  */
 export async function practiceCelebrations(taskId: string, priorLog: Record<string, number> | undefined, today = todayKey()): Promise<Celebration[]> {
@@ -82,7 +92,7 @@ export async function practiceCelebrations(taskId: string, priorLog: Record<stri
   const fresh = await claimCelebrations([key]);
   if (!fresh.has(key)) return [];
   const name = practiceShortName(taskAfter);
-  return [{ id: key, title: `${name}本周${practiceVerb(name)}够了！`, detail: `达标奖励 +${REACH_BONUS}。本周已挣 ${after.summary.weekAllowance} 元` }];
+  return [{ id: key, title: `${name}本周${practiceVerb(name)}够了！`, detail: `达标奖励 +${REACH_BONUS}。本周 ${after.summary.weekTotal} 分` }];
 }
 
 /** 当天学校作业（不含本周作业、提醒）的完成情况；没有学校作业时 total = 0 */

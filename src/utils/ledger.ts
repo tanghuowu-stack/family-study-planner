@@ -4,8 +4,9 @@
  * - 金额一律用"分"（整数）计算和存储，界面显示成元、两位小数，避免小数误差。
  * - 两个账户：零钱 cash（可以自由花，对应微信钱包零钱）、存款 savings（对应微信零钱通）。
  * - 余额不存，由记录算出（R1 思路）：每条记录对两个账户各有一个变化量，见 entryEffect。
- * - 练习奖励、利息不是有人手动记的，而是"待转账"：由每周结算快照 / 存款记录算出来，
- *   家长在 Mac 上点"已转账"才生成一条记录入账。记录 id 固定（allowance-周一 / interest-月份），
+ * - 练习奖励：家长在 Mac 上点"兑现本周积分"、填几分就记一条（id 随机），金额从待兑现积分里扣（utils/points.ts
+ *   pendingRedeemPoints，2026-11-26 起；原来每周结算后"待转账"已取消）。
+ * - 利息仍是"待转账"：由存款记录算出来，家长在 Mac 上点"已转账"才生成一条记录入账。记录 id 固定（interest-月份），
  *   两台设备同时点也只会有一条。
  */
 import { addDays, addMonths, format } from "date-fns";
@@ -211,7 +212,7 @@ export function projectedInterest(entries: LedgerEntry[], settings: LedgerSettin
 export interface PendingTransfer {
   /** 入账时用的记录 id（固定），两台设备同时点"已转账"也只有一条 */
   id: string;
-  type: "allowance" | "interest";
+  type: "interest";
   refKey: string;
   amountCents: number;
   title: string;
@@ -219,24 +220,14 @@ export interface PendingTransfer {
   detail?: string;
 }
 
-export const allowanceEntryId = (weekStart: string) => `allowance-${weekStart}`;
 export const interestEntryId = (month: string) => `interest-${month}`;
 
-const weekRangeLabel = (weekStart: string) => {
-  const start = fromDateKey(weekStart);
-  return `${format(start, "M/d")}–${format(addDays(start, 6), "M/d")}`;
-};
-
 /**
- * 待转账：已结算、还没入账的练习奖励（金额来自结算快照）；已经过完、还没入账的月份的利息（12 月起）。
- * 金额为 0 的不列。已入账后被删掉（软删）的会重新出现。
+ * 待转账：已经过完、还没入账的月份的利息（12 月起）。金额为 0 的不列。已入账后被删掉（软删）的会重新出现。
+ * （练习奖励 2026-11-26 起改为家长手动兑现，不再进待转账。）
  */
-export function pendingTransfers(entries: LedgerEntry[], settledWeeks: { weekStart: string; allowanceCents: number }[], settings: LedgerSettings, today: string): PendingTransfer[] {
-  const booked = new Set(activeEntries(entries).filter((entry) => entry.type === "allowance" || entry.type === "interest").map((entry) => `${entry.type}:${entry.refKey}`));
-  const allowances: PendingTransfer[] = settledWeeks
-    .filter((week) => week.allowanceCents > 0 && !booked.has(`allowance:${week.weekStart}`))
-    .sort((a, b) => a.weekStart.localeCompare(b.weekStart))
-    .map((week) => ({ id: allowanceEntryId(week.weekStart), type: "allowance", refKey: week.weekStart, amountCents: week.allowanceCents, title: `${weekRangeLabel(week.weekStart)} 练习奖励` }));
+export function pendingTransfers(entries: LedgerEntry[], settings: LedgerSettings, today: string): PendingTransfer[] {
+  const booked = new Set(activeEntries(entries).filter((entry) => entry.type === "interest").map((entry) => `${entry.type}:${entry.refKey}`));
   const interests: PendingTransfer[] = [];
   for (let month = INTEREST_START_MONTH; month < monthOf(today); month = nextMonth(month)) {
     if (booked.has(`interest:${month}`)) continue;
@@ -245,7 +236,7 @@ export function pendingTransfers(entries: LedgerEntry[], settledWeeks: { weekSta
     const cents = interestCents(minCents, rate);
     if (cents > 0) interests.push({ id: interestEntryId(month), type: "interest", refKey: month, amountCents: cents, title: `${monthLabel(month)}利息`, detail: interestFormula(month, minCents, rate) });
   }
-  return [...allowances, ...interests];
+  return interests;
 }
 
 // ── 权限与校验 ────────────────────────────────────────────────────────────

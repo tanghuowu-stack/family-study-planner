@@ -185,6 +185,9 @@ describe("本周作业提前完成", () => {
   });
 
   it("截止日之前做完算提前完成", () => { expect(isEarlyCompleted(homework({}))).toBe(true); });
+  it("学校作业（周末家庭作业等时段）提前做完也不加分（2026-11-27）", () => {
+    expect(isEarlyCompleted(homework({ mainCategory: "school", subCategory: "chinese", extraContentType: undefined }))).toBe(false);
+  });
   it("截止日当天做完不算", () => { expect(isEarlyCompleted(homework({ completedAt: "2026-11-27T09:00:00.000Z" }))).toBe(false); });
   it("带小项的：小项没勾完（任务没完成）不算，全勾完（任务自动完成）才算", () => {
     const items = [{ id: "1", title: "B卷", done: true, completedDate: "2026-11-25" }, { id: "2", title: "背诵", done: false }];

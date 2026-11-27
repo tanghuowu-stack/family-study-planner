@@ -38,6 +38,11 @@ describe("哪些任务放本周计划", () => {
     expect(isWeekPlanTask({ timeType: "dateRange", mainCategory: "temporary", endDate: "2026-11-21" }, TODAY)).toBe(false);
   });
 
+  it("2b. 学校作业是时段（周末家庭作业 周六到周日）也不放本周课外作业，和单日家庭作业一样（2026-11-27）", () => {
+    expect(isWeekPlanTask({ timeType: "dateRange", mainCategory: "school", endDate: "2026-11-22" }, "2026-11-21")).toBe(false);
+    expect(isWeekPlanTask({ timeType: "dateRange", mainCategory: "extraHomework", endDate: "2026-11-22" }, "2026-11-21")).toBe(true);
+  });
+
   it("3. 截止说明：今天 / 明天 / 同一周内说星期几 / 跨周说日期", () => {
     expect(weekPlanDueLabel("2026-11-17", TODAY)).toBe("今天截止");
     expect(weekPlanDueLabel("2026-11-18", TODAY)).toBe("明天截止");
@@ -68,11 +73,12 @@ describe("本周计划里早些天就做完的", () => {
     expect((await taskRepository.getTasksForDate(TODAY)).map((t) => t.id)).not.toContain(task.id);
   });
 
-  it("5. 没做完的、其他安排、不在今日清单显示的都不算", async () => {
+  it("5. 没做完的、其他安排、学校作业、不在今日清单显示的都不算", async () => {
     await taskRepository.create(draft({ title: "还没做" }));
     const { task: trip } = await taskRepository.create(draft({ title: "旅游", mainCategory: "temporary", subCategory: "travel", extraContentType: undefined }));
     const { task: hidden } = await taskRepository.create(draft({ title: "隐藏", childVisible: false }));
-    for (const id of [trip.id, hidden.id]) await db.tasks.update(id, { status: "done", completedAt: "2026-11-16T20:00:00+08:00" });
+    const { task: school } = await taskRepository.create(draft({ title: "学校周末作业", mainCategory: "school", subCategory: "chinese", extraContentType: undefined }));
+    for (const id of [trip.id, hidden.id, school.id]) await db.tasks.update(id, { status: "done", completedAt: "2026-11-16T20:00:00+08:00" });
     expect(await taskRepository.getWeekPlanDone(TODAY)).toEqual([]);
   });
 

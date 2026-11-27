@@ -277,7 +277,8 @@ export const activeBonuses = (ledger: PointsLedger) => ledger.bonuses.filter((bo
 
 /** 本周作业（时段作业，"其他安排"除外）在截止日之前（不含截止日当天）做完；积分开始之前做完的不算 */
 export function isEarlyCompleted(task: Task): boolean {
-  if (task.deletedAt || task.timeType !== "dateRange" || task.mainCategory === "temporary" || task.mainCategory === "readingPlan") return false;
+  // 学校作业（周末家庭作业等时段作业）不算提前完成、不加分，和单日家庭作业一样（2026-11-27）
+  if (task.deletedAt || task.timeType !== "dateRange" || task.mainCategory === "temporary" || task.mainCategory === "readingPlan" || task.mainCategory === "school") return false;
   if (task.status !== "done" || !task.completedAt || !task.endDate) return false;
   const completed = toLocalDateKey(task.completedAt);
   return completed < task.endDate && completed >= POINTS_START_WEEK;

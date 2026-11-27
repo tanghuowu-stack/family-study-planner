@@ -25,11 +25,12 @@ beforeEach(async () => {
 });
 
 describe("哪些任务放本周计划", () => {
-  it("1. 几天内做完：截止日之前放本周计划，截止日当天回到今日任务", () => {
+  it("1. 几天内做完的课外作业：到截止日当天都放本周课外作业（2026-11-27 起截止日当天不再挪进今天的作业），过了截止日不放", () => {
     const task = { timeType: "dateRange" as const, mainCategory: "extraHomework" as const, endDate: "2026-11-21" };
     expect(isWeekPlanTask(task, "2026-11-17")).toBe(true);
     expect(isWeekPlanTask(task, "2026-11-20")).toBe(true);
-    expect(isWeekPlanTask(task, "2026-11-21")).toBe(false);
+    expect(isWeekPlanTask(task, "2026-11-21")).toBe(true);
+    expect(isWeekPlanTask(task, "2026-11-22")).toBe(false);
   });
 
   it("2. 单日任务、重复任务、其他安排（旅游等）都不放本周计划", () => {
@@ -87,6 +88,6 @@ describe("本周计划里早些天就做完的", () => {
     const shown = (await taskRepository.getTasksForDate(TODAY)).find((t) => t.id === task.id)!;
     expect(isWeekPlanTask(shown, TODAY)).toBe(true);
     const lastDay = (await taskRepository.getTasksForDate("2026-11-21")).find((t) => t.id === task.id)!;
-    expect(isWeekPlanTask(lastDay, "2026-11-21")).toBe(false);
+    expect(isWeekPlanTask(lastDay, "2026-11-21")).toBe(true); // 截止日当天仍在本周课外作业，标“今天截止”
   });
 });

@@ -138,7 +138,7 @@ export function DayPage(props: Props) {
   const reorderTasks = async (ids: string[]) => { await getRepository().reorderTasks(ids); await reload(); };
   const isSettled = (task: TaskDisplay) => ["done", "cancelled"].includes(task.status);
   const isToday = props.date === todayKey();
-  // 每日计划 / 本周计划（2026-11-17）：几天内做完的作业不到截止日不算"今日任务"，归入"本周作业"组（规则见 isWeekPlanTask）；同在左栏，排在今天的作业后面
+  // 每日计划 / 本周计划：几天内做完的课外作业到截止日当天都在"本周课外作业"组（规则见 isWeekPlanTask，学校作业除外）；同在左栏，排在今天的作业后面
   const daily = tasks.filter((task) => !isWeekPlanTask(task, props.date));
   const weekly = tasks.filter((task) => isWeekPlanTask(task, props.date));
   const pending = daily.filter((task) => !isSettled(task) || held.get(dayTaskKey(task)) === "pending");

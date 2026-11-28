@@ -26,22 +26,31 @@ beforeEach(async () => {
 
 describe("哪些任务放本周计划", () => {
   it("1. 几天内做完的课外作业：到截止日当天都放本周课外作业（2026-11-27 起截止日当天不再挪进今天的作业），过了截止日不放", () => {
-    const task = { timeType: "dateRange" as const, mainCategory: "extraHomework" as const, endDate: "2026-11-21" };
+    const task = { timeType: "dateRange" as const, mainCategory: "interestClass" as const, subCategory: "otherInterest", endDate: "2026-11-21" };
     expect(isWeekPlanTask(task, "2026-11-17")).toBe(true);
     expect(isWeekPlanTask(task, "2026-11-20")).toBe(true);
     expect(isWeekPlanTask(task, "2026-11-21")).toBe(true);
     expect(isWeekPlanTask(task, "2026-11-22")).toBe(false);
   });
 
-  it("2. 单日任务、重复任务、其他安排（旅游等）都不放本周计划", () => {
-    expect(isWeekPlanTask({ timeType: "singleDate", mainCategory: "school", endDate: undefined }, TODAY)).toBe(false);
-    expect(isWeekPlanTask({ timeType: "recurring", mainCategory: "extraHomework", endDate: "2026-12-31" }, TODAY)).toBe(false);
-    expect(isWeekPlanTask({ timeType: "dateRange", mainCategory: "temporary", endDate: "2026-11-21" }, TODAY)).toBe(false);
+  it("2. 学校作业的单日任务、其他安排（旅游等）都不放本周课外作业", () => {
+    expect(isWeekPlanTask({ timeType: "singleDate", mainCategory: "school", subCategory: "chinese", endDate: undefined }, TODAY)).toBe(false);
+    expect(isWeekPlanTask({ timeType: "dateRange", mainCategory: "temporary", subCategory: "travel", endDate: "2026-11-21" }, TODAY)).toBe(false);
   });
 
   it("2b. 学校作业是时段（周末家庭作业 周六到周日）也不放本周课外作业，和单日家庭作业一样（2026-11-27）", () => {
-    expect(isWeekPlanTask({ timeType: "dateRange", mainCategory: "school", endDate: "2026-11-22" }, "2026-11-21")).toBe(false);
-    expect(isWeekPlanTask({ timeType: "dateRange", mainCategory: "extraHomework", endDate: "2026-11-22" }, "2026-11-21")).toBe(true);
+    expect(isWeekPlanTask({ timeType: "dateRange", mainCategory: "school", subCategory: "chinese", endDate: "2026-11-22" }, "2026-11-21")).toBe(false);
+    expect(isWeekPlanTask({ timeType: "dateRange", mainCategory: "extraHomework", subCategory: "chinese", extraContentType: "homework", endDate: "2026-11-22" }, "2026-11-21")).toBe(true);
+  });
+
+  it("2c. 课外班添加的作业不管单日、时段、重复都放本周课外作业；课外班的上课不放（2026-11-28 按分类分）", () => {
+    const extra = { mainCategory: "extraHomework" as const, subCategory: "chinese", extraContentType: "homework" as const };
+    expect(isWeekPlanTask({ ...extra, timeType: "singleDate", endDate: undefined }, TODAY)).toBe(true);
+    expect(isWeekPlanTask({ ...extra, timeType: "recurring", endDate: "2026-12-31" }, TODAY)).toBe(true);
+    expect(isWeekPlanTask({ ...extra, timeType: "dateRange", endDate: "2026-11-17" }, TODAY)).toBe(true);
+    expect(isWeekPlanTask({ ...extra, extraContentType: undefined, timeType: "singleDate", endDate: undefined }, TODAY)).toBe(true);
+    expect(isWeekPlanTask({ ...extra, extraContentType: "class", timeType: "singleDate", endDate: undefined }, TODAY)).toBe(false);
+    expect(isWeekPlanTask({ timeType: "recurring", mainCategory: "school", subCategory: "math", endDate: "2026-12-31" }, TODAY)).toBe(false);
   });
 
   it("3. 截止说明：今天 / 明天 / 同一周内说星期几 / 跨周说日期", () => {

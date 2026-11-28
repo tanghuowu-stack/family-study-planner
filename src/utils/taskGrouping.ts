@@ -93,16 +93,16 @@ export function groupDayTasks<T extends DayGroupable>(tasks: T[], subjectOrder: 
 // ── 今日页：每日计划 / 本周计划（2026-11-17）──────────────────────────────
 
 /**
- * 某一天里，这条任务是否放在"本周计划"区，而不是"今日任务"：
- * 几天内做完（dateRange）的课外作业，从开始到截止日当天都放在“本周课外作业”里，截止日当天标红色“今天截止”。
- * - 2026-11-27 用户：大增语文课后作业周五截止，当天被挪进了今天的作业（看起来成了学校家庭作业）——课外作业截止日当天也留在本周课外作业；
- * - 过了截止日还没做完的由逾期区负责（不在当天清单里）；
- * - "其他安排"（旅游、休闲、考试比赛等）是一段时间的安排、不是要做完的作业，留在当天清单。
- * - **学校作业**（如周末家庭作业，周六到周日）即使是时段，也和平常的单日家庭作业一样留在“学校家庭作业”里，
- *   不进“本周课外作业”（2026-11-27 用户：学校周末作业被排进了课外作业、做完还加分）。
+ * 某一天里，这条任务放在今日页“本周课外作业”里，还是“学校家庭作业”里——**按添加时选的分类分**（2026-11-28 用户）：
+ * - 在“课外班”里添加的作业（单日、时段、重复都算）→ 本周课外作业；课外班的“上课”除外，它在上课组里；
+ * - 在“学校作业”里添加的（单日家庭作业、周末家庭作业等时段作业）→ 学校家庭作业，不进本周课外作业、不加提前完成分；
+ * - 兴趣班的时段作业维持原样：到截止日当天都在本周课外作业；
+ * - “其他安排”（旅游、休闲、考试比赛等）留在当天清单。
+ * 时段作业截止日当天标红色“今天截止”；过了截止日还没做完的由逾期区负责（不在当天清单里）。
  * 只决定显示位置，不改任何数据。
  */
-export function isWeekPlanTask(task: Pick<Task, "timeType" | "mainCategory" | "endDate">, date: string): boolean {
+export function isWeekPlanTask(task: Pick<Task, "timeType" | "mainCategory" | "subCategory" | "extraContentType" | "endDate">, date: string): boolean {
+  if (task.mainCategory === "extraHomework" && !isCourseTask(task)) return true;
   return task.timeType === "dateRange" && task.mainCategory !== "temporary" && task.mainCategory !== "school" && !!task.endDate && task.endDate >= date;
 }
 
